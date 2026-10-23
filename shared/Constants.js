@@ -5,12 +5,68 @@
  */
 
 export const MAP_CONFIG = {
-  GRID_WIDTH: 16,  // Matriz de 16x16 casillas
-  GRID_HEIGHT: 16,
-  TOTAL_TILES: 256,
-  TILE_SIZE: 40,
+  GRID_WIDTH: 30,
+  GRID_HEIGHT: 30,
+  TOTAL_TILES: 900,
+  TILE_SIZE: 32,
   MAX_PLAYERS: 4,  // Escalable a más jugadores en futuras versiones
 };
+
+// Siglas de terreno según GDD sección 8
+export const TERRAIN_TYPES = {
+  CAP: 'CAP', // Capital
+  CIU: 'CIU', // Ciudad
+  TR: 'TR',   // Tierra
+  MPT: 'MPT', // Materia Prima Terrestre
+  FT: 'FT',   // Fábrica Terrestre
+  AG: 'AG',   // Agua
+  MPA: 'MPA', // Materia Prima Acuática
+  FA: 'FA'    // Fábrica Acuática
+};
+
+export const TILE_STATUS = {
+  NORMAL: 'NORMAL',
+  CONFLICT: 'CONFLICT',
+  BLOCKED: 'BLOCKED'
+};
+
+export const TILE_STATUS_COLORS = {
+  [TILE_STATUS.NORMAL]: '#22C55E',
+  [TILE_STATUS.CONFLICT]: '#EAB308',
+  [TILE_STATUS.BLOCKED]: '#EF4444'
+};
+
+// Colores de fondo por sigla (GDD sección 8)
+export const TERRAIN_COLORS = {
+  [TERRAIN_TYPES.CAP]: '#718096',
+  [TERRAIN_TYPES.CIU]: '#718096',
+  [TERRAIN_TYPES.TR]: '#8D5B4C',
+  [TERRAIN_TYPES.MPT]: '#8D5B4C',
+  [TERRAIN_TYPES.FT]: '#8D5B4C',
+  [TERRAIN_TYPES.AG]: '#3182CE',
+  [TERRAIN_TYPES.MPA]: '#3182CE',
+  [TERRAIN_TYPES.FA]: '#3182CE'
+};
+
+export const URBAN_TERRAIN = new Set([TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU]);
+export const LAND_TERRAIN = new Set([TERRAIN_TYPES.TR, TERRAIN_TYPES.MPT, TERRAIN_TYPES.FT]);
+export const WATER_TERRAIN = new Set([TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA, TERRAIN_TYPES.FA]);
+
+export const SPAWN_POSITIONS = [
+  { x: 6, y: 6 },
+  { x: 23, y: 6 },
+  { x: 6, y: 23 },
+  { x: 23, y: 23 }
+];
+
+export const NATIONS = [
+  { id: 'nation-0', nationId: 0, name: 'Nación Amarilla', color: '#EAB308' },
+  { id: 'nation-1', nationId: 1, name: 'Nación Roja', color: '#EF4444' },
+  { id: 'nation-2', nationId: 2, name: 'Nación Verde', color: '#22C55E' },
+  { id: 'nation-3', nationId: 3, name: 'Nación Morada', color: '#A855F7' }
+];
+
+export const NATION_COLORS = NATIONS.map((nation) => nation.color);
 
 export const GAME_CONFIG = {
   DEFAULT_TAX_RATE: 0.15,
@@ -22,9 +78,13 @@ export const PROTOCOL = {
   CONNECT: 'connect',
   DISCONNECT: 'disconnect',
   JOIN_GAME: 'join_game',
+  START_GAME: 'start_game',
   GAME_STATE_UPDATE: 'game_state_update',
   PHASE_CHANGE: 'phase_change',
-  SET_TAX_RATE: 'set_tax_rate'
+  SET_TAX_RATE: 'set_tax_rate',
+  PLAYER_ACTION: 'player_action',
+  ACTION_RESULT: 'action_result',
+  ACTION_ERROR: 'action_error'
 };
 
 export const INITIAL_STATE = {

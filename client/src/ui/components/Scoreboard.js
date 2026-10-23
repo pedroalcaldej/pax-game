@@ -82,6 +82,7 @@ export class Scoreboard {
       .map((player, index) => {
         const name = player.name || `Nación ${index + 1}`;
         const gdi = player.gdiPoints ?? 100;
+        const color = player.color || '#2563eb';
 
         return `
           <div style="
@@ -91,7 +92,7 @@ export class Scoreboard {
             padding: 10px 14px; 
             background: #0f172a; 
             border-radius: 8px; 
-            border-left: 4px solid #2563eb;
+            border-left: 4px solid ${color};
           ">
             <span style="font-size: 14px; font-weight: 600; color: #e2e8f0;">#${index + 1} ${name}</span>
             <span style="font-size: 13px; font-weight: 700; color: #38bdf8;">${gdi} GDI</span>

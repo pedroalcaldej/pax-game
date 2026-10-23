@@ -23,20 +23,19 @@ export class TaxSlider {
    */
   render() {
     this.container.innerHTML = `
-      <div class="tax-slider-container" style="background: #1e272e; padding: 15px; border-radius: 8px; color: #fff; font-family: sans-serif;">
-        <label for="taxInput" style="display: block; margin-bottom: 8px; font-weight: bold;">
+      <div class="tax-slider-container">
+        <label for="taxInput">
           Tasa Impositiva (τ): <span id="taxValue">${Math.round(this.currentValue * 100)}%</span>
         </label>
-        <input 
+        <input
           type="range" 
           id="taxInput" 
           min="${ECONOMIC_POLICY.MIN_TAX_RATE}" 
           max="${ECONOMIC_POLICY.MAX_TAX_RATE}" 
           step="0.01" 
           value="${this.currentValue}"
-          style="width: 100%; cursor: pointer;"
         />
-        <p style="font-size: 11px; color: #bdc3c7; margin-top: 6px;">
+        <p>
           * Impuestos altos aumentan el ingreso inmediato, pero reducen el crecimiento demográfico (G = 1 / 100τ).
         </p>
       </div>
@@ -72,5 +71,13 @@ export class TaxSlider {
       input.disabled = !enabled;
       this.container.style.opacity = enabled ? '1' : '0.5';
     }
+  }
+
+  setValue(value) {
+    this.currentValue = value;
+    const input = this.container.querySelector('#taxInput');
+    const label = this.container.querySelector('#taxValue');
+    if (input) input.value = String(value);
+    if (label) label.textContent = `${Math.round(value * 100)}%`;
   }
 }

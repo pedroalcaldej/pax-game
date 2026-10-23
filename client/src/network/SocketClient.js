@@ -6,7 +6,12 @@
 import { io } from 'socket.io-client';
 import { CLIENT_EVENTS, SERVER_EVENTS } from '../../../shared/Protocol.js';
 
-export const socket = io('http://localhost:3000', {
+const DEFAULT_SERVER_URL = typeof window === 'undefined'
+  ? 'http://localhost:3000'
+  : `${window.location.protocol}//${window.location.hostname}:3000`;
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
+
+export const socket = io(SERVER_URL, {
   autoConnect: true
 });
 
@@ -14,7 +19,7 @@ export class SocketClient {
   /**
    * @param {string} serverUrl - URL del servidor (ej: 'http://localhost:3000')
    */
-  constructor(serverUrl = 'http://localhost:3000') {
+  constructor(serverUrl = SERVER_URL) {
     this.socket = io(serverUrl, { autoConnect: true });
     this.initListeners();
   }
