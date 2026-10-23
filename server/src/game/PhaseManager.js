@@ -49,6 +49,8 @@ export class PhaseManager {
         this.startDecisionTimer();
         break;
       case GAME_PHASES.PHASE_3_RESOLUTION:
+        this.gameState.lastActionResolutions = this.gameState.resolvePlannedActions();
+        this.gameState.actionResolutionId += 1;
         this.gameState.timeRemaining = 2;
         this.notifyState();
         this.schedulePhase(GAME_PHASES.PHASE_4_GLOBAL_OI, 2000);
@@ -59,7 +61,6 @@ export class PhaseManager {
         this.schedulePhase(GAME_PHASES.PHASE_5_SUMMARY, 2000);
         break;
       case GAME_PHASES.PHASE_5_SUMMARY:
-        this.gameState.resolvePendingMovements();
         this.gameState.currentRound += 1;
         this.gameState.timeRemaining = 3;
         this.notifyState();
@@ -84,10 +85,18 @@ export class PhaseManager {
       this.notifyState();
 
       if (this.secondsRemaining === 0) {
-        this.stopTimer();
-        this.transitionToPhase(GAME_PHASES.PHASE_3_RESOLUTION);
+        this.finishDecisionPhase();
       }
     }, 1000);
+  }
+
+  finishDecisionPhase() {
+    if (!this.running || this.gameState.currentPhase !== GAME_PHASES.PHASE_2_DECISIONS) {
+      return false;
+    }
+    this.stopTimer();
+    this.transitionToPhase(GAME_PHASES.PHASE_3_RESOLUTION);
+    return true;
   }
 
   stopTimer() {

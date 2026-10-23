@@ -3,6 +3,20 @@
  * Componente UI para la tabla de clasificación y estado de la ronda.
  */
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]);
+}
+
+function formatScore(value) {
+  return Number.isFinite(value) ? Math.floor(value).toLocaleString('es-ES') : '0';
+}
+
 export class Scoreboard {
   constructor(container) {
     this.container = container;
@@ -67,7 +81,7 @@ export class Scoreboard {
     // Normalizar la entrada: convertir a Array si viene como Objeto o Map
     let playersList = [];
     if (Array.isArray(players)) {
-      playersList = players;
+      playersList = [...players];
     } else if (players && typeof players === 'object') {
       playersList = Object.values(players);
     }
@@ -77,25 +91,36 @@ export class Scoreboard {
       return;
     }
 
+    playersList.sort((left, right) => (
+      (right.gdiPoints ?? 100) - (left.gdiPoints ?? 100)
+    ));
+
     // Dibujar cada jugador en la lista
     listEl.innerHTML = playersList
       .map((player, index) => {
-        const name = player.name || `Nación ${index + 1}`;
-        const gdi = player.gdiPoints ?? 100;
-        const color = player.color || '#2563eb';
+        const name = escapeHtml(player.name || `Nación ${index + 1}`);
+        const breakdown = player.gdiBreakdown || {};
+        const initial = Number.isFinite(breakdown.initial) ? breakdown.initial : 100;
+        const population = Number.isFinite(breakdown.population)
+          ? breakdown.population
+          : Math.max(0, (player.gdiPoints ?? 100) - initial);
+        const industry = Number.isFinite(breakdown.industry) ? breakdown.industry : 0;
+        const total = Number.isFinite(player.gdiPoints)
+          ? player.gdiPoints
+          : initial + population + industry;
+        const color = /^#[0-9a-f]{6}$/i.test(player.color || '') ? player.color : '#2563eb';
 
         return `
-          <div style="
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            padding: 10px 14px; 
-            background: #0f172a; 
-            border-radius: 8px; 
-            border-left: 4px solid ${color};
-          ">
-            <span style="font-size: 14px; font-weight: 600; color: #e2e8f0;">#${index + 1} ${name}</span>
-            <span style="font-size: 13px; font-weight: 700; color: #38bdf8;">${gdi} GDI</span>
+          <div class="pax-score-entry" style="--score-nation-color:${color}">
+            <div class="pax-score-entry-heading">
+              <span class="pax-score-player">#${index + 1} ${name}</span>
+              <span class="pax-score-total">${formatScore(total)} GDI</span>
+            </div>
+            <dl class="pax-score-breakdown" aria-label="Desglose del puntaje de ${name}">
+              <div><dt>Puntaje inicial</dt><dd>${formatScore(initial)}</dd></div>
+              <div><dt>Población</dt><dd>+${formatScore(population)}</dd></div>
+              <div><dt>Industria</dt><dd>+${formatScore(industry)}</dd></div>
+            </dl>
           </div>
         `;
       })

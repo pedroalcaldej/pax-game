@@ -25,7 +25,13 @@ export class EconomyEngine {
 
       player.resources.SILVER += Math.floor(population * taxRate);
       player.resources.MATERIALS += factoryCount * 2;
-      player.gdiPoints += population + factoryCount * 2;
+      const populationPoints = population;
+      const industryPoints = factoryCount * 2;
+      player.gdiBreakdown.population += populationPoints;
+      player.gdiBreakdown.industry += industryPoints;
+      player.gdiPoints = player.gdiBreakdown.initial
+        + player.gdiBreakdown.population
+        + player.gdiBreakdown.industry;
     }
   }
 }

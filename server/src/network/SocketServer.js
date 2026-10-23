@@ -57,6 +57,34 @@ export class SocketServer {
         this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });
 
+      socket.on(PROTOCOL.READY_PHASE_END, ({ roomId, ready } = {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la sala antes de forzar el fin de fase.');
+          return;
+        }
+        const result = room.markPlayerReady(socket.id, ready);
+        if (!result.ok) {
+          socket.emit(PROTOCOL.ACTION_ERROR, result.message);
+          return;
+        }
+        socket.emit(
+          PROTOCOL.ACTION_RESULT,
+          result.ready
+            ? `Listo para terminar la fase (${result.readyCount}/${result.requiredCount}).`
+            : `Ya no estás listo (${result.readyCount}/${result.requiredCount}).`
+        );
+      });
+
+      socket.on(PROTOCOL.END_GAME, ({ roomId } = {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la sala antes de terminar la partida.');
+          return;
+        }
+        this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.end());
+      });
+
       socket.on(PROTOCOL.SET_TAX_RATE, ({ roomId, taxRate }) => {
         const targetRoomId = roomId || 'room-1';
         const room = this.roomManager.getRoom(targetRoomId);

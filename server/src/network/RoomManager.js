@@ -8,8 +8,9 @@ import { PhaseManager } from '../game/PhaseManager.js';
 export class Room {
   constructor(id, publishState) {
     this.id = id;
+    this.publishState = publishState;
     this.gameState = new GameState();
-    this.phaseManager = new PhaseManager(this.gameState, publishState);
+    this.phaseManager = new PhaseManager(this.gameState, (state) => this.publishState(state));
   }
 
   start() {
@@ -28,6 +29,34 @@ export class Room {
 
   removePlayer(socketId) {
     return this.gameState.removePlayer(socketId);
+  }
+
+  markPlayerReady(socketId, ready) {
+    const result = this.gameState.markPlayerReady(socketId, ready);
+    if (!result.ok) return result;
+    if (result.allReady) {
+      this.phaseManager.finishDecisionPhase();
+    } else {
+      this.publishState(this.gameState.getState());
+    }
+    return result;
+  }
+
+  end() {
+    const connectedPlayers = Array.from(this.gameState.players.values())
+      .filter((player) => player.socketId)
+      .map((player) => ({
+        socketId: player.socketId,
+        playerId: player.boundPlayerId,
+        name: player.name
+      }));
+    this.phaseManager.stop();
+    this.gameState = new GameState();
+    for (const player of connectedPlayers) {
+      this.gameState.addPlayer(player.socketId, player.name, player.playerId);
+    }
+    this.phaseManager = new PhaseManager(this.gameState, (state) => this.publishState(state));
+    return this.gameState.getState();
   }
 }
 

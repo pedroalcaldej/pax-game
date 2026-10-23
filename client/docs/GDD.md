@@ -110,6 +110,8 @@ Todos los activos acumulados se convierten directamente a puntos con una relaci�
 - **Ejército y Flota:** 1 Punto por cada unidad militar terrestre o naval activa.
 - **Infraestructura:** 1 Punto por cada nivel de fortificación o estructura industrial edificada.
 
+El marcador muestra el puntaje actual de cada nación y su desglose. En la implementación actual, el puntaje parte de 100 y acumula puntos por población e industria al procesar la economía de cada ronda; los demás componentes de la fórmula total se incorporarán posteriormente.
+
 ---
 
 ## 7. Especificación del Mapa e Interfaz Visual
@@ -174,8 +176,19 @@ un cliente que se conecta reclama un país bot libre. La fase de planificación 
 segundos y las rondas avanzan automáticamente. El inspector ofrece acciones de ciudad,
 fábrica, reclutamiento y traslado de capital; cada acción se habilita solo si coinciden
 la fase, la soberanía, el tipo de casilla y los recursos, y el servidor vuelve a validar
-esas condiciones antes de aplicarla.
-El movimiento se ordena desde una casilla propia con tropas y se resuelve al final de la
-Fase 4; al entrar en tierra neutral adyacente, las tropas ocupan la casilla y esta pasa a
-tener como propietario al país que la reclamó. El límite exterior continuo de las casillas
+esas condiciones antes de aplicarla. Cada jugador dispone de dos espacios de acción que
+puede reemplazar o vaciar libremente durante la fase 2; las órdenes guardadas (incluidas
+las decisiones de la IA) se ejecutan únicamente cuando expira el temporizador de esa fase,
+al entrar en la fase 3.
+Los jugadores humanos conectados también pueden usar «Forzar» para marcarse listos;
+la fase 2 termina inmediatamente cuando todos lo han hecho, o automáticamente al
+expirar los 60 segundos. El menú superior permite reanudar o terminar la partida y
+volver al menú principal.
+Para mover tropas, se selecciona primero su casilla de origen y después el destino terrestre
+adyacente; ambos quedan resaltados y el movimiento se guarda en un espacio. Al entrar en
+tierra neutral, las tropas ocupan la casilla y esta pasa a tener como propietario al país
+que la reclamó. El reclutamiento y el movimiento permiten elegir la cantidad de tropas,
+limitada por los recursos disponibles y las órdenes ya reservadas en el otro espacio.
+«Forzar» se puede alternar para retirar la confirmación antes de que todos estén listos.
+El límite exterior continuo de las casillas
 propias usa el color de su nación y las divisiones internas usan líneas claras.

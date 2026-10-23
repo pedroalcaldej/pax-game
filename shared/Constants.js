@@ -79,6 +79,8 @@ export const PROTOCOL = {
   DISCONNECT: 'disconnect',
   JOIN_GAME: 'join_game',
   START_GAME: 'start_game',
+  READY_PHASE_END: 'ready_phase_end',
+  END_GAME: 'end_game',
   GAME_STATE_UPDATE: 'game_state_update',
   PHASE_CHANGE: 'phase_change',
   SET_TAX_RATE: 'set_tax_rate',

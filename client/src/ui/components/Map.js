@@ -24,6 +24,7 @@ export class Map {
     this.ctx = this.canvas.getContext('2d');
     this.grid = null;
     this.selectedPosition = null;
+    this.actionHighlights = [];
     this.zoom = 1;
     this.minZoom = 0.2;
     this.maxZoom = 2;
@@ -214,11 +215,20 @@ export class Map {
     return grid[y] && grid[y][x] ? grid[y][x] : null;
   }
 
+  setActionHighlights(highlights = []) {
+    this.actionHighlights = highlights.filter((position) => (
+      Number.isInteger(position?.x) && Number.isInteger(position?.y)
+    ));
+    if (this.grid) {
+      this.render(this.grid, false);
+    }
+  }
+
   /**
    * Recorre todas las celdas (y, x), pinta terrenos del GDD y bordes de soberanía.
    * @param {Array} grid - Matriz del servidor o generador local.
    */
-  render(grid) {
+  render(grid, notifySelection = true) {
     if (!grid || !Array.isArray(grid)) return;
     this.grid = grid;
 
@@ -270,7 +280,7 @@ export class Map {
 
     this.drawBorders(grid);
     this.drawSelection();
-    if (this.selectedPosition) {
+    if (notifySelection && this.selectedPosition) {
       this.onTileSelected(this.getTile(grid, this.selectedPosition.x, this.selectedPosition.y));
     }
   }
@@ -396,8 +406,19 @@ export class Map {
   }
 
   drawSelection() {
-    if (!this.selectedPosition) return;
     const ctx = this.ctx;
+    for (const highlight of this.actionHighlights) {
+      const posX = highlight.x * this.tileSize;
+      const posY = highlight.y * this.tileSize;
+      const isTarget = highlight.role === 'target';
+      ctx.fillStyle = isTarget ? 'rgba(34, 211, 238, 0.2)' : 'rgba(250, 204, 21, 0.2)';
+      ctx.fillRect(posX + 2, posY + 2, this.tileSize - 4, this.tileSize - 4);
+      ctx.strokeStyle = isTarget ? '#22d3ee' : '#facc15';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([]);
+      ctx.strokeRect(posX + 2, posY + 2, this.tileSize - 4, this.tileSize - 4);
+    }
+    if (!this.selectedPosition) return;
     const posX = this.selectedPosition.x * this.tileSize;
     const posY = this.selectedPosition.y * this.tileSize;
     ctx.strokeStyle = '#FFFFFF';

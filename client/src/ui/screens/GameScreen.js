@@ -81,7 +81,7 @@ const STYLES = `
   .pax-shell *, .pax-shell *::before, .pax-shell *::after { box-sizing: border-box; }
   .pax-topbar {
     display: grid;
-    grid-template-columns: 68px 74px minmax(186px, 240px) minmax(170px, 1fr) auto 112px;
+    grid-template-columns: 38px 68px 74px minmax(186px, 240px) minmax(170px, 1fr) auto 112px;
     align-items: center;
     gap: 9px;
     padding: 7px 10px;
@@ -111,12 +111,50 @@ const STYLES = `
     font: inherit;
   }
   .pax-force-button { margin-left: 8px; padding: 5px 8px; color: #f4bd4d; font-size: 10px; font-weight: 800; }
+  .pax-menu-button { width: 34px; height: 34px; border: 1px solid #39455d; border-radius: 6px; color: #e2e8f0; background: #10192b; font-size: 18px; cursor: pointer; }
+  .pax-menu-overlay { position: fixed; z-index: 12; inset: 0; display: grid; place-items: center; padding: 20px; background: #030712cc; backdrop-filter: blur(6px); }
+  .pax-menu-overlay[hidden] { display: none; }
+  .pax-menu-card { width: min(360px, 100%); padding: 24px; border: 1px solid #34435d; border-radius: 12px; background: linear-gradient(145deg, #121d32, #080e1d); box-shadow: 0 24px 80px #0009; }
+  .pax-menu-card h2 { margin: 0 0 18px; font-size: 18px; }
+  .pax-menu-actions { display: grid; gap: 10px; }
+  .pax-menu-actions button { min-height: 42px; padding: 9px 12px; border: 1px solid #39455d; border-radius: 6px; color: var(--pax-text); background: #1a263b; font: inherit; font-weight: 700; cursor: pointer; }
+  .pax-menu-actions .pax-menu-end { border-color: #713a43; color: #fecaca; background: #351a22; }
   .pax-phase { display: block; min-width: 0; padding: 6px 12px; }
   .pax-phase strong { display: block; overflow: hidden; margin-top: 2px; color: #dce4f2; font-size: 11px; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
   .pax-resources { justify-content: center; gap: 0; padding: 0 4px; }
   .pax-resource { display: flex; align-items: center; gap: 5px; padding: 0 9px; color: #d8e1ef; font-weight: 800; white-space: nowrap; }
   .pax-resource + .pax-resource { border-left: 1px solid var(--pax-border); }
   .pax-resource-icon { color: var(--pax-gold); }
+  .pax-resource-icon[data-tooltip] { position: relative; font-style: normal; }
+  .pax-resource-icon[data-tooltip]::after {
+    position: absolute;
+    z-index: 20;
+    left: 50%;
+    bottom: calc(100% + 9px);
+    width: max-content;
+    max-width: 180px;
+    padding: 6px 8px;
+    border: 1px solid #40506a;
+    border-radius: 5px;
+    color: #e8edf5;
+    background: #111b2d;
+    box-shadow: 0 5px 16px #0008;
+    content: attr(data-tooltip);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.3;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, 3px);
+    transition: opacity .12s, transform .12s;
+    visibility: hidden;
+  }
+  .pax-resource-icon[data-tooltip]:hover::after,
+  .pax-resource-icon[data-tooltip]:focus-visible::after {
+    opacity: 1;
+    transform: translate(-50%, 0);
+    visibility: visible;
+  }
   .pax-resource:nth-child(2) .pax-resource-icon { color: #df8d31; }
   .pax-resource:nth-child(3) .pax-resource-icon { color: #a878e8; }
   .pax-resource:nth-child(4) .pax-resource-icon { color: #60a5fa; }
@@ -155,6 +193,7 @@ const STYLES = `
   .pax-shell .tax-slider-container p { display: none; }
   .pax-formula-line { display: flex; justify-content: space-between; gap: 8px; margin: 5px 0; color: #9eabc0; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
   .pax-formula-line strong { color: #32d5a3; white-space: nowrap; }
+  .pax-formula-line.is-forecast { padding-top: 5px; border-top: 1px solid #202c41; font-family: inherit; }
   .pax-tax-note { margin: 8px 0 0; color: #68758d; font-size: 10px; font-style: italic; line-height: 1.4; }
   .pax-action-button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; text-align: left; }
   .pax-action-main { display: flex; align-items: center; gap: 8px; }
@@ -171,7 +210,7 @@ const STYLES = `
   .pax-oi-proposal strong { display: block; margin-top: 4px; color: #e4eaf3; }
   .pax-event-log { max-height: 120px; overflow: auto; padding: 8px 9px; border: 1px solid #202c41; border-radius: 6px; background: #070d1c; color: #a9b5c8; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
   .pax-event-entry + .pax-event-entry { margin-top: 6px; }
-  .pax-center { min-width: 0; min-height: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr) 37px; padding: 0 14px; background: #050a19; }
+  .pax-center { min-width: 0; min-height: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr) auto 37px; padding: 0 14px; background: #050a19; }
   .pax-map-legend { display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 0 5px 8px; color: #8c99af; font-size: 10px; }
   .pax-legend-types, .pax-legend-status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
   .pax-legend-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
@@ -179,6 +218,20 @@ const STYLES = `
   .pax-legend-status .pax-legend-item { gap: 5px; }
   .pax-status-mini { width: 8px; height: 8px; border-radius: 50%; background: var(--status-color); }
   .pax-map-viewport { position: relative; min-width: 0; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center; border: 1px solid #26334a; border-radius: 12px; background: #0d1527; box-shadow: 0 8px 24px #0005; }
+  .pax-action-slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 9px 0; }
+  .pax-action-slots-heading { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; color: #aab6c9; font-size: 10px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
+  .pax-action-slots-heading small { color: #77849a; font-size: 9px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+  .pax-action-slot-wrap { min-width: 0; display: flex; align-items: center; gap: 6px; }
+  .pax-action-slot { min-width: 0; min-height: 60px; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid #2d3b54; border-radius: 8px; color: #e2e8f0; background: #101a2c; text-align: left; cursor: pointer; }
+  .pax-action-slot-wrap .pax-action-slot { flex: 1; }
+  .pax-action-slot.is-active { border-color: #f5b72f; box-shadow: 0 0 0 1px #f5b72f44; }
+  .pax-action-slot:disabled { opacity: .55; cursor: not-allowed; }
+  .pax-action-slot-number { flex: 0 0 24px; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; color: #f5c34f; background: #2a2417; font-size: 11px; font-weight: 900; }
+  .pax-action-slot-copy { flex: 1; min-width: 0; display: grid; gap: 4px; }
+  .pax-action-slot-copy strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .pax-action-slot-copy small { overflow: hidden; color: #94a3b8; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+  .pax-action-slot-clear { flex: 0 0 auto; width: 25px; height: 25px; border: 1px solid #43516a; border-radius: 5px; color: #cbd5e1; background: #1b2639; cursor: pointer; }
+  .pax-action-slot-clear:disabled { opacity: .35; cursor: not-allowed; }
   .pax-map-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #8491a7; font-size: 10px; }
   .pax-map-hint { color: #f2b938; }
   .pax-map-size { color: #68758d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
@@ -204,6 +257,10 @@ const STYLES = `
   .pax-feature-tag { width: fit-content; padding: 4px 7px; border-radius: 4px; color: #a9d9f7; background: #132638; font-size: 10px; }
   .pax-development button { width: 100%; padding: 8px; font-size: 11px; }
   .pax-tile-actions { display: grid; gap: 7px; margin-top: 10px; }
+  .pax-tile-action-control { display: grid; grid-template-columns: minmax(76px, 92px) minmax(0, 1fr); align-items: end; gap: 6px; }
+  .pax-tile-quantity { display: grid; gap: 4px; color: #97a5ba; font-size: 9px; }
+  .pax-tile-quantity input { width: 100%; min-width: 0; padding: 7px 6px; border: 1px solid #35445e; border-radius: 6px; color: #e2e8f0; background: #0b1322; font: inherit; font-size: 11px; }
+  .pax-tile-quantity input:disabled { opacity: .4; }
   .pax-tile-action { width: 100%; min-height: 47px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; border: 1px solid #35445e; border-radius: 7px; color: #e2e8f0; background: #17243a; text-align: left; cursor: pointer; transition: opacity .15s, border-color .15s, background .15s; }
   .pax-tile-action:not(:disabled):hover { border-color: #d99d2c; background: #202b3c; }
   .pax-tile-action.is-unavailable { opacity: .38; filter: saturate(.55); cursor: not-allowed; }
@@ -217,17 +274,25 @@ const STYLES = `
   .pax-dialog-close { padding: 5px 9px; border: 1px solid #334155; border-radius: 5px; color: var(--pax-text); background: #172238; cursor: pointer; }
   .pax-scoreboard-wrap { padding: 12px; }
   .pax-scoreboard-wrap > div { box-shadow: none !important; }
+  .pax-score-entry { padding: 11px 13px; border-left: 4px solid var(--score-nation-color); border-radius: 8px; background: #0f172a; }
+  .pax-score-entry-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .pax-score-player { color: #e2e8f0; font-size: 14px; font-weight: 700; }
+  .pax-score-total { color: #38bdf8; font-size: 14px; font-weight: 800; white-space: nowrap; }
+  .pax-score-breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; padding-top: 9px; border-top: 1px solid #263249; }
+  .pax-score-breakdown div { display: grid; gap: 4px; }
+  .pax-score-breakdown dt { color: #93a1b5; font-size: 10px; }
+  .pax-score-breakdown dd { margin: 0; color: #dbe5f2; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
   @media (max-width: 1100px) {
     .pax-main { grid-template-columns: 240px minmax(0, 1fr) 260px; }
-    .pax-topbar { grid-template-columns: 62px 58px minmax(150px, 190px) minmax(140px, 1fr) auto 98px; gap: 6px; padding-inline: 7px; }
+    .pax-topbar { grid-template-columns: 36px 62px 58px minmax(150px, 190px) minmax(140px, 1fr) auto 98px; gap: 6px; padding-inline: 7px; }
     .pax-resource { gap: 4px; padding-inline: 6px; }
     .pax-center { padding-inline: 9px; }
   }
   @media (max-width: 820px) {
     .pax-shell { height: auto; min-height: 100dvh; grid-template-rows: auto minmax(70vh, 1fr); overflow: auto; }
-    .pax-topbar { grid-template-columns: 62px 58px minmax(0, 1fr) 92px; }
+    .pax-topbar { grid-template-columns: 36px 62px 58px minmax(0, 1fr) 92px; }
     .pax-phase { display: none; }
-    .pax-resources { grid-column: 1 / 4; grid-row: 2; justify-content: flex-start; min-height: 34px; }
+    .pax-resources { grid-column: 1 / 6; grid-row: 2; justify-content: flex-start; min-height: 34px; }
     .pax-topbar { grid-template-rows: 40px 34px; }
     .pax-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(55vh, 1fr) auto auto; }
     .pax-center { grid-row: 1; min-height: 55vh; }
@@ -237,14 +302,17 @@ const STYLES = `
     .pax-development { margin-top: 0; }
   }
   @media (max-width: 520px) {
-    .pax-topbar { grid-template-columns: 58px minmax(0, 1fr) 90px; }
+    .pax-topbar { grid-template-columns: 36px 58px minmax(0, 1fr) 90px; }
     .pax-brand { font-size: 13px; letter-spacing: 0; }
+    .pax-brand { grid-column: 2; }
     .pax-version { display: none; }
-    .pax-round { grid-column: 2; }
-    .pax-resources { grid-column: 1 / 4; overflow-x: auto; }
+    .pax-round { grid-column: 3; }
+    .pax-resources { grid-column: 1 / 5; overflow-x: auto; }
     .pax-gdi-button { font-size: 10px; }
     .pax-map-legend { align-items: start; flex-direction: column; justify-content: center; gap: 5px; padding-top: 6px; font-size: 9px; }
-    .pax-center { grid-template-rows: 58px minmax(0, 1fr) 37px; padding-inline: 5px; }
+    .pax-center { grid-template-rows: 58px minmax(0, 1fr) auto 37px; padding-inline: 5px; }
+    .pax-action-slots { gap: 6px; }
+    .pax-action-slot { min-height: 54px; gap: 5px; padding: 6px; }
     .pax-inspector-content { grid-template-columns: minmax(0, 1fr); }
     .pax-development { margin-top: 8px; }
     .pax-map-size { font-size: 9px; }
@@ -268,6 +336,7 @@ export class GameScreen {
     this.events = [];
     this.lastEventState = null;
     this.pendingMoveSource = null;
+    this.activeActionSlot = 0;
     this.startPending = false;
     this.startError = '';
 
@@ -290,23 +359,33 @@ export class GameScreen {
             <p class="pax-start-status" id="start-status" role="status">Conectando con la partida…</p>
           </div>
         </section>
+        <section class="pax-menu-overlay" id="game-menu" aria-label="Menú de partida" hidden>
+          <div class="pax-menu-card">
+            <h2>Menú de partida</h2>
+            <div class="pax-menu-actions">
+              <button type="button" id="menu-resume">Reanudar</button>
+              <button type="button" class="pax-menu-end" id="menu-end-game">Terminar partida y volver al menú principal</button>
+            </div>
+          </div>
+        </section>
         <header class="pax-topbar">
+          <button class="pax-menu-button" id="menu-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="game-menu" title="Menú">☰</button>
           <div class="pax-brand">◉ PAX</div>
           <div class="pax-version">GDD<br>v3.0</div>
           <div class="pax-round">
             <span class="pax-round-icon">⌛</span>
             <div><span class="pax-label">Ronda</span><span class="pax-round-value" id="round-value">1/30</span></div>
             <span class="pax-timer" id="timer-value">60s</span>
-            <button class="pax-force-button" type="button" disabled title="El avance manual aún no está disponible">⏩ Forzar</button>
+            <button class="pax-force-button" id="force-phase-button" type="button" disabled title="La fase termina cuando todos los jugadores conectados fuerzan su fin">⏩ Forzar</button>
           </div>
           <div class="pax-phase"><span class="pax-label">Fase actual:</span><strong id="phase-value">Fase 1: Crecimiento y recaudación</strong></div>
           <div class="pax-resources" aria-label="Recursos nacionales">
-            <span class="pax-resource" title="Plata"><i class="pax-resource-icon">◉</i><span id="silver-value">—</span></span>
-            <span class="pax-resource" title="Materiales"><i class="pax-resource-icon">▣</i><span id="materials-value">—</span></span>
-            <span class="pax-resource" title="Influencia"><i class="pax-resource-icon">♧</i><span id="influence-value">—</span></span>
-            <span class="pax-resource" title="Población"><i class="pax-resource-icon">♟</i><span id="population-value">0</span></span>
+            <span class="pax-resource" title="Plata"><i class="pax-resource-icon" data-tooltip="Plata" tabindex="0" aria-label="Plata">◉</i><span id="silver-value">—</span></span>
+            <span class="pax-resource" title="Materiales"><i class="pax-resource-icon" data-tooltip="Materiales" tabindex="0" aria-label="Materiales">▣</i><span id="materials-value">—</span></span>
+            <span class="pax-resource" title="Influencia"><i class="pax-resource-icon" data-tooltip="Influencia" tabindex="0" aria-label="Influencia">♧</i><span id="influence-value">—</span></span>
+            <span class="pax-resource" title="Población"><i class="pax-resource-icon" data-tooltip="Población" tabindex="0" aria-label="Población">♟</i><span id="population-value">0</span></span>
           </div>
-          <button class="pax-gdi-button" id="gdi-open" type="button"><span>🏆</span><span>Marcador<br>GDI</span></button>
+          <button class="pax-gdi-button" id="gdi-open" type="button" title="Ver puntaje total y desglose de cada jugador"><span aria-hidden="true">🏆</span><span>Marcador<br>GDI</span></button>
         </header>
         <main class="pax-main">
           <aside class="pax-sidebar">
@@ -322,6 +401,8 @@ export class GameScreen {
                 <div class="pax-formula-line"><span>Fórmula crecimiento:</span><strong>G = 1 / (100 × τ)</strong></div>
                 <div class="pax-formula-line"><span>Tasa crecimiento (G):</span><strong id="growth-value">+5.00%</strong></div>
                 <div class="pax-formula-line"><span>Recaudación por hab.:</span><strong id="revenue-value">0.20¤</strong></div>
+                <div class="pax-formula-line is-forecast"><span>Población próximo turno:</span><strong id="forecast-population">—</strong></div>
+                <div class="pax-formula-line"><span>Recaudación esperada:</span><strong id="forecast-revenue">—</strong></div>
                 <p class="pax-tax-note">A menor impuesto, mayor crecimiento demográfico. A mayor impuesto, más recaudación inmediata.</p>
               </div>
             </section>
@@ -352,6 +433,7 @@ export class GameScreen {
               </div>
             </div>
             <div class="pax-map-viewport" id="map-container"></div>
+            <section class="pax-action-slots" id="action-slots" aria-label="Acciones de este turno"></section>
             <footer class="pax-map-footer">
               <span class="pax-map-hint">ⓘ Haz clic en una casilla para inspeccionarla; arrastra para desplazarte.</span>
               <span class="pax-map-size">Matriz ${MAP_CONFIG.GRID_WIDTH}×${MAP_CONFIG.GRID_HEIGHT} (${MAP_CONFIG.TOTAL_TILES} casillas)</span>
@@ -401,10 +483,68 @@ export class GameScreen {
     this.onActionError = (message) => {
       this.startPending = false;
       this.startError = message;
+      if (this.player && this.confirmedPlannedActions) {
+        this.player.plannedActions = this.confirmedPlannedActions.map((action) => (
+          action ? { ...action } : null
+        ));
+      }
       this.addEvent(`Acción no realizada: ${message}`);
+      this.updateActionHighlights();
+      this.updateActionSlots();
       this.updateStartMenu();
     };
     socket.on(PROTOCOL.ACTION_ERROR, this.onActionError);
+
+    const menuToggle = this.container.querySelector('#menu-toggle');
+    const gameMenu = this.container.querySelector('#game-menu');
+    menuToggle.addEventListener('click', () => {
+      gameMenu.hidden = !gameMenu.hidden;
+      menuToggle.setAttribute('aria-expanded', String(!gameMenu.hidden));
+    });
+    this.container.querySelector('#menu-resume').addEventListener('click', () => {
+      gameMenu.hidden = true;
+      menuToggle.setAttribute('aria-expanded', 'false');
+    });
+    this.container.querySelector('#menu-end-game').addEventListener('click', () => {
+      if (!socket.connected || !this.gameState?.gameStarted) return;
+      socket.emit(PROTOCOL.END_GAME, { roomId: 'room-1' });
+    });
+    this.container.querySelector('#force-phase-button').addEventListener('click', () => {
+      if (!socket.connected || this.gameState?.currentPhase !== 2) return;
+      socket.emit(PROTOCOL.READY_PHASE_END, {
+        roomId: 'room-1',
+        ready: !this.player?.phaseReady
+      });
+    });
+
+    this.container.querySelector('#action-slots').addEventListener('click', (event) => {
+      const target = event.target.closest?.('[data-clear-slot], [data-action-slot]');
+      const clearButton = target?.matches('[data-clear-slot]') ? target : null;
+      if (clearButton) {
+        const slot = Number(clearButton.dataset.clearSlot);
+        this.emitPlannedAction(slot, null);
+        if (this.pendingMoveSource?.slot === slot) {
+          this.pendingMoveSource = null;
+          this.updateActionSlots();
+          this.updateActionHighlights();
+        }
+        return;
+      }
+
+      const slotButton = target?.matches('[data-action-slot]') ? target : null;
+      if (!slotButton || slotButton.disabled) return;
+      this.activeActionSlot = Number(slotButton.dataset.actionSlot);
+      this.pendingMoveSource = null;
+      this.inspector.setContext(
+        this.player,
+        this.gameState?.currentPhase || 1,
+        (action) => this.handleInspectorAction(action),
+        this.activeActionSlot,
+        this.gameState?.grid
+      );
+      this.updateActionSlots();
+      this.updateActionHighlights();
+    });
 
     this.container.querySelector('#play-button').addEventListener('click', () => {
       if (!socket.connected || !this.player || this.startPending) return;
@@ -444,21 +584,58 @@ export class GameScreen {
     this.container.querySelector('#tax-value').textContent = `${Math.round(taxRate * 100)}%`;
     this.container.querySelector('#growth-value').textContent = `+${(growth * 100).toFixed(2)}%`;
     this.container.querySelector('#revenue-value').textContent = `${taxRate.toFixed(2)}¤`;
+    const plannedActions = this.player?.plannedActions || [];
+    let forecastPopulation = 0;
+    for (const tile of this.gameState?.grid?.flat() || []) {
+      if (tile.ownerId !== this.player?.id) continue;
+      if (tile.type === 'CAP' || tile.type === 'CIU') {
+        forecastPopulation += Math.floor((tile.population || 0) * (1 + growth));
+      }
+    }
+    for (const action of plannedActions) {
+      if (action?.type !== 'BUILD_CITY') continue;
+      const tile = this.gameState?.grid?.[action.y]?.[action.x];
+      if (tile && tile.ownerId === this.player?.id && tile.type === 'TR' && !tile.building) {
+        forecastPopulation += Math.floor(50 * (1 + growth));
+      }
+    }
+    this.container.querySelector('#forecast-population').textContent = formatValue(forecastPopulation);
+    this.container.querySelector('#forecast-revenue').textContent = `${formatValue(Math.floor(forecastPopulation * taxRate))}¤`;
   }
 
   updateGameState(gameState) {
     if (!gameState) return;
     this.gameState = gameState;
+    const phase = gameState.currentPhase || 1;
+    if (phase !== 2) this.pendingMoveSource = null;
     this.map.render(gameState.grid);
 
     const players = Array.isArray(gameState.players) ? gameState.players : [];
     this.player = players.find((player) => (
       player.boundPlayerId === this.playerId || player.socketId === socket.id
     )) || null;
+    if (this.player && !Array.isArray(this.player.plannedActions)) {
+      this.player.plannedActions = [null, null];
+    }
+    this.confirmedPlannedActions = (this.player?.plannedActions || [null, null]).map((action) => (
+      action ? { ...action } : null
+    ));
     if (gameState.gameStarted) this.startPending = false;
     this.updateStartMenu(gameState.gameStarted);
-    const phase = gameState.currentPhase || 1;
-    this.inspector.setContext(this.player, phase, (action) => this.handleInspectorAction(action));
+    if (!gameState.gameStarted) {
+      this.container.querySelector('#game-menu').hidden = true;
+      this.container.querySelector('#menu-toggle').setAttribute('aria-expanded', 'false');
+    }
+    this.inspector.setContext(
+      this.player,
+      phase,
+      (action) => this.handleInspectorAction(action),
+      this.activeActionSlot,
+      gameState.grid
+    );
+    this.updateActionSlots();
+    this.updateActionHighlights();
+    this.updateForcePhaseButton(players, phase, gameState.gameStarted);
     this.scoreboard.update(players, gameState.currentPhase, gameState.timeRemaining);
 
     const round = gameState.currentRound || 1;
@@ -475,7 +652,122 @@ export class GameScreen {
     if (this.player && Number.isFinite(this.player.taxRate)) {
       this.taxSlider.setValue(this.player.taxRate);
       this.updateTaxMetrics(this.player.taxRate);
+    } else {
+      this.updateTaxMetrics(this.taxSlider.currentValue);
     }
+    if (gameState.actionResolutionId > (this.lastActionResolutionId || 0)) {
+      this.lastActionResolutionId = gameState.actionResolutionId;
+      for (const result of gameState.lastActionResolutions || []) {
+        if (result.playerId === this.player?.id) {
+          this.addEvent(`Espacio ${result.slot}: ${result.message}`);
+        }
+      }
+
+    }
+  }
+
+  updateForcePhaseButton(players, phase, gameStarted) {
+    const button = this.container.querySelector('#force-phase-button');
+    if (!button) return;
+    const participants = players.filter((player) => !player.isBot && player.socketId);
+    const readyCount = participants.filter((player) => player.phaseReady).length;
+    const requiredCount = participants.length;
+    const canForce = Boolean(gameStarted && this.player && phase === 2);
+    const isReady = Boolean(this.player?.phaseReady);
+    button.disabled = !canForce;
+    button.textContent = isReady
+      ? `↩ Quitar listo (${readyCount}/${requiredCount})`
+      : requiredCount > 0
+        ? `⏩ Forzar (${readyCount}/${requiredCount})`
+        : '⏩ Forzar';
+    button.title = isReady
+      ? 'Retirar tu confirmación para que continúe la planificación'
+      : 'La fase termina cuando todos los jugadores conectados fuerzan su fin';
+  }
+
+  updateActionSlots() {
+    const slots = this.container.querySelector('#action-slots');
+    if (!slots) return;
+    const plannedActions = this.player?.plannedActions || [null, null];
+    const canPlan = Boolean(this.player && this.gameState?.currentPhase === 2);
+    const labels = {
+      BUILD_CITY: 'Construir ciudad',
+      BUILD_FACTORY: 'Construir fábrica',
+      RECRUIT_TROOP: 'Reclutar tropa',
+      MOVE_CAPITAL: 'Trasladar capital',
+      MOVE_TROOPS: 'Mover tropas'
+    };
+    slots.innerHTML = `
+      <div class="pax-action-slots-heading">
+        <span>Acciones del turno</span>
+        <small>Se ejecutan cuando termina el tiempo</small>
+      </div>
+      ${[0, 1].map((slot) => {
+      const action = plannedActions[slot];
+      let detail = action
+        ? `Casilla (${action.x}, ${action.y})`
+        : 'Vacío · selecciona para editar';
+      if (action?.type === 'MOVE_TROOPS') {
+        detail = `(${action.x}, ${action.y}) → (${action.targetX}, ${action.targetY}) · ${action.troops} tropas`;
+      } else if (action?.type === 'RECRUIT_TROOP') {
+        detail = `Casilla (${action.x}, ${action.y}) · ${action.count || 1} tropas`;
+      }
+      if (this.pendingMoveSource?.slot === slot) {
+        detail = `Origen marcado · ${this.pendingMoveSource.troops} tropas · selecciona destino`;
+      }
+      const active = this.activeActionSlot === slot;
+      return `
+        <div class="pax-action-slot-wrap">
+          <button class="pax-action-slot ${active ? 'is-active' : ''}" type="button"
+            data-action-slot="${slot}" ${canPlan ? '' : 'disabled'}
+            aria-pressed="${active}">
+            <span class="pax-action-slot-number">${slot + 1}</span>
+            <span class="pax-action-slot-copy">
+              <strong>${action ? labels[action.type] || 'Acción planificada' : `Espacio ${slot + 1} · vacío`}</strong>
+              <small>${detail}</small>
+            </span>
+          </button>
+          <button class="pax-action-slot-clear" type="button" data-clear-slot="${slot}"
+            title="Vaciar espacio ${slot + 1}" aria-label="Vaciar espacio ${slot + 1}"
+            ${canPlan && (action || this.pendingMoveSource?.slot === slot) ? '' : 'disabled'}>×</button>
+        </div>
+      `;
+      }).join('')}
+    `;
+    this.updateTaxMetrics(this.player?.taxRate ?? this.taxSlider?.currentValue ?? 0);
+  }
+
+  updateActionHighlights(provisionalDestination = null) {
+    const highlights = [];
+    const plannedActions = this.player?.plannedActions || [];
+    for (const action of plannedActions) {
+      if (action?.type !== 'MOVE_TROOPS') continue;
+      highlights.push({ x: action.x, y: action.y, role: 'source' });
+      highlights.push({ x: action.targetX, y: action.targetY, role: 'target' });
+    }
+    if (this.pendingMoveSource) {
+      highlights.push({
+        x: this.pendingMoveSource.x,
+        y: this.pendingMoveSource.y,
+        role: 'source'
+      });
+    }
+    if (provisionalDestination) {
+      highlights.push({ ...provisionalDestination, role: 'target' });
+    }
+    this.map.setActionHighlights(highlights);
+  }
+
+  emitPlannedAction(slot, plannedAction) {
+    if (!this.player) return;
+    this.player.plannedActions ||= [null, null];
+    this.player.plannedActions[slot] = plannedAction ? { ...plannedAction } : null;
+    this.updateActionSlots();
+    this.updateActionHighlights();
+    socket.emit(PROTOCOL.PLAYER_ACTION, {
+      roomId: 'room-1',
+      action: { type: 'PLAN_ACTION', slot, plannedAction }
+    });
   }
 
   updateStartMenu(gameStarted = this.gameState?.gameStarted) {
@@ -516,12 +808,15 @@ export class GameScreen {
   }
 
   handleInspectorAction(action) {
+    if (this.gameState?.currentPhase !== 2 || !this.player) return;
     if (action.type === 'MOVE_TROOPS') {
-      this.pendingMoveSource = action;
-      this.addEvent('Selecciona una casilla terrestre neutral o propia adyacente como destino.');
+      this.pendingMoveSource = { ...action, slot: this.activeActionSlot };
+      this.updateActionSlots();
+      this.updateActionHighlights();
+      this.addEvent(`Origen (${action.x}, ${action.y}) marcado para el espacio ${this.activeActionSlot + 1}. Selecciona el destino.`);
       return;
     }
-    socket.emit(PROTOCOL.PLAYER_ACTION, { roomId: 'room-1', action });
+    this.emitPlannedAction(this.activeActionSlot, action);
   }
 
   handleTileSelection(tile) {
@@ -530,18 +825,17 @@ export class GameScreen {
 
     const source = this.pendingMoveSource;
     if (tile.x === source.x && tile.y === source.y) return;
+    this.updateActionHighlights({ x: tile.x, y: tile.y });
     const sourceTile = this.gameState?.grid?.[source.y]?.[source.x];
     this.pendingMoveSource = null;
-    socket.emit(PROTOCOL.PLAYER_ACTION, {
-      roomId: 'room-1',
-      action: {
-        type: 'MOVE_TROOPS',
-        x: source.x,
-        y: source.y,
-        targetX: tile.x,
-        targetY: tile.y,
-        troops: sourceTile?.troops
-      }
+    this.updateActionSlots();
+    this.emitPlannedAction(source.slot, {
+      type: 'MOVE_TROOPS',
+      x: source.x,
+      y: source.y,
+      targetX: tile.x,
+      targetY: tile.y,
+      troops: source.troops ?? sourceTile?.troops
     });
   }
 
