@@ -1,43 +1,42 @@
 /**
  * server/src/network/SocketServer.js
- * Escucha las conexiones entrantes de Socket.io y mapea los eventos del protocolo.
  */
 
-import { CLIENT_EVENTS, SERVER_EVENTS } from '../../../shared/Protocol.js';
-import { RoomManager } from './RoomManager.js';
+import { PROTOCOL } from '../../../shared/Constants.js';
 
 export class SocketServer {
-  constructor(io) {
+  constructor(io, roomManager) {
     this.io = io;
-    this.roomManager = new RoomManager(io);
-    this.initListeners();
+    this.roomManager = roomManager;
+    this.init();
   }
 
-  initListeners() {
+  init() {
     this.io.on('connection', (socket) => {
       console.log(`[Network] Cliente conectado: ${socket.id}`);
 
-      // Evento: Jugador intenta unirse a una partida
-      socket.on(CLIENT_EVENTS.JOIN_GAME, ({ playerName, roomId }) => {
-        const targetRoom = roomId || 'room-1';
-        const result = this.roomManager.addPlayerToRoom(targetRoom, socket, playerName || 'Jugador');
+      // Recibir datos de unión incluyendo playerId
+      socket.on(PROTOCOL.JOIN_GAME, ({ playerName, roomId, playerId }) => {
+        const targetRoomId = roomId || 'room-1';
+        const room = this.roomManager.getOrCreateRoom(targetRoomId);
 
-        if (result.success) {
-          // Confirmar ingreso y enviar el estado actual
-          this.io.to(targetRoom).emit(SERVER_EVENTS.GAME_STATE_UPDATE, result.room.gameState.getPublicState());
-        } else {
-          socket.emit(SERVER_EVENTS.ERROR_MESSAGE, { message: result.error });
-        }
+        // Registrar o reconectar al jugador
+        const player = room.gameState.addPlayer(socket.id, playerName || 'Nación Alpha', playerId);
+
+        socket.join(room.id);
+        console.log(`[Network] Jugador "${player.name}" (${player.id}) conectado a la sala: ${room.id}`);
+
+        // Emitir estado actualizado a todos
+        this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });
 
-      // Evento: Cambiar tasa impositiva (tau) durante la Fase 2
-      socket.on(CLIENT_EVENTS.SET_TAX_RATE, ({ roomId, taxRate }) => {
-        const room = this.roomManager.getOrCreateRoom(roomId || 'room-1');
-        const player = room.gameState.players.get(socket.id);
+      socket.on(PROTOCOL.SET_TAX_RATE, ({ roomId, taxRate }) => {
+        const targetRoomId = roomId || 'room-1';
+        const room = this.roomManager.getRoom(targetRoomId);
 
-        if (player && room.gameState.currentPhase === 2) {
-          player.taxRate = taxRate;
-          this.io.to(roomId || 'room-1').emit(SERVER_EVENTS.GAME_STATE_UPDATE, room.gameState.getPublicState());
+        if (room) {
+          room.gameState.setPlayerTaxRate(socket.id, taxRate);
+          this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
         }
       });
 

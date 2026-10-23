@@ -1,33 +1,35 @@
 /**
  * server/src/index.js
- * Punto de entrada principal del servidor autoritativo de PAX.
  */
 
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { SocketServer } from './network/SocketServer.js';
+import cors from 'cors';
 
-const PORT = process.env.PORT || 3000;
+// Importaciones respetando la carpeta src/network/
+import { RoomManager } from './network/RoomManager.js';
+import { SocketServer } from './network/SocketServer.js';
 
 const app = express();
 const httpServer = createServer(app);
 
-// Configuración de Socket.io con soporte para CORS (permitiendo conexiones del cliente)
+app.use(cors());
+
 const io = new Server(httpServer, {
   cors: {
-    origin: '*', // En producción se reemplazará por la URL del cliente
+    origin: '*',
     methods: ['GET', 'POST']
   }
 });
 
-// Inicializar la capa de red WebSocket
-new SocketServer(io);
+const roomManager = new RoomManager();
+new SocketServer(io, roomManager);
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', game: 'PAX Server Running' });
-});
+roomManager.getOrCreateRoom('room-1');
+
+const PORT = process.env.PORT || 3000;
 
 httpServer.listen(PORT, () => {
-  console.log(`[PAX Server] Servidor ejecutándose en el puerto ${PORT}`);
+  console.log(`[Server] Servidor ejecutándose en http://localhost:${PORT}`);
 });

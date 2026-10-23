@@ -6,12 +6,16 @@
 import { io } from 'socket.io-client';
 import { CLIENT_EVENTS, SERVER_EVENTS } from '../../../shared/Protocol.js';
 
+export const socket = io('http://localhost:3000', {
+  autoConnect: true
+});
+
 export class SocketClient {
   /**
    * @param {string} serverUrl - URL del servidor (ej: 'http://localhost:3000')
    */
   constructor(serverUrl = 'http://localhost:3000') {
-    this.socket = io(serverUrl, { autoConnect: false });
+    this.socket = io(serverUrl, { autoConnect: true });
     this.initListeners();
   }
 
