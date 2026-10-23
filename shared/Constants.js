@@ -8,7 +8,23 @@ export const MAP_CONFIG = {
   GRID_WIDTH: 16,  // Matriz de 16x16 casillas
   GRID_HEIGHT: 16,
   TOTAL_TILES: 256,
+  TILE_SIZE: 40,
   MAX_PLAYERS: 4,  // Escalable a más jugadores en futuras versiones
+};
+
+export const GAME_CONFIG = {
+  DEFAULT_TAX_RATE: 0.15,
+  PHASE_DURATION_SECONDS: 60,
+  TOTAL_PHASES: 5
+};
+
+export const PROTOCOL = {
+  CONNECT: 'connect',
+  DISCONNECT: 'disconnect',
+  JOIN_GAME: 'join_game',
+  GAME_STATE_UPDATE: 'game_state_update',
+  PHASE_CHANGE: 'phase_change',
+  SET_TAX_RATE: 'set_tax_rate'
 };
 
 export const INITIAL_STATE = {
