@@ -37,6 +37,9 @@ export class SocketServer {
           socket.emit(PROTOCOL.ACTION_ERROR, 'La sala ya tiene cuatro jugadores humanos.');
           return;
         }
+        room.gameState.recordEvent(
+          wasBot ? `${player.name} se reconectó.` : `${player.name} se unió a la partida.`
+        );
         room.enforcePauseEligibility();
         const session = room.gameState.oiSession;
         if (
@@ -126,6 +129,9 @@ export class SocketServer {
             socket.emit(PROTOCOL.ACTION_ERROR, 'Los impuestos solo se pueden ajustar en fase 2 y dentro del rango permitido.');
             return;
           }
+          const player = Array.from(room.gameState.players.values())
+            .find((entry) => entry.socketId === socket.id);
+          if (player) room.gameState.recordEvent(`${player.name} ajustó sus impuestos al ${Math.round(taxRate * 100)}%.`);
           this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
         }
       });
@@ -174,13 +180,19 @@ export class SocketServer {
         );
         socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
         if (result.ok) {
+          room.phaseManager.checkOIVotes();
           this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
         }
       });
 
       socket.on('disconnect', () => {
         for (const room of this.roomManager.rooms.values()) {
+          const disconnectedPlayer = Array.from(room.gameState.players.values())
+            .find((player) => player.socketId === socket.id);
           const removed = room.gameState.removePlayer(socket.id);
+          if (removed && room.gameState.gameStarted) {
+            room.gameState.recordEvent(`${disconnectedPlayer?.name || 'Un jugador'} se desconectó; su país queda bajo control del bot.`);
+          }
           room.enforcePauseEligibility();
           if (removed && room.gameState.currentPhase === 2) {
             room.gameState.runBotDecisions({ resetReadiness: false });
@@ -198,6 +210,7 @@ export class SocketServer {
                 session.botVoterIds.push(player.id);
               }
             }
+            room.phaseManager.checkOIVotes();
           }
           this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
         }

@@ -1,6 +1,6 @@
 import {
+  LAND_TERRAIN,
   OI_RESOLUTIONS,
-  TERRAIN_TYPES,
   TIMINGS
 } from '../../../shared/Constants.js';
 
@@ -12,13 +12,6 @@ export const OI_RESOLUTION_NAMES = {
 };
 
 const VALID_RESOLUTIONS = new Set(Object.values(OI_RESOLUTIONS));
-const LAND_TERRAIN = new Set([
-  TERRAIN_TYPES.CAP,
-  TERRAIN_TYPES.CIU,
-  TERRAIN_TYPES.TR,
-  TERRAIN_TYPES.MPT
-]);
-
 export class InternationalOrganizationEngine {
   static propose(gameState, socketId, proposal) {
     const player = Array.from(gameState.players.values()).find(
@@ -67,6 +60,7 @@ export class InternationalOrganizationEngine {
       ...(target ? { target } : {})
     };
     gameState.oiProposals.push(entry);
+    gameState.recordEvent(`${player.name} propuso: ${entry.name}${target ? ` en (${target.x}, ${target.y})` : ''}.`);
     return { ok: true, message: `Resolución propuesta: ${entry.name}. Se descontaron 2 puntos de Influencia.` };
   }
 
@@ -84,9 +78,9 @@ export class InternationalOrganizationEngine {
       .map((proposal) => ({ ...proposal, votes: [] }));
     gameState.oiProposals = [];
     gameState.oiSession = {
-      id: `oi-session-${gameState.currentRound - 1}`,
+      id: `oi-session-${gameState.currentRound}`,
       phase: 'voting',
-      meetingAfterRound: gameState.currentRound - 1,
+      meetingAfterRound: gameState.currentRound,
       timeRemaining: TIMINGS.DECISION_PHASE_DURATION,
       proposals: selected,
       votes: {},
@@ -98,8 +92,10 @@ export class InternationalOrganizationEngine {
       if (player.isBot) {
         gameState.oiSession.votes[player.id] = this.getBotBallot(gameState, player, selected);
         gameState.oiSession.botVoterIds.push(player.id);
+        gameState.recordEvent(`${player.name} (bot) registró su papeleta de la OI.`);
       }
     }
+    gameState.recordEvent(`Comenzó la sesión de la OI de la ronda ${gameState.currentRound}.`);
     return gameState.oiSession;
   }
 
@@ -142,6 +138,7 @@ export class InternationalOrganizationEngine {
 
     session.votes[player.id] = ballot.map((vote) => ({ ...vote }));
     session.botVoterIds = session.botVoterIds.filter((id) => id !== player.id);
+    gameState.recordEvent(`${player.name} registró su papeleta de la OI.`);
     return {
       ok: true,
       message: 'Votos de la OI registrados.',
@@ -229,6 +226,9 @@ export class InternationalOrganizationEngine {
         passed,
         message: passed ? 'Aprobada' : 'Rechazada'
       };
+      gameState.recordEvent(
+        `${result.name}: ${result.message.toLowerCase()} (a favor ${result.forInfluence}, en contra ${result.againstInfluence}).`
+      );
       if (passed) this.applyResolution(gameState, proposal, votes);
       return result;
     });
@@ -278,23 +278,30 @@ export class InternationalOrganizationEngine {
     const zones = gameState.activeDmzZones;
     for (const tile of gameState.grid.flat()) {
       if (tile.troops <= 0 || !this.isWithinZone(tile.x, tile.y, zone)) continue;
-      const player = gameState.players.get(tile.ownerId);
-      const destination = player
-        ? gameState.grid.flat()
+      const visitors = tile.visitingTroops || {};
+      const visitorCount = Object.values(visitors).reduce((sum, count) => sum + count, 0);
+      const troopGroups = [];
+      if (tile.ownerId != null && tile.troops > visitorCount) {
+        troopGroups.push([tile.ownerId, tile.troops - visitorCount]);
+      }
+      for (const [playerId, count] of Object.entries(visitors)) {
+        troopGroups.push([playerId, count]);
+      }
+      for (const [playerId, count] of troopGroups) {
+        const destination = gameState.grid.flat()
           .filter((candidate) => (
-            candidate.ownerId === player.id
+            candidate.ownerId === playerId
             && LAND_TERRAIN.has(candidate.type)
             && !zones.some((activeZone) => this.isWithinZone(candidate.x, candidate.y, activeZone))
           ))
           .sort((left, right) => (
             Math.abs(left.x - tile.x) + Math.abs(left.y - tile.y)
             - Math.abs(right.x - tile.x) - Math.abs(right.y - tile.y)
-          ))[0]
-        : null;
-      if (destination) {
-        destination.troops = (destination.troops || 0) + tile.troops;
+          ))[0];
+        if (destination) destination.troops = (destination.troops || 0) + count;
       }
       tile.troops = 0;
+      delete tile.visitingTroops;
     }
   }
 
@@ -308,7 +315,15 @@ export class InternationalOrganizationEngine {
 
   static countTroops(gameState, playerId) {
     return gameState.grid.flat().reduce(
-      (sum, tile) => sum + (tile.ownerId === playerId ? tile.troops || 0 : 0),
+      (sum, tile) => {
+        const visitors = tile.visitingTroops || {};
+        if (tile.ownerId === playerId) {
+          const foreignTroops = Object.values(visitors)
+            .reduce((total, count) => total + count, 0);
+          return sum + Math.max(0, (tile.troops || 0) - foreignTroops);
+        }
+        return sum + (visitors[playerId] || 0);
+      },
       0
     );
   }

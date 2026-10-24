@@ -12,6 +12,8 @@ export const MAP_CONFIG = {
   MAX_PLAYERS: 4,  // Escalable a más jugadores en futuras versiones
 };
 
+export const ACTION_SLOT_COUNT = 3;
+
 // Siglas de terreno según GDD sección 8
 export const TERRAIN_TYPES = {
   CAP: 'CAP', // Capital
@@ -49,7 +51,13 @@ export const TERRAIN_COLORS = {
 };
 
 export const URBAN_TERRAIN = new Set([TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU]);
-export const LAND_TERRAIN = new Set([TERRAIN_TYPES.TR, TERRAIN_TYPES.MPT, TERRAIN_TYPES.FT]);
+export const LAND_TERRAIN = new Set([
+  TERRAIN_TYPES.CAP,
+  TERRAIN_TYPES.CIU,
+  TERRAIN_TYPES.TR,
+  TERRAIN_TYPES.MPT,
+  TERRAIN_TYPES.FT
+]);
 export const WATER_TERRAIN = new Set([TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA, TERRAIN_TYPES.FA]);
 
 export const SPAWN_POSITIONS = [

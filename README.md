@@ -40,7 +40,9 @@ plata; los países sin jugadores conectados quedan bajo control de bots.
 
 Las acciones territoriales se pueden ejecutar durante la fase 2, tras seleccionar
 una casilla propia y cumplir los requisitos que indica cada botón. «Mover tropas»
-requiere seleccionar luego una casilla terrestre adyacente como destino.
+permite ajustar la cantidad (por defecto, todas las tropas disponibles) antes de
+seleccionar una casilla terrestre adyacente como destino. Al ocupar un espacio de
+acción, se selecciona automáticamente el otro si está vacío.
 
 ### Detener los procesos
 
@@ -70,19 +72,33 @@ correspondiente del proyecto.
 - La partida tiene cuatro países. Los países sin una persona conectada se completan
   y quedan bajo control de bots; al conectarse, cada persona ocupa un país bot libre.
 - Al comenzar cada fase de planificación, los bots ajustan sus impuestos al 15%,
-  intentan construir una fábrica y reclutar tropas hasta un máximo de 10 (o el límite
-  de armamento vigente), según el territorio y los recursos disponibles. Después
-  confirman que están listos.
+  intentan expandirse a territorio neutral, atacar países más débiles, construir fábricas
+  o ciudades y reclutar tropas hasta un máximo de 10 (o el límite de armamento vigente),
+  según el territorio y los recursos disponibles. Si no tienen una acción útil y legal
+  disponible, dejan el espacio vacío en lugar de simular una orden de mantener posición.
+  Después confirman que están listos.
 - Los jugadores humanos pueden pulsar «Forzar» para confirmar que terminaron de
   planificar. La confirmación se puede retirar mientras la fase no haya terminado.
   La fase avanza cuando todos los jugadores humanos están listos; si no, termina al
   cumplirse su temporizador de 60 segundos. Si una persona se desconecta durante la
   planificación, su país pasa a control de un bot.
-- Las órdenes de cada país se planifican en dos espacios y se resuelven al terminar la
+- Las órdenes de cada país se planifican en tres espacios y se resuelven al terminar la
   fase. El servidor valida las acciones, el territorio, la fase y los recursos.
 - Los controles de zoom permanecen anclados y visibles en el panel del mapa al
   desplazarse. Se puede acercar o alejar con los controles o la rueda, ajustar el mapa
   al panel y arrastrarlo para recorrerlo.
+- El movimiento a una casilla enemiga adyacente resuelve combate terrestre: gana el
+  atacante solo con superioridad numérica, captura al vencer y respeta los pactos PNA.
+- Las casillas se resaltan suavemente al pasar el cursor. Todos los botones reproducen
+  un sonido breve al pulsarlos.
+- El log conserva el historial completo de la partida y se sincroniza
+  desde el servidor para que también lo vean quienes se conectan o reconectan después.
+  Incluye cambios de ronda como eventos y acciones resueltas con el país que las realiza
+  y la casilla correspondiente; no antepone la ronda ni la fase a cada evento. También
+  muestra votaciones, conexiones y errores de acciones intentadas, pero no cambios de
+  fase, selecciones ni órdenes pendientes.
+- En la votación de la OI, los votos a favor o en contra usan por defecto 1 punto de
+  Influencia (el mínimo); se puede modificar la apuesta antes de registrar la papeleta.
 - La interfaz muestra las cuatro naciones, el estado de la ronda, la fase, los
   recursos y el GDI; se quitó la etiqueta «GDD v3.0» de la esquina superior.
 
@@ -116,10 +132,10 @@ Las partidas se configuran con un límite cerrado de **20 a 30 rondas** (definib
 1. **Fase 1 — Crecimiento, Recaudación y Producción:** Cálculo automático de crecimiento poblacional, asignación de Plata fiscal e ingreso de Materiales industriales.
 2. **Fase 2 — Planificación de Órdenes:** Emisión en paralelo de órdenes de construcción, movimientos de tropas, propuestas diplomáticas y ajuste impositivo.
 3. **Fase 3 — Resolución de Órdenes:** Validación final y ejecución de las acciones planificadas.
-4. **Fase 4 — Cierre de Acciones:** Cierre breve de las órdenes de la ronda. No se celebra una reunión de la OI en cada fase 4.
-5. **Fase 5 — Actualización del Tablero:** Recálculo de soberanía, actualización visual de la grilla 2D, refresco del marcador global y transición a la siguiente ronda.
+4. **Fase 4 — Cierre de Acciones:** Cierre breve de las órdenes de la ronda. En las rondas múltiplos de cinco, la reunión extraordinaria de la OI ocurre a continuación, antes de avanzar de ronda.
+5. **Fase 5 — Actualización del Tablero:** Recálculo de soberanía, actualización visual de la grilla 2D y refresco del marcador global. Tras una reunión de la OI, esta fase incrementa la ronda antes de iniciar la siguiente.
 
-Después de completar las rondas 5, 10, 15, etc., se intercala una **ronda extraordinaria de la OI de 60 segundos** antes de comenzar la siguiente ronda normal. En esa ronda no se planifican ni ejecutan acciones normales: los jugadores votan las resoluciones seleccionadas para la sesión.
+Las fases automáticas cambian inmediatamente; la planificación conserva sus 60 segundos. Al cerrar las rondas 5, 10, 15, etc., se intercala una **ronda extraordinaria de la OI de hasta 60 segundos** antes de comenzar la siguiente ronda normal. En esa ronda no se planifican ni ejecutan acciones normales: los jugadores votan las resoluciones seleccionadas para la sesión. La reunión termina antes cuando todos los jugadores humanos han votado; los bots registran su voto, incluida la abstención.
 
 ---
 
@@ -153,22 +169,26 @@ Los Materiales son indispensables para construir defensas y entrenar fuerzas arm
 
 ---
 
-#### 4. Logística Naval, Ocupación y Bloqueo Militar
+#### 4. Logística y Combate Militar
 
-Los Barcos operan sobre casillas marítimas (`AG`, `MPA`, `FA`) y cumplen triple función: transporte de tropas, escolta comercial y bloqueo costero.
+El combate implementado es terrestre. Las reglas futuras de barcos, transporte de tropas,
+escolta comercial y bloqueo costero aún no están activas.
 
-##### Mecánica Unificada de Ocupación y Bloqueo
+##### Combate terrestre
 
-Cuando un ejército o flota enemiga ingresa a una casilla productiva (`CIU`, `FT`, `FA`) que no contiene guarnición defensora, no la conquista inmediatamente ni cambia la soberanía de color del territorio, sino que activa un **Estado de Bloqueo en 2 etapas**:
+Las tropas terrestres pueden atacar una casilla terrestre adyacente que pertenezca a otro país. El combate se resuelve al finalizar la fase de planificación; la cantidad de tropas que se envía es la fuerza atacante y se compara con las tropas del país propietario en la casilla defensora. La defensa de la casilla no modifica el cálculo.
 
-1. **Ronda T+1 (Fase de Amenaza y Reacción):** La casilla pasa a estado **En Conflicto** (indicador amarillo en la esquina inferior derecha). El propietario original dispone de 1 turno completo para mover refuerzos o atacar al agresor.
-2. **Ronda T+2 (Consolidación del Bloqueo):** Si la unidad agresora no es expulsada, la casilla entra en estado **Bloqueado** (indicador rojo). A partir de este momento, el agresor roba automáticamente el **50% de la Plata o Materiales** producidos por la casilla cada turno.
+- El atacante gana solo si envía **más tropas** que las que defienden la casilla. En un empate, gana el defensor.
+- El bando perdedor pierde la mitad de sus tropas, redondeada hacia arriba; las tropas supervivientes permanecen en la casilla donde estaban. Si el bando perdedor tenía una sola tropa, la pierde.
+- Si el atacante pierde, sus supervivientes permanecen en la casilla de origen. Si gana, conquista la casilla y mueve allí todas sus tropas atacantes. Las tropas defensoras supervivientes permanecen en ella como fuerzas visitantes; pueden retirarse con una orden de movimiento posterior.
+- Atacar a un país unido por un Pacto de No Agresión vigente no está permitido. Por ahora no se requiere Casus Belli y los ataques no aplican sanciones diplomáticas.
+- No se aplica la antigua mecánica de bloqueo en dos etapas; el combate y la captura se resuelven en la misma ronda. El movimiento marítimo y el combate naval aún no están implementados.
 
 ---
 
 #### 5. Diplomacia, Organización Internacional (OI) y Casus Belli
 
-La Organización Internacional (OI) es la mesa multilateral donde los 4 estados votan resoluciones vinculantes. Las reuniones ocurren **después de completar las rondas 5, 10, 15, 20, 25 y 30**. Cada reunión es una ronda extraordinaria de 60 segundos dedicada a votar: no se planifican ni ejecutan acciones normales durante ella. La reunión no reemplaza la fase 4 de cada ronda; se inicia después de cerrar el resumen de la ronda múltiplo de cinco y antes de comenzar la siguiente.
+La Organización Internacional (OI) es la mesa multilateral donde los 4 estados votan resoluciones vinculantes. Las reuniones ocurren **al terminar las rondas 5, 10, 15, 20, 25 y 30, antes de avanzar a la siguiente ronda**. Cada reunión es una ronda extraordinaria de hasta 60 segundos dedicada a votar: no se planifican ni ejecutan acciones normales durante ella, y termina antes si todos los jugadores humanos ya votaron. Los bots registran también sus votos de abstención, por lo que no alargan la reunión innecesariamente.
 
 ##### Propuestas y selección
 Durante la fase de planificación entre reuniones, cada jugador puede proponer resoluciones pagando **2 puntos de Influencia Política** por propuesta. La propuesta se rechaza si no puede pagar el costo. En el primer ciclo se reciben propuestas durante las rondas 1 a 4; después de cada reunión se abre el periodo de propuestas para la siguiente.
@@ -178,7 +198,7 @@ En cada reunión se seleccionan como máximo **3 propuestas**, priorizando las m
 ##### Voto Ponderado por Influencia
 A diferencia de los sistemas tradicionales de un voto por país, en PAX el peso del voto depende de la Influencia Política que cada jugador apuesta en cada resolución. Cada jugador activo debe emitir una papeleta para todas las resoluciones seleccionadas, eligiendo **A favor**, **En contra** o **Abstención**, y puede apostar una cantidad entera de Influencia que no supere su reserva disponible total. Las papeletas se registran una sola vez y se revelan al cerrar la votación.
 
-La sesión de votación dura **60 segundos**. Los jugadores pueden registrar su papeleta una sola vez durante ese plazo; quien no vote al terminar no aporta votos ni apuestas. La votación no se cierra antes aunque todos hayan votado. Las papeletas se mantienen ocultas hasta el cierre; entonces se publican los totales por resolución. Al cerrar la sesión se consume toda la Influencia apostada, independientemente del resultado. Una resolución solo se aprueba si la suma apostada **A favor es estrictamente mayor** que la suma apostada **En contra**; la abstención no cuenta para comparar.
+La sesión de votación dura **hasta 60 segundos**. Los jugadores pueden registrar su papeleta una sola vez durante ese plazo; quien no vote al terminar no aporta votos ni apuestas. La votación se cierra antes si todos los jugadores humanos conectados ya votaron; los bots registran su papeleta automáticamente. Las papeletas se mantienen ocultas hasta el cierre; entonces se publican los totales por resolución. Al cerrar la sesión se consume toda la Influencia apostada, independientemente del resultado. Una resolución solo se aprueba si la suma apostada **A favor es estrictamente mayor** que la suma apostada **En contra**; la abstención no cuenta para comparar.
 
 Los países controlados por bots votan automáticamente: si una resolución los perjudica, apuestan el 50% de su Influencia disponible **En contra**; si los beneficia, apuestan el 50% **A favor**; si es neutra, se abstienen sin apostar. Si deben apostar en varias resoluciones, la apuesta de cada una se calcula sobre la Influencia restante para no exceder su reserva.
 
@@ -189,10 +209,8 @@ Los países controlados por bots votan automáticamente: si una resolución los 
 - **Zonas Desmilitarizadas (ZDM):** El proponente elige una casilla central al redactar su propuesta. La ZDM cubre esa casilla y las casillas situadas hasta dos posiciones en cada dirección (un área de 5×5, 25 casillas en el interior del mapa; se recorta en los bordes). No se pueden reclutar, estacionar ni mover tropas hacia, desde o a través de una ZDM. Al aprobarse, las tropas que ya están dentro se desplazan a la casilla propia válida más cercana. La zona permanece activa hasta la siguiente reunión de la OI.
 - **Subsidios Condicionados:** Entrega **25 de Plata** al país con menor GDI en el momento de aplicar la resolución. Crea un **Pacto de No Agresión (PNA) de 5 rondas** entre el beneficiario y cada país que votó a favor. Los países unidos por el pacto no pueden atacarse durante su vigencia.
 
-Actualmente el juego aún no implementa acciones de ataque, por lo que los PNA quedan registrados y disponibles para aplicar la restricción cuando se incorpore el combate.
-
 ##### Sistema de Casus Belli (CB)
-Cualquier ataque o bloqueo militar ejecutado sin un Casus Belli (CB) válido genera una sanción diplomática automática y otorga a la víctima un CB de represalia legal. Las causas válidas para obtener un CB incluyen:
+El diseño contempla que un ataque o bloqueo militar ejecutado sin un Casus Belli (CB) válido genere una sanción diplomática automática y otorgue a la víctima un CB de represalia legal. Las causas previstas para obtener un CB incluyen:
 - Ruptura de tratados.
 - Incumplimiento de resoluciones de la OI.
 - Impago de deuda externa.
@@ -224,8 +242,8 @@ La interfaz del mapa de PAX se rige por un lenguaje de diseño estrictamente bid
 
 ##### Arquitectura de Vista y Sistema de Soberanía
 - **Vista Cenital Plana (Top-Down):** El tablero se observa perpendicularmente desde arriba. La grilla está compuesta por casillas cuadradas dispuestas en una matriz uniforme.
-- **Bordes de Soberanía de Jugador:** El territorio perteneciente a cada jugador se delimita mediante un borde exterior continuo de color sólido único (ej. Amarillo, Rojo, Verde, Morado).
-- **Límites Internos:** Las divisiones provinciales o internas entre casillas de un mismo país se marcan con líneas finas de color blanco.
+- **Bordes de Soberanía de Jugador:** Todos los bordes de las casillas de un país usan el color de ese país (ej. Amarillo, Rojo, Verde, Morado).
+- **Fronteras Compartidas:** El borde entre casillas de dos países distintos se marca en blanco.
 - **Casillas Neutrales:** Todas las casillas marítimas o terrestres no reclamadas no poseen ningún borde de color exterior.
 
 ##### Composición Inicial y Cambio de Capital
@@ -250,49 +268,52 @@ Cada casilla del tablero está codificada mediante un color de fondo según su c
 | **Azul Marítimo (`#3182CE`)** | `FA` | Fábrica Acuática | Plataforma industrial de extracción y rendimiento marítimo (+2/turno). |
 
 ##### Anatomía Posicional de la Casilla
-Cada casilla individual funciona como una tarjeta modular limpia con un diseño estandarizado para sus datos:
+En el mapa, cada casilla conserva el color de terreno y su icono. La información visual se limita a:
 
-- **Esquina Superior Izquierda — Escudo (`[DEF]`):** Nivel de fortificación y resistencia de la casilla.
-- **Esquina Superior Derecha — Siglas (`[TIPO]`):** Siglas alfanuméricas del tipo de terreno (`CAP`, `CIU`, `TR`, `MPT`, `FT`, `AG`, `MPA`, `FA`).
-- **Centro — Ilustración Central:** Dibujo lineal simplificado representativo de la estructura o terreno.
-- **Inferior Izquierda — Población / Materiales:** Habitantes residentes (icono silueta de personas) y tasa de producción de Materiales (icono caja/flecha).
-- **Inferior Derecha — Fuerza Militar / Plata:** Potencia de combate (icono espadas) e ingresos por impuestos de Plata (icono moneda/bolsa).
-- **Esquina Inferior Derecha — Indicador de Estado:** Círculo de color que marca el estado operativo:
-  - 🟢 **Verde:** Normal.
-  - 🟡 **Amarillo:** En Conflicto.
-  - 🔴 **Rojo:** Bloqueada.
+- **Esquina superior izquierda:** Defensa (`D`) cuando la casilla tiene defensa.
+- **Centro:** Icono del terreno o estructura.
+- **Parte inferior izquierda:** Población (`P`) cuando corresponde.
+- **Parte inferior derecha:** Tropas representadas mediante pequeños círculos.
+
+El mapa no muestra las siglas del tipo de casilla ni el indicador circular de estado.
+El inspector de la casilla seleccionada conserva el detalle completo, incluido el tipo,
+el número exacto de tropas y el estado operativo (`NORMAL`, `CONFLICT` o `BLOCKED`).
 
 El mapa inicial mide 30×30. La mayoría de sus casillas de tierra, al igual que el agua,
 son neutrales; cada país ocupa un enclave terrestre pequeño que incluye una Capital y
 una Ciudad. Cada casilla conserva coordenadas, país (o neutral), tipo, población, tropas,
 defensa, edificio y estado (`NORMAL`, `CONFLICT` o `BLOCKED`). Al seleccionarla con un
-clic, el inspector muestra estos valores; las casillas sin país no llevan borde de soberanía.
+clic, el inspector muestra estos valores; el cursor resalta suavemente la casilla
+señalada y las casillas sin país no llevan borde de soberanía.
 El agua se genera en cuerpos conectados de mar (sin charcos aislados) y un río continuo,
 que se distingue con un tono azul más claro.
 El tablero se ajusta al panel al iniciar; la rueda del ratón permite acercar y alejar,
 los controles ofrecen zoom y ajuste al panel, y se puede desplazar arrastrando el mapa
 o usando las barras de desplazamiento.
 La pantalla principal distribuye el estado de la nación, impuestos, acciones, votaciones
-y registro de eventos en un panel lateral; muestra las fases, ronda, recursos y GDI en la
+y el log en un panel lateral; muestra las fases, ronda, recursos y GDI en la
 barra superior; y mantiene el mapa y el inspector de casillas visibles en el área central
 y el panel derecho. En desarrollo, los países sin cliente conectado los controla la IA;
 un cliente que se conecta reclama un país bot libre. La fase de planificación dura 60
 segundos y las rondas avanzan automáticamente. El inspector ofrece acciones de ciudad,
 fábrica, reclutamiento y traslado de capital; cada acción se habilita solo si coinciden
 la fase, la soberanía, el tipo de casilla y los recursos, y el servidor vuelve a validar
-esas condiciones antes de aplicarla. Cada jugador dispone de dos espacios de acción que
+esas condiciones antes de aplicarla. Cada jugador dispone de tres espacios de acción que
 puede reemplazar o vaciar libremente durante la fase 2; las órdenes guardadas (incluidas
 las decisiones de la IA) se ejecutan únicamente cuando expira el temporizador de esa fase,
 al entrar en la fase 3.
 Los jugadores humanos conectados también pueden usar «Forzar» para marcarse listos;
 la fase 2 termina inmediatamente cuando todos lo han hecho, o automáticamente al
-expirar los 60 segundos. El menú superior permite reanudar o terminar la partida y
+expirar los 60 segundos. Los cambios entre las demás fases son inmediatos. El menú superior permite reanudar o terminar la partida y
 volver al menú principal.
-Para mover tropas, se selecciona primero su casilla de origen y después el destino terrestre
-adyacente; ambos quedan resaltados y el movimiento se guarda en un espacio. Al entrar en
-tierra neutral, las tropas ocupan la casilla y esta pasa a tener como propietario al país
-que la reclamó. El reclutamiento y el movimiento permiten elegir la cantidad de tropas,
+El log conserva y muestra el historial completo de la partida, incluidas
+las acciones resueltas de todos los países. Para mover tropas, se selecciona primero su
+casilla de origen y después cualquier destino terrestre adyacente (tierra, materia
+prima terrestre, fábrica terrestre, ciudad o capital); ambos quedan
+resaltados y el movimiento se guarda en un espacio. Entrar en territorio neutral lo
+reclama; entrar en territorio extranjero inicia un combate al resolverse las órdenes.
+El reclutamiento y el movimiento permiten elegir la cantidad de tropas,
 limitada por los recursos disponibles y las órdenes ya reservadas en el otro espacio.
 «Forzar» se puede alternar para retirar la confirmación antes de que todos estén listos.
-El límite exterior continuo de las casillas
-propias usa el color de su nación y las divisiones internas usan líneas claras.
+Todos los bordes de cada país usan el color nacional, mientras que las fronteras
+compartidas entre países son blancas.

@@ -24,6 +24,7 @@ export class PhaseManager {
   startLoop() {
     if (this.running) return;
     this.running = true;
+    this.gameState.recordEvent(`Comienza la ronda ${this.gameState.currentRound}.`);
     this.transitionToPhase(GAME_PHASES.PHASE_1_STATS);
   }
 
@@ -38,9 +39,9 @@ export class PhaseManager {
         if (this.gameState.currentRound > 1) {
           EconomyEngine.processRoundEconomy(this.gameState);
         }
-        this.gameState.timeRemaining = 1;
+        this.gameState.timeRemaining = 0;
         this.notifyState();
-        this.schedulePhase(GAME_PHASES.PHASE_2_DECISIONS, 1000);
+        this.schedulePhase(GAME_PHASES.PHASE_2_DECISIONS, 0);
         break;
       case GAME_PHASES.PHASE_2_DECISIONS:
         this.secondsRemaining = TIMINGS.DECISION_PHASE_DURATION;
@@ -56,26 +57,26 @@ export class PhaseManager {
       case GAME_PHASES.PHASE_3_RESOLUTION:
         this.gameState.lastActionResolutions = this.gameState.resolvePlannedActions();
         this.gameState.actionResolutionId += 1;
-        this.gameState.timeRemaining = 2;
+        this.gameState.timeRemaining = 0;
         this.notifyState();
-        this.schedulePhase(GAME_PHASES.PHASE_4_GLOBAL_OI, 2000);
+        this.schedulePhase(GAME_PHASES.PHASE_4_GLOBAL_OI, 0);
         break;
       case GAME_PHASES.PHASE_4_GLOBAL_OI:
-        this.gameState.timeRemaining = 2;
-        this.notifyState();
-        this.schedulePhase(GAME_PHASES.PHASE_5_SUMMARY, 2000);
-        break;
-      case GAME_PHASES.PHASE_5_SUMMARY: {
-        const completedRound = this.gameState.currentRound;
-        this.gameState.currentRound += 1;
-        this.gameState.timeRemaining = 3;
+        this.gameState.timeRemaining = 0;
         this.notifyState();
         this.schedulePhase(
-          completedRound % 5 === 0
+          this.gameState.currentRound % 5 === 0
             ? GAME_PHASES.PHASE_6_OI_SESSION
-            : GAME_PHASES.PHASE_1_STATS,
-          3000
+            : GAME_PHASES.PHASE_5_SUMMARY,
+          0
         );
+        break;
+      case GAME_PHASES.PHASE_5_SUMMARY: {
+        this.gameState.currentRound += 1;
+        this.gameState.recordEvent(`Comienza la ronda ${this.gameState.currentRound}.`);
+        this.gameState.timeRemaining = 0;
+        this.notifyState();
+        this.schedulePhase(GAME_PHASES.PHASE_1_STATS, 0);
         break;
       }
       case GAME_PHASES.PHASE_6_OI_SESSION:
@@ -84,6 +85,18 @@ export class PhaseManager {
       default:
         throw new Error(`Fase de juego desconocida: ${nextPhase}`);
     }
+  }
+
+  getPhaseName(phase) {
+    const names = {
+      [GAME_PHASES.PHASE_1_STATS]: 'Crecimiento y recaudación',
+      [GAME_PHASES.PHASE_2_DECISIONS]: 'Planificación de órdenes',
+      [GAME_PHASES.PHASE_3_RESOLUTION]: 'Resolución de acciones',
+      [GAME_PHASES.PHASE_4_GLOBAL_OI]: 'Cierre de acciones',
+      [GAME_PHASES.PHASE_5_SUMMARY]: 'Actualización del tablero',
+      [GAME_PHASES.PHASE_6_OI_SESSION]: 'Reunión de la OI'
+    };
+    return names[phase] || 'Fase desconocida';
   }
 
   schedulePhase(phase, delay) {
@@ -132,6 +145,10 @@ export class PhaseManager {
     const session = InternationalOrganizationEngine.startSession(this.gameState);
     this.gameState.timeRemaining = session.timeRemaining;
     this.notifyState();
+    if (InternationalOrganizationEngine.haveAllPlayersVoted(this.gameState)) {
+      this.completeOISession();
+      return;
+    }
     this.startOITimer();
   }
 
@@ -158,13 +175,26 @@ export class PhaseManager {
     return false;
   }
 
+  checkOIVotes() {
+    if (
+      this.running
+      && !this.paused
+      && this.gameState.currentPhase === GAME_PHASES.PHASE_6_OI_SESSION
+      && InternationalOrganizationEngine.haveAllPlayersVoted(this.gameState)
+    ) {
+      this.completeOISession();
+      return true;
+    }
+    return false;
+  }
+
   completeOISession() {
     if (!this.running || this.paused || this.gameState.currentPhase !== GAME_PHASES.PHASE_6_OI_SESSION) return;
     this.stopOITimer();
     InternationalOrganizationEngine.finishSession(this.gameState);
-    this.gameState.timeRemaining = 2;
+    this.gameState.timeRemaining = 0;
     this.notifyState();
-    this.schedulePhase(GAME_PHASES.PHASE_1_STATS, 2000);
+    this.schedulePhase(GAME_PHASES.PHASE_5_SUMMARY, 0);
   }
 
   stopOITimer() {

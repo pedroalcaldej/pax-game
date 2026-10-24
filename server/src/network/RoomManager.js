@@ -16,6 +16,7 @@ export class Room {
   start() {
     if (this.gameState.gameStarted) return false;
     this.gameState.gameStarted = true;
+    this.gameState.recordEvent('La partida ha comenzado.');
     this.phaseManager.startLoop();
     return true;
   }
@@ -53,6 +54,8 @@ export class Room {
       return { ok: true, paused: this.gameState.isPaused, eligible: false };
     }
     const changed = this.phaseManager.setPaused(Boolean(paused));
+    if (changed) this.gameState.recordEvent(paused ? 'La partida se pausó.' : 'La partida se reanudó.');
+    if (changed) this.publishState(this.gameState.getState());
     return { ok: true, paused: this.gameState.isPaused, eligible: true, changed };
   }
 

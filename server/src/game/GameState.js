@@ -5,11 +5,15 @@
 import { generateInitialGrid } from '../../../shared/MapGenerator.js';
 import {
   ECONOMIC_POLICY,
+  ACTION_SLOT_COUNT,
+  LAND_TERRAIN,
   MAP_CONFIG,
   NATIONS,
   TERRAIN_TYPES
 } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
+
+const createEmptyActionSlots = () => Array(ACTION_SLOT_COUNT).fill(null);
 
 export class GameState {
   constructor() {
@@ -24,6 +28,8 @@ export class GameState {
     this.seed = Date.now();
     this.actionResolutionId = 0;
     this.lastActionResolutions = [];
+    this.eventHistory = [];
+    this.nextEventId = 1;
     this.oiProposals = [];
     this.nextOIProposalId = 1;
     this.oiSession = null;
@@ -56,7 +62,7 @@ export class GameState {
           population: 0,
           industry: 0
         },
-        plannedActions: [null, null],
+        plannedActions: createEmptyActionSlots(),
         phaseReady: false,
         taxRate: ECONOMIC_POLICY.DEFAULT_TAX_RATE,
         resources: {
@@ -66,6 +72,18 @@ export class GameState {
         }
       });
     });
+  }
+
+  recordEvent(message) {
+    const event = {
+      id: this.nextEventId,
+      round: this.currentRound,
+      phase: this.currentPhase,
+      message
+    };
+    this.nextEventId += 1;
+    this.eventHistory.push(event);
+    return event;
   }
 
   addPlayer(socketId, playerName, playerId) {
@@ -141,6 +159,7 @@ export class GameState {
     }
 
     player.phaseReady = Boolean(ready);
+    this.recordEvent(`${player.name} ${player.phaseReady ? 'confirmó' : 'retiró'} que está listo.`);
     const participants = Array.from(this.players.values());
     const readyCount = participants.filter((entry) => entry.phaseReady).length;
     return {
@@ -161,11 +180,14 @@ export class GameState {
       return { ok: false, message: 'La orden de planificación no es válida.' };
     }
     const { slot, plannedAction } = action;
-    if (!Number.isInteger(slot) || slot < 0 || slot > 1) {
-      return { ok: false, message: 'Selecciona uno de los dos espacios de acción.' };
+    if (!Number.isInteger(slot) || slot < 0 || slot >= ACTION_SLOT_COUNT) {
+      return { ok: false, message: `Selecciona uno de los ${ACTION_SLOT_COUNT} espacios de acción.` };
     }
 
-    player.plannedActions ||= [null, null];
+    player.plannedActions = Array.from(
+      { length: ACTION_SLOT_COUNT },
+      (_, index) => player.plannedActions?.[index] ?? null
+    );
     if (plannedAction == null) {
       player.plannedActions[slot] = null;
       return { ok: true, message: `Espacio ${slot + 1} de acción vaciado.` };
@@ -191,7 +213,8 @@ export class GameState {
       BUILD_FACTORY: 'Construir fábrica',
       RECRUIT_TROOP: 'Reclutar tropa',
       MOVE_CAPITAL: 'Trasladar capital',
-      MOVE_TROOPS: 'Mover tropas'
+      MOVE_TROOPS: 'Mover tropas',
+      HOLD_POSITION: 'Mantener posición'
     };
     return names[type] || 'Acción';
   }
@@ -201,7 +224,14 @@ export class GameState {
       return { ok: false, message: 'La casilla seleccionada no es válida.' };
     }
     const tile = this.grid[action.y]?.[action.x];
-    if (!tile || tile.ownerId !== player.id) {
+    if (!tile) {
+      return { ok: false, message: 'La casilla seleccionada no es válida.' };
+    }
+    if (action.type === 'MOVE_TROOPS') {
+      if (this.getTroopsForPlayerOnTile(tile, player.id) <= 0) {
+        return { ok: false, message: 'No hay tropas propias en la casilla de origen.' };
+      }
+    } else if (tile.ownerId !== player.id) {
       return { ok: false, message: 'Solo puedes planificar acciones sobre tu propio territorio.' };
     }
 
@@ -279,13 +309,11 @@ export class GameState {
         break;
       case 'MOVE_TROOPS': {
         const destination = this.grid[action.targetY]?.[action.targetX];
-        if (!destination || (destination.ownerId != null && destination.ownerId !== player.id)) {
-          return { ok: false, message: 'El destino debe ser neutral o pertenecer a tu país.' };
-        }
+        if (!destination) return { ok: false, message: 'Selecciona una casilla de destino válida.' };
         if (Math.abs(tile.x - destination.x) + Math.abs(tile.y - destination.y) !== 1) {
           return { ok: false, message: 'El destino debe ser una casilla terrestre adyacente.' };
         }
-        if (destination.type !== TERRAIN_TYPES.TR && destination.type !== TERRAIN_TYPES.MPT) {
+        if (!LAND_TERRAIN.has(destination.type)) {
           return { ok: false, message: 'Las tropas solo pueden avanzar sobre tierra.' };
         }
         if (
@@ -293,6 +321,17 @@ export class GameState {
           || InternationalOrganizationEngine.isInActiveDmz(this, destination.x, destination.y)
         ) {
           return { ok: false, message: 'No se pueden mover tropas hacia, desde o a través de una Zona Desmilitarizada.' };
+        }
+        if (
+          destination.ownerId != null
+          && destination.ownerId !== player.id
+          && InternationalOrganizationEngine.arePlayersBoundByPact(
+            this,
+            player.id,
+            destination.ownerId
+          )
+        ) {
+          return { ok: false, message: 'El Pacto de No Agresión impide atacar a este país.' };
         }
         if (otherActions.some((planned) => (
           planned.type === 'MOVE_TROOPS'
@@ -307,12 +346,15 @@ export class GameState {
           ))
           .reduce((sum, planned) => sum + planned.troops, 0);
         const troops = action.troops ?? tile.troops;
-        if (!Number.isInteger(troops) || troops < 1 || troops > tile.troops - otherTroops) {
+        const availableTroops = this.getTroopsForPlayerOnTile(tile, player.id);
+        if (!Number.isInteger(troops) || troops < 1 || troops > availableTroops - otherTroops) {
           return { ok: false, message: 'La cantidad de tropas supera las disponibles para planificar.' };
         }
         action.troops = troops;
         return { ok: true };
       }
+      case 'HOLD_POSITION':
+        return player.isBot ? { ok: true } : { ok: false, message: 'Esta acción está reservada para los bots.' };
       default:
         return { ok: false, message: 'La acción no está disponible.' };
     }
@@ -350,7 +392,7 @@ export class GameState {
   resolvePlannedActions() {
     const results = [];
     for (const player of this.players.values()) {
-      const plannedActions = player.plannedActions || [null, null];
+      const plannedActions = player.plannedActions || createEmptyActionSlots();
       for (let slot = 0; slot < plannedActions.length; slot += 1) {
         const action = plannedActions[slot];
         if (!action) continue;
@@ -370,8 +412,16 @@ export class GameState {
           message: result.message || (result.ok ? 'Acción realizada.' : 'No se pudo realizar la acción.'),
           ...result
         });
+        if (action.type !== 'HOLD_POSITION') {
+          const coordinates = action.type === 'MOVE_TROOPS'
+            ? ` desde (${action.x}, ${action.y}) hasta (${action.targetX}, ${action.targetY})`
+            : ` en (${action.x}, ${action.y})`;
+          this.recordEvent(result.ok
+            ? `${player.name}: ${this.getActionName(action.type)}${coordinates}.`
+            : `${player.name}: ${this.getActionName(action.type)}${coordinates} no realizada: ${result.message || 'No se pudo realizar la acción.'}`);
+        }
       }
-      player.plannedActions = [null, null];
+      player.plannedActions = createEmptyActionSlots();
     }
     return results;
   }
@@ -382,28 +432,124 @@ export class GameState {
     if (
       !source
       || !destination
-      || source.ownerId !== player.id
-      || (destination.ownerId != null && destination.ownerId !== player.id)
-      || (destination.type !== TERRAIN_TYPES.TR && destination.type !== TERRAIN_TYPES.MPT)
+      || this.getTroopsForPlayerOnTile(source, player.id) < action.troops
+      || !LAND_TERRAIN.has(destination.type)
       || Math.abs(source.x - destination.x) + Math.abs(source.y - destination.y) !== 1
-      || source.troops < action.troops
       || InternationalOrganizationEngine.isInActiveDmz(this, source?.x, source?.y)
       || InternationalOrganizationEngine.isInActiveDmz(this, destination?.x, destination?.y)
     ) {
       return { ok: false, message: 'El movimiento ya no es válido o atraviesa una Zona Desmilitarizada.' };
     }
-    source.troops -= action.troops;
+    if (
+      destination.ownerId != null
+      && destination.ownerId !== player.id
+      && InternationalOrganizationEngine.arePlayersBoundByPact(
+        this,
+        player.id,
+        destination.ownerId
+      )
+    ) {
+      return { ok: false, message: 'El Pacto de No Agresión impide atacar a este país.' };
+    }
+
+    if (destination.ownerId != null && destination.ownerId !== player.id) {
+      const defenderId = destination.ownerId;
+      const defenderTroops = this.getTroopsForPlayerOnTile(destination, defenderId);
+      const attackerWins = action.troops > defenderTroops;
+      if (!attackerWins) {
+        const attackerSurvivors = Math.floor(action.troops / 2);
+        this.removeTroopsFromPlayerOnTile(source, player.id, action.troops - attackerSurvivors);
+        return {
+          ok: true,
+          message: attackerSurvivors
+            ? `Ataque rechazado: ${player.name} pierde ${action.troops - attackerSurvivors} tropas y se retira.`
+            : `Ataque rechazado: ${player.name} pierde todas sus tropas y se retira.`,
+          combat: {
+            attackerId: player.id,
+            defenderId,
+            attackerTroops: action.troops,
+            defenderTroops,
+            winnerId: defenderId,
+            attackerSurvivors,
+            defenderSurvivors: defenderTroops
+          }
+        };
+      }
+
+      const defenderSurvivors = Math.floor(defenderTroops / 2);
+      this.removeTroopsFromPlayerOnTile(source, player.id, action.troops);
+      destination.troops = Math.max(0, (destination.troops || 0) - defenderTroops + defenderSurvivors);
+      if (defenderSurvivors > 0) {
+        destination.visitingTroops ||= {};
+        destination.visitingTroops[defenderId] = (
+          destination.visitingTroops[defenderId] || 0
+        ) + defenderSurvivors;
+      }
+      destination.ownerId = player.id;
+      destination.nationId = player.nationId;
+      destination.troops += action.troops;
+      return {
+        ok: true,
+        message: defenderSurvivors
+          ? `Victoria de ${player.name}: territorio conquistado; ${defenderSurvivors} tropas enemigas supervivientes permanecen en la casilla.`
+          : `Victoria de ${player.name}: territorio conquistado; la guarnición fue derrotada.`,
+        claimed: true,
+        combat: {
+          attackerId: player.id,
+          defenderId,
+          attackerTroops: action.troops,
+          defenderTroops,
+          winnerId: player.id,
+          attackerSurvivors: action.troops,
+          defenderSurvivors
+        }
+      };
+    }
+
+    if (source.ownerId === player.id) {
+      source.troops -= action.troops;
+    } else {
+      source.visitingTroops[player.id] -= action.troops;
+      source.troops -= action.troops;
+      if (source.visitingTroops[player.id] === 0) delete source.visitingTroops[player.id];
+      if (Object.keys(source.visitingTroops).length === 0) delete source.visitingTroops;
+    }
     destination.troops = (destination.troops || 0) + action.troops;
     const claimed = destination.ownerId == null;
     if (claimed) {
       destination.ownerId = player.id;
       destination.nationId = player.nationId;
+    } else if (destination.ownerId !== player.id) {
+      destination.visitingTroops ||= {};
+      destination.visitingTroops[player.id] = (destination.visitingTroops[player.id] || 0) + action.troops;
     }
     return {
       ok: true,
       message: claimed ? 'Territorio neutral reclamado.' : 'Tropas trasladadas.',
       claimed
     };
+  }
+
+  removeTroopsFromPlayerOnTile(tile, playerId, count) {
+    if (count <= 0) return;
+    if (tile.ownerId === playerId) {
+      tile.troops = Math.max(0, (tile.troops || 0) - count);
+      return;
+    }
+    tile.visitingTroops[playerId] -= count;
+    tile.troops = Math.max(0, (tile.troops || 0) - count);
+    if (tile.visitingTroops[playerId] === 0) delete tile.visitingTroops[playerId];
+    if (Object.keys(tile.visitingTroops).length === 0) delete tile.visitingTroops;
+  }
+
+  getTroopsForPlayerOnTile(tile, playerId) {
+    const visitingTroops = tile.visitingTroops || {};
+    if (tile.ownerId === playerId) {
+      const foreignTroops = Object.values(visitingTroops)
+        .reduce((sum, count) => sum + count, 0);
+      return Math.max(0, (tile.troops || 0) - foreignTroops);
+    }
+    return visitingTroops[playerId] || 0;
   }
 
   applyPlayerAction(player, tile, type, action = {}) {
@@ -487,6 +633,10 @@ export class GameState {
         tile.defense = 4;
         return { ok: true, message: 'Capital trasladada.' };
       }
+      case 'HOLD_POSITION':
+        return player.isBot
+          ? { ok: true, message: 'Las tropas mantienen la posición.' }
+          : { ok: false, message: 'Esta acción está reservada para los bots.' };
       default:
         return { ok: false, message: 'Acción no reconocida.' };
     }
@@ -498,51 +648,185 @@ export class GameState {
       if (!player.isBot) continue;
       if (!resetReadiness && player.phaseReady) continue;
       player.phaseReady = false;
-      player.plannedActions = [null, null];
+      player.plannedActions = createEmptyActionSlots();
       player.taxRate = 0.15;
 
-      const factoryTile = this.grid.flat().find((tile) => (
-        tile.ownerId === player.id
-        && [TERRAIN_TYPES.TR, TERRAIN_TYPES.MPT, TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA].includes(tile.type)
-        && !tile.building
-        && !InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)
-      ));
-      if (factoryTile) {
-        this.planBotAction(player, {
-          type: 'BUILD_FACTORY',
-          x: factoryTile.x,
-          y: factoryTile.y
-        }, 0);
+      const expansion = this.findBotExpansion(player, 0);
+      if (expansion) {
+        this.planBotAction(player, expansion, 0);
       }
 
-      const troopLimit = this.oiPolicies.armamentLimit ?? 10;
-      const currentTroops = InternationalOrganizationEngine.countTroops(this, player.id);
-      const recruitTile = this.grid.flat().find((tile) => (
-        tile.ownerId === player.id
-        && !InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)
-      ));
-      if (recruitTile && currentTroops < troopLimit) {
-        const count = Math.min(
-          troopLimit - currentTroops,
-          Math.floor(player.resources.SILVER / 5),
-          Math.floor(player.resources.MATERIALS / 2)
-        );
-        if (count > 0) {
-          this.planBotAction(player, {
-            type: 'RECRUIT_TROOP',
-            x: recruitTile.x,
-            y: recruitTile.y,
-            count
-          }, 1);
-        }
+      let slot = player.plannedActions.findIndex((action) => !action);
+      let factory = this.findBotBuildAction(player, 'BUILD_FACTORY', slot);
+      if (factory) {
+        this.planBotAction(player, factory, slot);
+      }
+
+      for (slot = 0; slot < player.plannedActions.length; slot += 1) {
+        if (player.plannedActions[slot]) continue;
+        const recruitment = this.findBotRecruitment(player, slot);
+        if (recruitment) this.planBotAction(player, recruitment, slot);
+      }
+
+      for (let slot = 0; slot < player.plannedActions.length; slot += 1) {
+        if (player.plannedActions[slot]) continue;
+        const extraAction = this.findBotExpansion(player, slot)
+          || this.findBotAttack(player, slot)
+          || this.findBotBuildAction(player, 'BUILD_FACTORY', slot)
+          || this.findBotBuildAction(player, 'BUILD_CITY', slot);
+        if (!extraAction) continue;
+        this.planBotAction(player, extraAction, slot);
       }
       player.phaseReady = true;
     }
   }
 
+  findBotExpansion(player, slot = 0) {
+    const directions = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    const sources = this.grid.flat()
+      .filter((tile) => (
+        tile.ownerId === player.id
+        && tile.troops > 0
+        && !InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)
+      ))
+      .sort((left, right) => right.troops - left.troops);
+
+    for (const source of sources) {
+      for (const [dx, dy] of directions) {
+        const targetX = source.x + dx;
+        const targetY = source.y + dy;
+        const target = this.grid[targetY]?.[targetX];
+        if (
+          !target
+          || target.ownerId != null
+          || !LAND_TERRAIN.has(target.type)
+          || InternationalOrganizationEngine.isInActiveDmz(this, targetX, targetY)
+        ) {
+          continue;
+        }
+        const alreadyMoved = (player.plannedActions || [])
+          .filter((planned) => planned?.type === 'MOVE_TROOPS'
+            && planned.x === source.x && planned.y === source.y)
+          .reduce((sum, planned) => sum + planned.troops, 0);
+        const availableTroops = this.getTroopsForPlayerOnTile(source, player.id) - alreadyMoved;
+        const troops = Math.max(1, Math.floor(availableTroops / 2));
+        const action = {
+          type: 'MOVE_TROOPS',
+          x: source.x,
+          y: source.y,
+          targetX,
+          targetY,
+          troops
+        };
+        if (this.validatePlannedAction(player, action, slot).ok) return action;
+      }
+    }
+    return null;
+  }
+
+  findBotAttack(player, slot) {
+    const directions = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    const sources = this.grid.flat()
+      .filter((tile) => (
+        tile.ownerId === player.id
+        && this.getTroopsForPlayerOnTile(tile, player.id) > 0
+        && !InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)
+      ))
+      .sort((left, right) => right.troops - left.troops);
+
+    for (const source of sources) {
+      const alreadyMoved = (player.plannedActions || [])
+        .filter((planned) => planned?.type === 'MOVE_TROOPS'
+          && planned.x === source.x && planned.y === source.y)
+        .reduce((sum, planned) => sum + planned.troops, 0);
+      const availableTroops = this.getTroopsForPlayerOnTile(source, player.id) - alreadyMoved;
+      if (availableTroops < 1) continue;
+
+      for (const [dx, dy] of directions) {
+        const target = this.grid[source.y + dy]?.[source.x + dx];
+        if (
+          !target
+          || target.ownerId == null
+          || target.ownerId === player.id
+          || !LAND_TERRAIN.has(target.type)
+          || InternationalOrganizationEngine.isInActiveDmz(this, target.x, target.y)
+        ) {
+          continue;
+        }
+        const defenders = this.getTroopsForPlayerOnTile(target, target.ownerId);
+        const troops = defenders + 1;
+        if (troops > availableTroops) continue;
+        const action = {
+          type: 'MOVE_TROOPS',
+          x: source.x,
+          y: source.y,
+          targetX: target.x,
+          targetY: target.y,
+          troops
+        };
+        if (this.validatePlannedAction(player, action, slot).ok) return action;
+      }
+    }
+    return null;
+  }
+
+  findBotBuildAction(player, type, slot) {
+    const candidates = this.grid.flat().filter((tile) => {
+      if (tile.ownerId !== player.id || tile.building) return false;
+      if (InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)) return false;
+      if (type === 'BUILD_CITY') return tile.type === TERRAIN_TYPES.TR;
+      return [TERRAIN_TYPES.TR, TERRAIN_TYPES.MPT, TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA]
+        .includes(tile.type);
+    });
+    for (const tile of candidates) {
+      const action = { type, x: tile.x, y: tile.y };
+      if (this.validatePlannedAction(player, action, slot).ok) return action;
+    }
+    return null;
+  }
+
+  findBotRecruitment(player, slot) {
+    const troopLimit = this.oiPolicies.armamentLimit ?? 10;
+    const currentTroops = InternationalOrganizationEngine.countTroops(this, player.id);
+    const plannedRecruitment = player.plannedActions
+      .filter((action) => action?.type === 'RECRUIT_TROOP')
+      .reduce((sum, action) => sum + action.count, 0);
+    const reservedSilver = player.plannedActions
+      .filter(Boolean)
+      .reduce((sum, action) => sum + this.getSilverCost(action), 0);
+    const reservedMaterials = player.plannedActions
+      .filter(Boolean)
+      .reduce((sum, action) => sum + this.getMaterialCost(action), 0);
+    const count = Math.min(
+      troopLimit - currentTroops - plannedRecruitment,
+      Math.floor((player.resources.SILVER - reservedSilver) / 5),
+      Math.floor((player.resources.MATERIALS - reservedMaterials) / 2)
+    );
+    if (count < 1) return null;
+
+    for (const tile of this.grid.flat()) {
+      if (
+        tile.ownerId !== player.id
+        || InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)
+      ) {
+        continue;
+      }
+      const action = {
+        type: 'RECRUIT_TROOP',
+        x: tile.x,
+        y: tile.y,
+        count
+      };
+      if (this.validatePlannedAction(player, action, slot).ok) return action;
+    }
+    return null;
+  }
+
   planBotAction(player, action, slot) {
     const validation = this.validatePlannedAction(player, action, slot);
-    if (validation.ok) player.plannedActions[slot] = action;
+    if (!validation.ok) return false;
+    player.plannedActions[slot] = action;
+    return true;
   }
 
   allPlayersReady() {
@@ -583,6 +867,7 @@ export class GameState {
       isPaused: this.isPaused,
       actionResolutionId: this.actionResolutionId,
       lastActionResolutions: this.lastActionResolutions,
+      eventHistory: this.eventHistory,
       currentPhase: this.currentPhase,
       timeRemaining: this.timeRemaining,
       currentRound: this.currentRound,

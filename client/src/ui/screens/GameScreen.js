@@ -8,6 +8,7 @@ import { TaxSlider } from '../components/TaxSlider.js';
 import { Scoreboard } from '../components/Scoreboard.js';
 import { socket } from '../../network/SocketClient.js';
 import {
+  ACTION_SLOT_COUNT,
   MAP_CONFIG,
   NATIONS,
   OI_RESOLUTIONS,
@@ -221,14 +222,8 @@ const STYLES = `
   .pax-event-log { max-height: 120px; overflow: auto; padding: 8px 9px; border: 1px solid #202c41; border-radius: 6px; background: #070d1c; color: #a9b5c8; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
   .pax-event-entry + .pax-event-entry { margin-top: 6px; }
   .pax-center { min-width: 0; min-height: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr) auto 37px; padding: 0 14px; background: #050a19; }
-  .pax-map-legend { display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 0 5px 8px; color: #8c99af; font-size: 10px; }
-  .pax-legend-types, .pax-legend-status { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-  .pax-legend-item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-  .pax-legend-swatch { width: 9px; height: 9px; border-radius: 2px; }
-  .pax-legend-status .pax-legend-item { gap: 5px; }
-  .pax-status-mini { width: 8px; height: 8px; border-radius: 50%; background: var(--status-color); }
   .pax-map-viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #26334a; border-radius: 12px; background: #0d1527; box-shadow: 0 8px 24px #0005; }
-  .pax-action-slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 9px 0; }
+  .pax-action-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 9px 0; }
   .pax-action-slots-heading { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; color: #aab6c9; font-size: 10px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
   .pax-action-slots-heading small { color: #77849a; font-size: 9px; font-weight: 500; letter-spacing: 0; text-transform: none; }
   .pax-action-slot-wrap { min-width: 0; display: flex; align-items: center; gap: 6px; }
@@ -271,13 +266,12 @@ const STYLES = `
   .pax-tile-quantity { display: grid; gap: 4px; color: #97a5ba; font-size: 9px; }
   .pax-tile-quantity input { width: 100%; min-width: 0; padding: 7px 6px; border: 1px solid #35445e; border-radius: 6px; color: #e2e8f0; background: #0b1322; font: inherit; font-size: 11px; }
   .pax-tile-quantity input:disabled { opacity: .4; }
-  .pax-tile-action { width: 100%; min-height: 47px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; border: 1px solid #35445e; border-radius: 7px; color: #e2e8f0; background: #17243a; text-align: left; cursor: pointer; transition: opacity .15s, border-color .15s, background .15s; }
+  .pax-tile-action { width: 100%; min-height: 47px; display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; padding: 7px 8px; border: 1px solid #35445e; border-radius: 7px; color: #e2e8f0; background: #17243a; text-align: left; cursor: pointer; transition: opacity .15s, border-color .15s, background .15s; }
   .pax-tile-action:not(:disabled):hover { border-color: #d99d2c; background: #202b3c; }
   .pax-tile-action.is-unavailable { opacity: .38; filter: saturate(.55); cursor: not-allowed; }
-  .pax-tile-action-copy { min-width: 0; display: grid; gap: 3px; }
+  .pax-tile-action-copy { min-width: 0; display: grid; grid-template-rows: auto auto; gap: 3px; }
   .pax-tile-action-copy strong { font-size: 10px; }
   .pax-tile-action-copy small { color: #97a5ba; font-size: 9px; }
-  .pax-tile-action-cost { flex: 0 0 auto; padding: 4px 5px; border-radius: 4px; color: #e9bd58; background: #101a2c; font-size: 8px; font-weight: 800; }
   .pax-dialog { width: min(900px, calc(100vw - 32px)); max-height: min(80vh, 650px); overflow: auto; margin: auto; padding: 0; border: 1px solid #334155; border-radius: 12px; background: #0d1426; color: var(--pax-text); }
   .pax-dialog::backdrop { background: #020617c9; backdrop-filter: blur(3px); }
   .pax-dialog-heading { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--pax-border); font-weight: 900; }
@@ -325,7 +319,6 @@ const STYLES = `
     .pax-round { grid-column: 3; }
     .pax-resources { grid-column: 1 / 5; overflow-x: auto; }
     .pax-gdi-button { font-size: 10px; }
-    .pax-map-legend { align-items: start; flex-direction: column; justify-content: center; gap: 5px; padding-top: 6px; font-size: 9px; }
     .pax-center { grid-template-rows: 58px minmax(0, 1fr) auto 37px; padding-inline: 5px; }
     .pax-action-slots { gap: 6px; }
     .pax-action-slot { min-height: 54px; gap: 5px; padding: 6px; }
@@ -360,7 +353,7 @@ export class GameScreen {
     this.playerId = null;
     this.player = null;
     this.events = [];
-    this.lastEventState = null;
+    this.localEvents = [];
     this.pendingMoveSource = null;
     this.activeActionSlot = 0;
     this.startPending = false;
@@ -370,6 +363,7 @@ export class GameScreen {
     this.oiDraftBallot = {};
     this.oiSessionId = null;
     this.oiRenderKey = '';
+    this.audioContext = null;
 
     this.init();
   }
@@ -445,25 +439,12 @@ export class GameScreen {
               </div>
             </section>
             <section class="pax-panel-section">
-              <div class="pax-panel-heading"><span style="color:#8996aa">≡</span>Registro de eventos</div>
+              <div class="pax-panel-heading"><span style="color:#8996aa">≡</span>Log</div>
               <div class="pax-event-log" id="event-log" aria-live="polite"></div>
             </section>
           </aside>
           <section class="pax-center">
-            <div class="pax-map-legend">
-              <div class="pax-legend-types">
-                <span class="pax-legend-item"><i class="pax-legend-swatch" style="background:#718096"></i>Urbano (CAP/CIU)</span>
-                <span class="pax-legend-item"><i class="pax-legend-swatch" style="background:#8D5B4C"></i>Tierra (TR/MPT/FT)</span>
-                <span class="pax-legend-item"><i class="pax-legend-swatch" style="background:#3182CE"></i>Agua (AG/MPA/FA)</span>
-                <span class="pax-legend-item"><i class="pax-legend-swatch" style="background:#38BDF8"></i>Río</span>
-                <span class="pax-legend-item"><i class="pax-legend-swatch" style="background:#9333EA"></i>ZDM activa</span>
-              </div>
-              <div class="pax-legend-status">
-                <span class="pax-legend-item"><i class="pax-status-mini" style="--status-color:#22C55E"></i>Normal</span>
-                <span class="pax-legend-item"><i class="pax-status-mini" style="--status-color:#EAB308"></i>Conflicto</span>
-                <span class="pax-legend-item"><i class="pax-status-mini" style="--status-color:#EF4444"></i>Bloqueada</span>
-              </div>
-            </div>
+            <div class="pax-map-legend" aria-hidden="true"></div>
             <div class="pax-map-viewport" id="map-container"></div>
             <section class="pax-action-slots" id="action-slots" aria-label="Acciones de este turno"></section>
             <footer class="pax-map-footer">
@@ -495,6 +476,11 @@ export class GameScreen {
   }
 
   bindEvents() {
+    this.container.addEventListener('click', (event) => {
+      const button = event.target.closest?.('button');
+      if (button && !button.disabled) this.playButtonClick();
+    }, true);
+
     this.onConnect = () => {
       this.startPending = false;
       this.startError = '';
@@ -517,8 +503,6 @@ export class GameScreen {
     socket.on('disconnect', this.onDisconnect);
     socket.on('connect_error', this.onConnectError);
     socket.on(PROTOCOL.GAME_STATE_UPDATE, this.onGameState);
-    this.onActionResult = (message) => this.addEvent(message);
-    socket.on(PROTOCOL.ACTION_RESULT, this.onActionResult);
     this.onActionError = (message) => {
       this.startPending = false;
       this.startError = message;
@@ -623,6 +607,20 @@ export class GameScreen {
     });
     oiCard.addEventListener('input', () => this.captureOIDraft());
     oiCard.addEventListener('change', (event) => {
+      if (event.target.matches('[data-oi-choice]')) {
+        const proposalId = event.target.dataset.oiChoice;
+        const draft = this.oiDraftBallot[proposalId] || { choice: 'ABSTAIN', wager: 0 };
+        const wagerInput = oiCard.querySelector(`[data-oi-wager="${CSS.escape(proposalId)}"]`);
+        if (event.target.value === 'ABSTAIN') {
+          wagerInput.min = '0';
+          wagerInput.value = '0';
+        } else {
+          wagerInput.min = '1';
+          if (draft.choice === 'ABSTAIN' || Number(wagerInput.value) < 1) {
+            wagerInput.value = '1';
+          }
+        }
+      }
       this.captureOIDraft();
       if (event.target.matches('#oi-resolution-type')) {
         this.container.querySelector('#oi-select-target').hidden = (
@@ -630,6 +628,24 @@ export class GameScreen {
         );
       }
     });
+  }
+
+  playButtonClick() {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    this.audioContext ||= new AudioContextClass();
+    const now = this.audioContext.currentTime;
+    const oscillator = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(820, now);
+    oscillator.frequency.exponentialRampToValueAtTime(480, now + 0.035);
+    gain.gain.setValueAtTime(0.035, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+    oscillator.connect(gain);
+    gain.connect(this.audioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.04);
   }
 
   setGameMenuOpen(open) {
@@ -689,10 +705,13 @@ export class GameScreen {
     this.player = players.find((player) => (
       player.boundPlayerId === this.playerId || player.socketId === socket.id
     )) || null;
-    if (this.player && !Array.isArray(this.player.plannedActions)) {
-      this.player.plannedActions = [null, null];
+    if (this.player) {
+      this.player.plannedActions = Array.from(
+        { length: ACTION_SLOT_COUNT },
+        (_, index) => this.player.plannedActions?.[index] ?? null
+      );
     }
-    this.confirmedPlannedActions = (this.player?.plannedActions || [null, null]).map((action) => (
+    this.confirmedPlannedActions = (this.player?.plannedActions || Array(ACTION_SLOT_COUNT).fill(null)).map((action) => (
       action ? { ...action } : null
     ));
     if (gameState.gameStarted) this.startPending = false;
@@ -719,32 +738,27 @@ export class GameScreen {
       gameState.isPaused
     );
 
-    const round = gameState.currentRound || 1;
+    const round = gameState.oiSession?.phase === 'voting'
+      ? gameState.oiSession.meetingAfterRound
+      : gameState.currentRound || 1;
     const roundEl = this.container.querySelector('#round-value');
     roundEl.textContent = `${round}/30`;
     this.container.querySelector('#timer-value').textContent = `${gameState.timeRemaining ?? 60}s${gameState.isPaused ? ' · Pausado' : ''}`;
     this.container.querySelector('#phase-value').textContent = `Fase ${phase}: ${PHASE_LABELS[phase] || 'En curso'}`;
-    this.container.querySelector('#next-vote').textContent = `Después de ronda ${Math.ceil(round / 5) * 5}`;
+    this.container.querySelector('#next-vote').textContent = gameState.oiSession?.phase === 'voting'
+      ? `En curso · ronda ${round}`
+      : `Después de ronda ${Math.ceil(round / 5) * 5}`;
     this.updateOIPanel(gameState, round);
     this.updateNationPanel();
     this.updateResources();
     this.taxSlider.setEnabled(Boolean(this.player && phase === 2));
-    this.recordPhaseEvent(round, phase);
+    this.syncGameEventHistory(gameState.eventHistory);
 
     if (this.player && Number.isFinite(this.player.taxRate)) {
       this.taxSlider.setValue(this.player.taxRate);
       this.updateTaxMetrics(this.player.taxRate);
     } else {
       this.updateTaxMetrics(this.taxSlider.currentValue);
-    }
-    if (gameState.actionResolutionId > (this.lastActionResolutionId || 0)) {
-      this.lastActionResolutionId = gameState.actionResolutionId;
-      for (const result of gameState.lastActionResolutions || []) {
-        if (result.playerId === this.player?.id) {
-          this.addEvent(`Espacio ${result.slot}: ${result.message}`);
-        }
-      }
-
     }
   }
 
@@ -806,8 +820,8 @@ export class GameScreen {
                         <option value="ABSTAIN" ${draft.choice === 'ABSTAIN' ? 'selected' : ''}>Abstención</option>
                       </select>
                     </label>
-                    <label>Apuesta
-                      <input data-oi-wager="${escapeHTML(proposal.id)}" type="number" min="0" step="1" value="${draft.wager}" />
+                    <label>Influencia
+                      <input data-oi-wager="${escapeHTML(proposal.id)}" type="number" min="${draft.choice === 'ABSTAIN' ? 0 : 1}" step="1" value="${draft.wager}" />
                     </label>
                   </div>
                 </div>
@@ -906,11 +920,16 @@ export class GameScreen {
     const session = this.gameState?.oiSession;
     if (!socket.connected || session?.phase !== 'voting') return;
     this.captureOIDraft();
-    const ballot = session.proposals.map((proposal) => ({
-      proposalId: proposal.id,
-      choice: this.oiDraftBallot[proposal.id]?.choice || 'ABSTAIN',
-      wager: this.oiDraftBallot[proposal.id]?.wager ?? 0
-    }));
+    const ballot = session.proposals.map((proposal) => {
+      const draft = this.oiDraftBallot[proposal.id] || { choice: 'ABSTAIN', wager: 0 };
+      const wager = draft.choice === 'ABSTAIN'
+        ? 0
+        : Math.max(1, Number.isInteger(draft.wager) ? draft.wager : 1);
+      this.oiDraftBallot[proposal.id] = { choice: draft.choice, wager };
+      const input = this.container.querySelector(`[data-oi-wager="${CSS.escape(proposal.id)}"]`);
+      if (input) input.value = String(wager);
+      return { proposalId: proposal.id, choice: draft.choice, wager };
+    });
     socket.emit(PROTOCOL.SUBMIT_OI_VOTE, { roomId: 'room-1', ballot });
   }
 
@@ -936,7 +955,7 @@ export class GameScreen {
   updateActionSlots() {
     const slots = this.container.querySelector('#action-slots');
     if (!slots) return;
-    const plannedActions = this.player?.plannedActions || [null, null];
+    const plannedActions = this.player?.plannedActions || Array(ACTION_SLOT_COUNT).fill(null);
     const canPlan = Boolean(this.player && this.gameState?.currentPhase === 2);
     const labels = {
       BUILD_CITY: 'Construir ciudad',
@@ -950,7 +969,7 @@ export class GameScreen {
         <span>Acciones del turno</span>
         <small>Se ejecutan cuando termina el tiempo</small>
       </div>
-      ${[0, 1].map((slot) => {
+      ${Array.from({ length: ACTION_SLOT_COUNT }, (_, slot) => {
       const action = plannedActions[slot];
       let detail = action
         ? `Casilla (${action.x}, ${action.y})`
@@ -1008,8 +1027,22 @@ export class GameScreen {
 
   emitPlannedAction(slot, plannedAction) {
     if (!this.player) return;
-    this.player.plannedActions ||= [null, null];
+    this.player.plannedActions ||= Array(ACTION_SLOT_COUNT).fill(null);
     this.player.plannedActions[slot] = plannedAction ? { ...plannedAction } : null;
+    if (plannedAction) {
+      const nextAvailableSlot = Array.from(
+        { length: ACTION_SLOT_COUNT },
+        (_, offset) => (slot + offset + 1) % ACTION_SLOT_COUNT
+      ).find((candidate) => !this.player.plannedActions[candidate]);
+      if (nextAvailableSlot != null) this.activeActionSlot = nextAvailableSlot;
+    }
+    this.inspector.setContext(
+      this.player,
+      this.gameState?.currentPhase || 1,
+      (action) => this.handleInspectorAction(action),
+      this.activeActionSlot,
+      this.gameState?.grid
+    );
     this.updateActionSlots();
     this.updateActionHighlights();
     socket.emit(PROTOCOL.PLAYER_ACTION, {
@@ -1061,7 +1094,6 @@ export class GameScreen {
       this.pendingMoveSource = { ...action, slot: this.activeActionSlot };
       this.updateActionSlots();
       this.updateActionHighlights();
-      this.addEvent(`Origen (${action.x}, ${action.y}) marcado para el espacio ${this.activeActionSlot + 1}. Selecciona el destino.`);
       return;
     }
     this.emitPlannedAction(this.activeActionSlot, action);
@@ -1113,19 +1145,28 @@ export class GameScreen {
     this.container.querySelector('#population-value').textContent = formatValue(population);
   }
 
-  recordPhaseEvent(round, phase) {
-    const current = `${round}:${phase}`;
-    if (this.lastEventState === current) return;
-    this.lastEventState = current;
-    this.addEvent(`Ronda ${round} · Fase ${phase}: ${PHASE_LABELS[phase] || 'En curso'}.`);
+  syncGameEventHistory(history = []) {
+    const savedScrollTop = this.container.querySelector('#event-log')?.scrollTop || 0;
+    this.events = [
+      ...this.localEvents,
+      ...history.slice().reverse().map((event) => event.message)
+    ];
+    this.renderEventHistory(savedScrollTop);
   }
 
   addEvent(message) {
+    this.localEvents.unshift(message);
     this.events.unshift(message);
-    this.events = this.events.slice(0, 8);
+    this.renderEventHistory(0);
+  }
+
+  renderEventHistory(scrollTop) {
     const log = this.container.querySelector('#event-log');
     if (log) {
-      log.innerHTML = this.events.map((entry) => `<div class="pax-event-entry">› ${entry}</div>`).join('');
+      log.innerHTML = this.events
+        .map((entry) => `<div class="pax-event-entry">› ${escapeHTML(entry)}</div>`)
+        .join('');
+      log.scrollTop = scrollTop;
     }
   }
 
@@ -1148,7 +1189,6 @@ export class GameScreen {
     socket.off('connect', this.onConnect);
     socket.off('disconnect', this.onDisconnect);
     socket.off('connect_error', this.onConnectError);
-    socket.off(PROTOCOL.ACTION_RESULT, this.onActionResult);
     socket.off(PROTOCOL.ACTION_ERROR, this.onActionError);
     this.styleElement.remove();
     this.container.innerHTML = '';

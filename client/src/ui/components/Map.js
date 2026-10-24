@@ -7,10 +7,12 @@ import {
   MAP_CONFIG,
   NATION_COLORS,
   TERRAIN_COLORS,
-  TERRAIN_TYPES,
-  TILE_STATUS_COLORS
+  TERRAIN_TYPES
 } from '../../../../shared/Constants.js';
 import { generateInitialGrid } from '../../../../shared/MapGenerator.js';
+
+const NATION_BORDER_COLORS = ['#FFD21F', '#FF4B55', '#35E879', '#C16BFF'];
+const GRID_BORDER_WIDTH = 1.5;
 
 export class Map {
   /**
@@ -37,6 +39,7 @@ export class Map {
     this.selectionFromUser = false;
     this.actionHighlights = [];
     this.proposalPreview = null;
+    this.hoveredPosition = null;
     this.zoom = 1;
     this.minZoom = 0.2;
     this.maxZoom = 2;
@@ -71,6 +74,11 @@ export class Map {
     this.canvas.addEventListener('click', (event) => this.handleClick(event));
     this.canvas.addEventListener('pointerdown', (event) => this.startPan(event));
     this.canvas.addEventListener('pointermove', (event) => this.pan(event));
+    this.canvas.addEventListener('pointerleave', () => {
+      if (!this.hoveredPosition) return;
+      this.hoveredPosition = null;
+      if (this.grid) this.render(this.grid, false);
+    });
     this.canvas.addEventListener('pointerup', () => this.endPan());
     this.canvas.addEventListener('pointercancel', () => {
       this.endPan();
@@ -208,18 +216,30 @@ export class Map {
   }
 
   pan(event) {
-    this.updateProposalPreview(event);
-    if (!this.dragStart || event.pointerId !== this.dragStart.pointerId) return;
-    const deltaX = event.clientX - this.dragStart.clientX;
-    const deltaY = event.clientY - this.dragStart.clientY;
-    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
-      this.didDrag = true;
-      this.canvas.style.cursor = 'grabbing';
+    let redraw = this.updateProposalPreview(event);
+    const isActivePointer = this.dragStart && event.pointerId === this.dragStart.pointerId;
+    if (isActivePointer) {
+      const deltaX = event.clientX - this.dragStart.clientX;
+      const deltaY = event.clientY - this.dragStart.clientY;
+      if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        this.didDrag = true;
+        this.canvas.style.cursor = 'grabbing';
+      }
+      if (this.didDrag) {
+        this.container.scrollLeft = this.dragStart.scrollLeft - deltaX;
+        this.container.scrollTop = this.dragStart.scrollTop - deltaY;
+      }
     }
-    if (!this.didDrag) return;
 
-    this.container.scrollLeft = this.dragStart.scrollLeft - deltaX;
-    this.container.scrollTop = this.dragStart.scrollTop - deltaY;
+    const nextHover = this.didDrag ? null : this.getPositionAtEvent(event);
+    if (
+      nextHover?.x !== this.hoveredPosition?.x
+      || nextHover?.y !== this.hoveredPosition?.y
+    ) {
+      this.hoveredPosition = nextHover;
+      redraw = true;
+    }
+    if (redraw && this.grid) this.render(this.grid, false);
   }
 
   endPan() {
@@ -277,11 +297,8 @@ export class Map {
 
         this.ctx.fillStyle = '#ffffff';
         this.ctx.font = 'bold 6px system-ui, sans-serif';
-        this.ctx.textAlign = 'right';
-        this.ctx.textBaseline = 'top';
-        this.ctx.fillText(type, posX + this.tileSize - 2, posY + 3);
-
         this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
         const defense = tile?.defense ?? 0;
         if (defense > 0) this.ctx.fillText(`D${defense}`, posX + 3, posY + 3);
 
@@ -290,27 +307,39 @@ export class Map {
         const population = tile?.population ?? 0;
         if (population > 0) this.ctx.fillText(`P${population}`, posX + 3, posY + this.tileSize - 3);
         const troops = tile?.troops ?? 0;
-        if (troops > 0) {
-          this.ctx.textAlign = 'right';
-          this.ctx.fillText(`T${troops}`, posX + this.tileSize - 3, posY + this.tileSize - 3);
-        }
-
-        const statusColor = TILE_STATUS_COLORS[tile?.status];
-        if (statusColor) {
-          this.ctx.beginPath();
-          this.ctx.arc(posX + this.tileSize - 5, posY + this.tileSize - 5, 2, 0, Math.PI * 2);
-          this.ctx.fillStyle = statusColor;
-          this.ctx.fill();
-        }
+        this.drawTroopMarkers(troops, posX, posY);
       }
     }
 
     this.drawBorders(grid);
     this.drawDemilitarizedZones();
+    this.drawHover();
     this.drawSelection();
     this.drawProposalPreview();
     if (notifySelection && this.selectedPosition) {
       this.onTileSelected(this.getTile(grid, this.selectedPosition.x, this.selectedPosition.y));
+    }
+  }
+
+  drawTroopMarkers(troops, posX, posY) {
+    const count = Math.min(16, Math.max(0, Math.floor(troops || 0)));
+    const columns = 4;
+    const spacing = this.tileSize / 8;
+    const radius = Math.max(1, this.tileSize / 14);
+    const ctx = this.ctx;
+
+    for (let index = 0; index < count; index += 1) {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const x = posX + this.tileSize - spacing * (column + 0.75);
+      const y = posY + this.tileSize - spacing * (row + 0.75);
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = '#000000';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+      ctx.lineWidth = 0.75;
+      ctx.stroke();
     }
   }
 
@@ -395,7 +424,7 @@ export class Map {
         const posX = x * size;
         const posY = y * size;
         ctx.strokeStyle = '#334155';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = GRID_BORDER_WIDTH;
         ctx.strokeRect(
           posX + 0.5,
           posY + 0.5,
@@ -416,35 +445,19 @@ export class Map {
       for (let x = 0; x < this.cols; x++) {
         const tile = this.getTile(grid, x, y);
         if (!tile || tile.ownerId == null) continue;
-        const nationColor = this.getNationColor(tile) || '#f8fafc';
+        const nationColor = NATION_BORDER_COLORS[tile.nationId] || this.getNationColor(tile) || '#f8fafc';
         const posX = x * size;
         const posY = y * size;
 
         for (const edge of edges) {
           const neighbor = this.getTile(grid, x + edge.dx, y + edge.dy);
-          const sameOwner = neighbor?.ownerId === tile.ownerId;
-          const otherNation = neighbor?.ownerId != null && !sameOwner;
-          let x1 = posX + edge.x1 * size;
-          let y1 = posY + edge.y1 * size;
-          let x2 = posX + edge.x2 * size;
-          let y2 = posY + edge.y2 * size;
-
-          if (otherNation) {
-            const inset = 1.5;
-            if (edge.dx !== 0) {
-              x1 += edge.dx < 0 ? inset : -inset;
-              x2 += edge.dx < 0 ? inset : -inset;
-            } else {
-              y1 += edge.dy < 0 ? inset : -inset;
-              y2 += edge.dy < 0 ? inset : -inset;
-            }
-          }
-
+          const sharedBorder = neighbor?.ownerId != null
+            && neighbor.ownerId !== tile.ownerId;
           ctx.beginPath();
-          ctx.moveTo(x1, y1);
-          ctx.lineTo(x2, y2);
-          ctx.strokeStyle = sameOwner ? 'rgba(248, 250, 252, 0.75)' : nationColor;
-          ctx.lineWidth = sameOwner ? 1 : otherNation ? 2 : 3;
+          ctx.moveTo(posX + edge.x1 * size, posY + edge.y1 * size);
+          ctx.lineTo(posX + edge.x2 * size, posY + edge.y2 * size);
+          ctx.strokeStyle = sharedBorder ? '#ffffff' : nationColor;
+          ctx.lineWidth = GRID_BORDER_WIDTH;
           ctx.stroke();
         }
       }
@@ -474,6 +487,18 @@ export class Map {
     ctx.setLineDash([]);
   }
 
+  drawHover() {
+    if (!this.hoveredPosition) return;
+    const posX = this.hoveredPosition.x * this.tileSize;
+    const posY = this.hoveredPosition.y * this.tileSize;
+    const ctx = this.ctx;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.fillRect(posX + 1, posY + 1, this.tileSize - 2, this.tileSize - 2);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.42)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(posX + 1.5, posY + 1.5, this.tileSize - 3, this.tileSize - 3);
+  }
+
   drawProposalPreview() {
     if (!this.proposalPreview) return;
     const { x: centerX, y: centerY } = this.proposalPreview;
@@ -494,22 +519,26 @@ export class Map {
   }
 
   updateProposalPreview(event) {
-    if (!this.targetSelectionMode || this.dragStart) return;
+    if (!this.targetSelectionMode || this.dragStart) return false;
+    const nextPreview = this.getPositionAtEvent(event);
+    if (
+      nextPreview?.x === this.proposalPreview?.x
+      && nextPreview?.y === this.proposalPreview?.y
+    ) {
+      return false;
+    }
+    this.proposalPreview = nextPreview;
+    return true;
+  }
+
+  getPositionAtEvent(event) {
     const bounds = this.canvas.getBoundingClientRect();
     const scaleX = this.canvas.width / bounds.width;
     const scaleY = this.canvas.height / bounds.height;
     const x = Math.floor(((event.clientX - bounds.left) * scaleX) / this.tileSize);
     const y = Math.floor(((event.clientY - bounds.top) * scaleY) / this.tileSize);
     const tile = this.getTile(this.grid, x, y);
-    const nextPreview = tile ? { x: tile.x, y: tile.y } : null;
-    if (
-      nextPreview?.x === this.proposalPreview?.x
-      && nextPreview?.y === this.proposalPreview?.y
-    ) {
-      return;
-    }
-    this.proposalPreview = nextPreview;
-    this.render(this.grid, false);
+    return tile ? { x: tile.x, y: tile.y } : null;
   }
 
   handleClick(event) {
@@ -518,15 +547,11 @@ export class Map {
       return;
     }
     if (!this.grid) return;
-    const bounds = this.canvas.getBoundingClientRect();
-    const scaleX = this.canvas.width / bounds.width;
-    const scaleY = this.canvas.height / bounds.height;
-    const x = Math.floor(((event.clientX - bounds.left) * scaleX) / this.tileSize);
-    const y = Math.floor(((event.clientY - bounds.top) * scaleY) / this.tileSize);
-    const tile = this.getTile(this.grid, x, y);
+    const position = this.getPositionAtEvent(event);
+    const tile = position ? this.getTile(this.grid, position.x, position.y) : null;
     if (!tile) return;
 
-    this.selectedPosition = { x, y };
+    this.selectedPosition = position;
     this.selectionFromUser = true;
     try {
       this.render(this.grid, false);

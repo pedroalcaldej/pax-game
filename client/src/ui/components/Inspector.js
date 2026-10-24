@@ -1,8 +1,20 @@
 import {
   NATIONS,
+  TERRAIN_TYPES,
   TILE_STATUS,
   TILE_STATUS_COLORS
 } from '../../../../shared/Constants.js';
+
+const TILE_TYPE_NAMES = {
+  [TERRAIN_TYPES.CAP]: 'Capital',
+  [TERRAIN_TYPES.CIU]: 'Ciudad',
+  [TERRAIN_TYPES.TR]: 'Tierra',
+  [TERRAIN_TYPES.MPT]: 'Materia prima terrestre',
+  [TERRAIN_TYPES.FT]: 'Fábrica terrestre',
+  [TERRAIN_TYPES.AG]: 'Agua',
+  [TERRAIN_TYPES.MPA]: 'Materia prima acuática',
+  [TERRAIN_TYPES.FA]: 'Fábrica acuática'
+};
 
 const TILE_ICONS = {
   CAP: '♜',
@@ -93,12 +105,21 @@ export class Inspector {
     const movementReserved = otherActions
       .filter((action) => action.type === 'MOVE_TROOPS' && action.x === tile?.x && action.y === tile?.y)
       .reduce((sum, action) => sum + action.troops, 0);
-    const movableTroops = Math.max(0, (tile?.troops || 0) - movementReserved);
+    const visitorTroops = tile?.visitingTroops?.[this.player?.id] || 0;
+    const tileTroops = tile?.ownerId === this.player?.id
+      ? (tile.troops || 0) - Object.entries(tile.visitingTroops || {})
+        .filter(([playerId]) => playerId !== this.player.id)
+        .reduce((sum, [, count]) => sum + count, 0)
+      : visitorTroops;
+    const movableTroops = Math.max(0, tileTroops - movementReserved);
     const quantity = (type, limit, unit, field) => {
       const key = `${tile?.x}:${tile?.y}:${type}`;
-      const previous = this.actionQuantities.get(key) || 1;
-      const value = Math.min(limit, Math.max(1, previous));
-      this.actionQuantities.set(key, value);
+      const hasPrevious = this.actionQuantities.has(key);
+      const previous = hasPrevious
+        ? this.actionQuantities.get(key)
+        : type === 'MOVE_TROOPS' ? limit : 1;
+      const value = limit > 0 ? Math.min(limit, Math.max(1, previous)) : 0;
+      if (hasPrevious && limit > 0) this.actionQuantities.set(key, value);
       return { max: limit, unit, field, value };
     };
 
@@ -130,8 +151,8 @@ export class Inspector {
         title: 'Mover tropas',
         cost: `${movableTroops} tropas disponibles`,
         quantity: quantity('MOVE_TROOPS', movableTroops, 'tropas', 'troops'),
-        enabled: planningPhase && isOwned && movableTroops > 0,
-        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : 'No hay tropas disponibles para otro movimiento'
+        enabled: planningPhase && (isOwned || visitorTroops > 0) && movableTroops > 0,
+        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned && visitorTroops === 0 ? 'No hay tropas propias en esta casilla' : 'No hay tropas disponibles para otro movimiento'
       },
       {
         type: 'MOVE_CAPITAL',
@@ -167,7 +188,7 @@ export class Inspector {
       return;
     }
 
-    const type = escapeHtml(tile.type || '—');
+    const type = escapeHtml(TILE_TYPE_NAMES[tile.type] || tile.type || '—');
     const label = nation ? escapeHtml(nation.name) : 'Territorio neutral';
     const building = tile.building ? escapeHtml(tile.building) : 'Sin edificio';
     const feature = tile.waterFeature === 'RIVER'
@@ -235,7 +256,6 @@ export class Inspector {
                       <strong>${action.title}</strong>
                       <small>${action.enabled ? action.cost : action.reason}</small>
                     </span>
-                    <span class="pax-tile-action-cost">${action.cost}</span>
                   </button>
                 </div>
               `).join('')}

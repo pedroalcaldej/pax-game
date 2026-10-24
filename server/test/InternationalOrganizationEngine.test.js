@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OI_RESOLUTIONS } from '../../shared/Constants.js';
+import { OI_RESOLUTIONS, TERRAIN_TYPES } from '../../shared/Constants.js';
 import { GameState } from '../src/game/GameState.js';
 import { InternationalOrganizationEngine as OI } from '../src/game/InternationalOrganizationEngine.js';
 import { PhaseManager } from '../src/game/PhaseManager.js';
@@ -51,11 +51,11 @@ test('meeting selects the first three proposals, clears the rest, and hides ball
       proposerId: player.id
     });
   });
-  gameState.currentRound = 6;
+  gameState.currentRound = 5;
   gameState.aggressions = [{ attackerId: player.id }];
   gameState.casusBelli = [{ holderId: player.id }];
   gameState.activeDmzZones = [
-    { x: 1, y: 1, expiresAfterRound: 5 },
+    { x: 1, y: 1, expiresAfterRound: 4 },
     { x: 5, y: 5, expiresAfterRound: 10 }
   ];
 
@@ -297,7 +297,7 @@ test('a room with multiple human players cannot be paused from the menu', () => 
   room.phaseManager.stop();
 });
 
-test('a pause preserves the remaining time on an automatic phase transition', () => {
+test('a pause preserves an immediate automatic phase transition', () => {
   const { gameState } = createHumanGame();
   const phaseManager = new PhaseManager(gameState, () => {});
   phaseManager.running = true;
@@ -307,13 +307,13 @@ test('a pause preserves the remaining time on an automatic phase transition', ()
   phaseManager.setPaused(true);
   assert.equal(phaseManager.transitionTimer, null);
   assert.equal(phaseManager.pausedTransition.phase, 5);
-  assert.ok(phaseManager.pausedTransition.remaining > 0);
+  assert.equal(phaseManager.pausedTransition.remaining, 0);
   phaseManager.setPaused(false);
   assert.notEqual(phaseManager.transitionTimer, null);
   phaseManager.stop();
 });
 
-test('the international meeting runs as a 60-second extra round after round five', () => {
+test('the international meeting runs before advancing round five and ends after all humans vote', () => {
   const { gameState, player } = createHumanGame();
   gameState.currentRound = 5;
   gameState.currentPhase = 4;
@@ -331,15 +331,18 @@ test('the international meeting runs as a 60-second extra round after round five
   };
 
   phaseManager.transitionToPhase(4);
+  assert.deepEqual(scheduledPhase, { phase: 6, delay: 0 });
   assert.equal(gameState.oiSession, null);
-  phaseManager.transitionToPhase(5);
-  assert.deepEqual(scheduledPhase, { phase: 6, delay: 3000 });
-  assert.equal(gameState.currentRound, 6);
+  assert.equal(gameState.currentRound, 5);
 
   phaseManager.transitionToPhase(6);
   assert.equal(gameState.oiSession.phase, 'voting');
   assert.equal(gameState.oiSession.meetingAfterRound, 5);
   assert.equal(gameState.oiSession.timeRemaining, 60);
+  assert.equal(Object.keys(gameState.oiSession.votes).length, 3);
+  assert.ok(Object.values(gameState.oiSession.votes).every(
+    (ballot) => ballot[0].choice === 'ABSTAIN'
+  ));
 
   OI.submitVote(gameState, player.socketId, [{
     proposalId: 'armament',
@@ -347,8 +350,43 @@ test('the international meeting runs as a 60-second extra round after round five
     wager: 0
   }]);
   assert.equal(OI.haveAllPlayersVoted(gameState), true);
-  assert.equal(gameState.oiSession.phase, 'voting');
-  assert.equal(gameState.oiSession.timeRemaining, 60);
+  assert.equal(phaseManager.checkOIVotes(), true);
+  assert.equal(gameState.oiSession.phase, 'complete');
+  assert.deepEqual(scheduledPhase, { phase: 5, delay: 0 });
+
+  phaseManager.transitionToPhase(5);
+  assert.equal(gameState.currentRound, 6);
+  assert.equal(
+    gameState.eventHistory.at(-1).message,
+    'Comienza la ronda 6.'
+  );
+  assert.deepEqual(scheduledPhase, { phase: 1, delay: 0 });
+  phaseManager.stop();
+});
+
+test('an all-bot meeting closes immediately after recording bot abstentions', () => {
+  const gameState = new GameState();
+  gameState.currentRound = 5;
+  gameState.oiProposals = [{
+    id: 'neutral',
+    type: OI_RESOLUTIONS.INDUSTRY_LIMIT,
+    name: 'Industry limit',
+    sequence: 1
+  }];
+  const phaseManager = new PhaseManager(gameState, () => {});
+  phaseManager.running = true;
+  let scheduledPhase;
+  phaseManager.schedulePhase = (phase, delay) => {
+    scheduledPhase = { phase, delay };
+  };
+
+  phaseManager.transitionToPhase(6);
+
+  assert.equal(gameState.oiSession.phase, 'complete');
+  assert.ok(Object.values(gameState.oiSession.votes).every(
+    (ballot) => ballot[0].choice === 'ABSTAIN'
+  ));
+  assert.deepEqual(scheduledPhase, { phase: 5, delay: 0 });
   phaseManager.stop();
 });
 
@@ -362,15 +400,58 @@ test('no international meeting is scheduled after a non-fifth round', () => {
     scheduledPhase = { phase, delay };
   };
 
-  phaseManager.transitionToPhase(5);
+  phaseManager.transitionToPhase(4);
 
-  assert.deepEqual(scheduledPhase, { phase: 1, delay: 3000 });
+  assert.deepEqual(scheduledPhase, { phase: 5, delay: 0 });
+  assert.equal(gameState.currentRound, 4);
+  assert.equal(gameState.oiSession, null);
+  assert.equal(gameState.eventHistory.length, 0);
+
+  phaseManager.transitionToPhase(5);
+  assert.deepEqual(scheduledPhase, { phase: 1, delay: 0 });
   assert.equal(gameState.currentRound, 5);
+  assert.deepEqual(gameState.eventHistory.map((event) => event.message), [
+    'Comienza la ronda 5.'
+  ]);
   assert.equal(gameState.oiSession, null);
   phaseManager.stop();
 });
 
-test('bots plan beneficial actions and are ready when a planning phase begins', () => {
+test('bots plan troop movements that claim adjacent neutral land', () => {
+  const { gameState } = createHumanGame();
+  const bot = gameState.players.get('nation-1');
+  const source = gameState.grid.flat().find((tile) => (
+    tile.ownerId === bot.id && tile.x < gameState.gridWidth - 1
+  ));
+  assert.ok(source);
+  for (const tile of gameState.grid.flat()) {
+    if (tile.ownerId === bot.id) tile.troops = 0;
+  }
+  source.troops = 4;
+  const target = gameState.grid[source.y][source.x + 1];
+  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+    const neighbor = gameState.grid[source.y + dy]?.[source.x + dx];
+    if (neighbor) neighbor.ownerId = bot.id;
+  }
+  target.ownerId = null;
+  target.nationId = null;
+  target.type = TERRAIN_TYPES.TR;
+  target.building = null;
+  target.troops = 0;
+
+  gameState.runBotDecisions();
+  const movement = bot.plannedActions.find((action) => action?.type === 'MOVE_TROOPS');
+
+  assert.deepEqual(
+    [movement.x, movement.y, movement.targetX, movement.targetY, movement.troops],
+    [source.x, source.y, target.x, target.y, 2]
+  );
+  gameState.resolvePlannedActions();
+  assert.equal(target.ownerId, bot.id);
+  assert.equal(target.troops, 2);
+});
+
+test('bots fill all three action slots with beneficial actions and are ready for planning', () => {
   const { gameState, player } = createHumanGame();
 
   gameState.runBotDecisions();
@@ -379,8 +460,362 @@ test('bots plan beneficial actions and are ready when a planning phase begins', 
   for (const bot of gameState.players.values()) {
     if (!bot.isBot) continue;
     assert.equal(bot.phaseReady, true);
-    assert.ok(bot.plannedActions.some((action) => action !== null));
+    assert.ok(bot.plannedActions.every((action) => action !== null));
   }
+});
+
+test('bots build cities when military and factory actions are unavailable', () => {
+  const { gameState } = createHumanGame();
+  const bot = gameState.players.get('nation-1');
+  const buildTiles = gameState.grid.flat().filter((tile) => tile.ownerId === bot.id).slice(0, 3);
+  assert.equal(buildTiles.length, 3);
+
+  for (const tile of gameState.grid.flat()) {
+    if (tile.ownerId !== bot.id) continue;
+    tile.type = TERRAIN_TYPES.CIU;
+    tile.building = 'CITY';
+    tile.troops = 0;
+  }
+  buildTiles.forEach((tile) => {
+    tile.type = TERRAIN_TYPES.TR;
+    tile.building = null;
+  });
+  bot.resources.SILVER = 150;
+  bot.resources.MATERIALS = 0;
+  gameState.oiPolicies.industryLimit = OI.countFactories(gameState, bot.id);
+
+  gameState.runBotDecisions();
+
+  assert.ok(bot.plannedActions.every((action) => action?.type === 'BUILD_CITY'));
+  assert.deepEqual(
+    bot.plannedActions.map(({ x, y }) => [x, y]),
+    buildTiles.map(({ x, y }) => [x, y])
+  );
+});
+
+test('bots attack a weaker enemy when no neutral land can be claimed', () => {
+  const { gameState } = createHumanGame();
+  const bot = gameState.players.get('nation-1');
+  for (const tile of gameState.grid.flat()) {
+    if (tile.ownerId == null || tile.ownerId !== bot.id) {
+      tile.ownerId = bot.id;
+      tile.nationId = bot.nationId;
+    }
+    tile.troops = 0;
+  }
+
+  const source = gameState.grid[10][10];
+  const target = gameState.grid[10][11];
+  source.ownerId = bot.id;
+  source.nationId = bot.nationId;
+  source.type = TERRAIN_TYPES.TR;
+  source.troops = 4;
+  target.ownerId = 'nation-0';
+  target.nationId = 0;
+  target.type = TERRAIN_TYPES.TR;
+  target.troops = 1;
+  bot.resources.SILVER = 0;
+  bot.resources.MATERIALS = 0;
+
+  gameState.runBotDecisions();
+
+  const attack = bot.plannedActions.find((action) => (
+    action?.type === 'MOVE_TROOPS' && action.targetX === target.x && action.targetY === target.y
+  ));
+  assert.ok(attack);
+  assert.equal(attack.troops, 2);
+  assert.equal(gameState.validatePlannedAction(bot, attack, bot.plannedActions.indexOf(attack)).ok, true);
+});
+
+test('bots leave unavailable slots empty and legacy hold orders do not appear in the log', () => {
+  const { gameState } = createHumanGame();
+  for (const bot of gameState.players.values()) {
+    if (!bot.isBot) continue;
+    bot.resources.SILVER = 0;
+    bot.resources.MATERIALS = 0;
+    for (const tile of gameState.grid.flat()) {
+      if (tile.ownerId === bot.id) tile.troops = 0;
+    }
+  }
+
+  gameState.runBotDecisions();
+
+  for (const bot of gameState.players.values()) {
+    if (!bot.isBot) continue;
+    assert.ok(bot.plannedActions.every((action) => action === null));
+  }
+
+  const bot = gameState.players.get('nation-1');
+  const tile = gameState.grid.flat().find((entry) => entry.ownerId === bot.id);
+  bot.plannedActions[0] = { type: 'HOLD_POSITION', x: tile.x, y: tile.y };
+  gameState.resolvePlannedActions();
+  assert.equal(gameState.eventHistory.length, 0);
+});
+
+test('players can plan a third action but not a fourth', () => {
+  const { gameState, player } = createHumanGame();
+  const source = gameState.grid.flat().find((tile) => (
+    tile.ownerId === player.id && tile.troops > 0 && tile.x < gameState.gridWidth - 1
+  ));
+  const destination = gameState.grid[source.y][source.x + 1];
+  source.troops = 2;
+  destination.type = TERRAIN_TYPES.TR;
+  destination.ownerId = null;
+  destination.troops = 0;
+  const action = {
+    type: 'MOVE_TROOPS',
+    x: source.x,
+    y: source.y,
+    targetX: destination.x,
+    targetY: destination.y,
+    troops: 1
+  };
+
+  const thirdAction = gameState.performPlayerAction(player.socketId, {
+    type: 'PLAN_ACTION',
+    slot: 2,
+    plannedAction: action
+  });
+  const fourthSlot = gameState.performPlayerAction(player.socketId, {
+    type: 'PLAN_ACTION',
+    slot: 3,
+    plannedAction: action
+  });
+
+  assert.equal(thirdAction.ok, true);
+  assert.deepEqual(player.plannedActions, [null, null, action]);
+  assert.equal(fourthSlot.ok, false);
+});
+
+test('game event history is retained in the public state without truncation', () => {
+  const { gameState } = createHumanGame();
+  for (let index = 0; index < 24; index += 1) {
+    gameState.recordEvent(`Evento ${index + 1}`);
+  }
+
+  const history = gameState.getState().eventHistory;
+
+  assert.equal(history.length, 24);
+  assert.deepEqual(history.map((event) => event.id), Array.from({ length: 24 }, (_, index) => index + 1));
+  assert.equal(history[0].message, 'Evento 1');
+  assert.equal(history[23].message, 'Evento 24');
+});
+
+test('planning an action does not add it to the performed event history', () => {
+  const { gameState, player } = createHumanGame();
+  const tile = gameState.grid.flat().find((entry) => entry.ownerId === player.id);
+  tile.troops = 1;
+  const destination = gameState.grid[tile.y][tile.x + 1];
+  destination.type = TERRAIN_TYPES.TR;
+  destination.ownerId = null;
+
+  const result = gameState.performPlayerAction(player.socketId, {
+    type: 'PLAN_ACTION',
+    slot: 0,
+    plannedAction: {
+      type: 'MOVE_TROOPS',
+      x: tile.x,
+      y: tile.y,
+      targetX: destination.x,
+      targetY: tile.y,
+      troops: 1
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(gameState.eventHistory.length, 0);
+});
+
+test('resolved action logs show only the country and action', () => {
+  const { gameState, player } = createHumanGame();
+  const source = gameState.grid.flat().find((tile) => (
+    tile.ownerId === player.id && tile.x < gameState.gridWidth - 1
+  ));
+  const destination = gameState.grid[source.y][source.x + 1];
+  source.troops = 2;
+  destination.type = TERRAIN_TYPES.TR;
+  destination.ownerId = null;
+  destination.troops = 0;
+  const planned = gameState.performPlayerAction(player.socketId, {
+    type: 'PLAN_ACTION',
+    slot: 0,
+    plannedAction: {
+      type: 'MOVE_TROOPS',
+      x: source.x,
+      y: source.y,
+      targetX: destination.x,
+      targetY: destination.y,
+      troops: 1
+    }
+  });
+  assert.equal(planned.ok, true);
+
+  gameState.resolvePlannedActions();
+
+  assert.deepEqual(gameState.eventHistory.map((event) => event.message), [
+    `${player.name}: Mover tropas desde (${source.x}, ${source.y}) hasta (${destination.x}, ${destination.y}).`
+  ]);
+});
+
+test('a stronger attack captures enemy territory and preserves the defeated garrison as visitors', () => {
+  const { gameState, player } = createHumanGame();
+  const source = gameState.grid.flat().find((tile) => (
+    tile.ownerId === player.id && tile.x < gameState.gridWidth - 1 && tile.troops > 0
+  ));
+  source.troops = 4;
+  const destination = gameState.grid[source.y][source.x + 1];
+  destination.ownerId = 'nation-1';
+  destination.nationId = 1;
+  destination.type = TERRAIN_TYPES.CIU;
+  destination.troops = 2;
+
+  const attack = {
+    type: 'MOVE_TROOPS',
+    x: source.x,
+    y: source.y,
+    targetX: destination.x,
+    targetY: destination.y,
+    troops: 4
+  };
+  assert.equal(gameState.validatePlannedAction(player, attack, 0).ok, true);
+  const result = gameState.resolveTroopMovement(player, attack);
+  assert.equal(result.combat.winnerId, player.id);
+  assert.equal(result.combat.defenderSurvivors, 1);
+  assert.equal(destination.ownerId, player.id);
+  assert.equal(destination.troops, 5);
+  assert.equal(destination.visitingTroops['nation-1'], 1);
+
+  const withdraw = {
+    type: 'MOVE_TROOPS',
+    x: destination.x, y: destination.y,
+    targetX: source.x, targetY: source.y,
+    troops: 4
+  };
+  assert.equal(gameState.validatePlannedAction(player, withdraw, 0).ok, true);
+  assert.equal(gameState.resolveTroopMovement(player, withdraw).ok, true);
+  assert.equal(destination.ownerId, player.id);
+  assert.equal(destination.troops, 1);
+  assert.equal(destination.visitingTroops['nation-1'], 1);
+});
+
+test('troop movement accepts every land terrain and rejects water', () => {
+  const { gameState, player } = createHumanGame();
+  const source = gameState.grid.flat().find((tile) => (
+    tile.ownerId === player.id && tile.x < gameState.gridWidth - 1 && tile.troops > 0
+  ));
+  source.troops = 5;
+  const destination = gameState.grid[source.y][source.x + 1];
+  destination.ownerId = null;
+  destination.nationId = null;
+  destination.building = null;
+  destination.troops = 0;
+
+  for (const type of [
+    TERRAIN_TYPES.TR,
+    TERRAIN_TYPES.MPT,
+    TERRAIN_TYPES.FT,
+    TERRAIN_TYPES.CIU,
+    TERRAIN_TYPES.CAP
+  ]) {
+    destination.type = type;
+    const action = {
+      type: 'MOVE_TROOPS',
+      x: source.x,
+      y: source.y,
+      targetX: destination.x,
+      targetY: destination.y,
+      troops: 1
+    };
+    assert.equal(gameState.validatePlannedAction(player, action, 0).ok, true, type);
+  }
+
+  destination.ownerId = 'nation-1';
+  destination.nationId = 1;
+  destination.troops = 1;
+  for (const type of [
+    TERRAIN_TYPES.TR,
+    TERRAIN_TYPES.MPT,
+    TERRAIN_TYPES.FT,
+    TERRAIN_TYPES.CIU,
+    TERRAIN_TYPES.CAP
+  ]) {
+    destination.type = type;
+    const attack = {
+      type: 'MOVE_TROOPS',
+      x: source.x,
+      y: source.y,
+      targetX: destination.x,
+      targetY: destination.y,
+      troops: 2
+    };
+    assert.equal(gameState.validatePlannedAction(player, attack, 0).ok, true, `enemy ${type}`);
+  }
+
+  destination.type = TERRAIN_TYPES.AG;
+  destination.ownerId = null;
+  destination.nationId = null;
+  destination.troops = 0;
+  assert.equal(gameState.validatePlannedAction(player, {
+    type: 'MOVE_TROOPS',
+    x: source.x,
+    y: source.y,
+    targetX: destination.x,
+    targetY: destination.y,
+    troops: 1
+  }, 0).ok, false);
+});
+
+test('a tie favors the defender and the attacking force loses half its troops', () => {
+  const { gameState, player } = createHumanGame();
+  const source = gameState.grid.flat().find((tile) => (
+    tile.ownerId === player.id && tile.x < gameState.gridWidth - 1 && tile.troops > 0
+  ));
+  source.troops = 4;
+  const destination = gameState.grid[source.y][source.x + 1];
+  destination.ownerId = 'nation-1';
+  destination.nationId = 1;
+  destination.type = TERRAIN_TYPES.TR;
+  destination.troops = 3;
+  const attack = {
+    type: 'MOVE_TROOPS',
+    x: source.x, y: source.y,
+    targetX: destination.x, targetY: destination.y,
+    troops: 3
+  };
+
+  const result = gameState.resolveTroopMovement(player, attack);
+
+  assert.equal(result.combat.winnerId, 'nation-1');
+  assert.equal(result.combat.attackerSurvivors, 1);
+  assert.equal(source.troops, 2);
+  assert.equal(destination.ownerId, 'nation-1');
+  assert.equal(destination.troops, 3);
+});
+
+test('a non-aggression pact prevents planning an attack', () => {
+  const { gameState, player } = createHumanGame();
+  const source = gameState.grid.flat().find((tile) => (
+    tile.ownerId === player.id && tile.x < gameState.gridWidth - 1 && tile.troops > 0
+  ));
+  const destination = gameState.grid[source.y][source.x + 1];
+  destination.ownerId = 'nation-1';
+  destination.nationId = 1;
+  destination.type = TERRAIN_TYPES.TR;
+  gameState.nonAggressionPacts.push({
+    playerIds: [player.id, 'nation-1'].sort(),
+    expiresAfterRound: 5
+  });
+  const attack = {
+    type: 'MOVE_TROOPS',
+    x: source.x, y: source.y,
+    targetX: destination.x, targetY: destination.y,
+    troops: 1
+  };
+
+  const result = gameState.validatePlannedAction(player, attack, 0);
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /Pacto de No Agresión/);
 });
 
 test('the phase ends as soon as every human is ready because bots are already ready', () => {
