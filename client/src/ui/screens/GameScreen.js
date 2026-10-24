@@ -18,8 +18,9 @@ const PHASE_LABELS = {
   1: 'Crecimiento y recaudación',
   2: 'Planificación de órdenes',
   3: 'Validación de acciones',
-  4: 'Organización Internacional',
-  5: 'Actualización del tablero'
+  4: 'Cierre de acciones',
+  5: 'Actualización del tablero',
+  6: 'Reunión extraordinaria de la OI'
 };
 
 const STYLES = `
@@ -759,7 +760,7 @@ export class GameScreen {
       status.textContent = `Votación abierta · ${session.timeRemaining}s restantes · ${this.player?.resources?.INFLUENCE || 0} de Influencia disponible.`;
       content.innerHTML = `
         <div class="pax-oi-controls">
-          <p class="pax-oi-note">Votación antes de la ronda ${session.meetingBeforeRound}. Votos registrados: ${session.votesSubmitted?.length || 0}/${gameState.players.length}. Las papeletas se revelan al cerrar la sesión.</p>
+          <p class="pax-oi-note">Reunión después de la ronda ${session.meetingAfterRound}. Votos registrados: ${session.votesSubmitted?.length || 0}/${gameState.players.length}. La sesión dura 60 segundos; las papeletas se revelan al cerrar.</p>
           ${hasVoted
             ? '<p class="pax-oi-note">Tu papeleta quedó registrada. Espera a que voten los demás o termine el plazo.</p>'
             : `${session.proposals.map((proposal) => {

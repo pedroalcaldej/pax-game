@@ -553,7 +553,7 @@ export class GameState {
       ? ({
         id: this.oiSession.id,
         phase: this.oiSession.phase,
-        meetingBeforeRound: this.oiSession.meetingBeforeRound,
+        meetingAfterRound: this.oiSession.meetingAfterRound,
         timeRemaining: this.oiSession.timeRemaining,
         proposals: this.oiSession.proposals,
         results: this.oiSession.results,

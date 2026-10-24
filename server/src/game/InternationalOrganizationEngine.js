@@ -71,7 +71,7 @@ export class InternationalOrganizationEngine {
   }
 
   static startSession(gameState) {
-    const nextRound = gameState.currentRound + 1;
+    const nextRound = gameState.currentRound;
     gameState.activeDmzZones = gameState.activeDmzZones.filter(
       (zone) => zone.expiresAfterRound >= nextRound
     );
@@ -84,9 +84,9 @@ export class InternationalOrganizationEngine {
       .map((proposal) => ({ ...proposal, votes: [] }));
     gameState.oiProposals = [];
     gameState.oiSession = {
-      id: `oi-session-${gameState.currentRound + 1}`,
+      id: `oi-session-${gameState.currentRound - 1}`,
       phase: 'voting',
-      meetingBeforeRound: nextRound,
+      meetingAfterRound: gameState.currentRound - 1,
       timeRemaining: TIMINGS.DECISION_PHASE_DURATION,
       proposals: selected,
       votes: {},
@@ -250,7 +250,7 @@ export class InternationalOrganizationEngine {
       case OI_RESOLUTIONS.DEMILITARIZED_ZONE: {
         const zone = {
           ...proposal.target,
-          expiresAfterRound: gameState.currentRound + 5
+          expiresAfterRound: gameState.currentRound + 4
         };
         gameState.activeDmzZones.push(zone);
         this.evacuateZone(gameState, zone);
@@ -264,7 +264,7 @@ export class InternationalOrganizationEngine {
           if (vote.choice !== 'FOR' || vote.playerId === beneficiary.id) continue;
           gameState.nonAggressionPacts.push({
             playerIds: [beneficiary.id, vote.playerId].sort(),
-            expiresAfterRound: gameState.currentRound + 5
+            expiresAfterRound: gameState.currentRound + 4
           });
         }
         break;

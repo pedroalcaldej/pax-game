@@ -6,11 +6,6 @@ import { GAME_PHASES, TIMINGS } from '../../../shared/Constants.js';
 import { EconomyEngine } from './EconomyEngine.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 
-const NEXT_PHASE = {
-  [GAME_PHASES.PHASE_3_RESOLUTION]: GAME_PHASES.PHASE_4_GLOBAL_OI,
-  [GAME_PHASES.PHASE_4_GLOBAL_OI]: GAME_PHASES.PHASE_5_SUMMARY
-};
-
 export class PhaseManager {
   constructor(gameState, onPhaseChangeCallback) {
     this.gameState = gameState;
@@ -62,19 +57,25 @@ export class PhaseManager {
         this.schedulePhase(GAME_PHASES.PHASE_4_GLOBAL_OI, 2000);
         break;
       case GAME_PHASES.PHASE_4_GLOBAL_OI:
-        if ((this.gameState.currentRound + 1) % 5 === 0) {
-          this.startOISession();
-          break;
-        }
         this.gameState.timeRemaining = 2;
         this.notifyState();
         this.schedulePhase(GAME_PHASES.PHASE_5_SUMMARY, 2000);
         break;
-      case GAME_PHASES.PHASE_5_SUMMARY:
+      case GAME_PHASES.PHASE_5_SUMMARY: {
+        const completedRound = this.gameState.currentRound;
         this.gameState.currentRound += 1;
         this.gameState.timeRemaining = 3;
         this.notifyState();
-        this.schedulePhase(GAME_PHASES.PHASE_1_STATS, 3000);
+        this.schedulePhase(
+          completedRound % 5 === 0
+            ? GAME_PHASES.PHASE_6_OI_SESSION
+            : GAME_PHASES.PHASE_1_STATS,
+          3000
+        );
+        break;
+      }
+      case GAME_PHASES.PHASE_6_OI_SESSION:
+        this.startOISession();
         break;
       default:
         throw new Error(`Fase de juego desconocida: ${nextPhase}`);
@@ -111,11 +112,6 @@ export class PhaseManager {
 
   startOISession() {
     const session = InternationalOrganizationEngine.startSession(this.gameState);
-    if (!session.proposals.length || InternationalOrganizationEngine.haveAllPlayersVoted(this.gameState)) {
-      this.completeOISession();
-      return;
-    }
-
     this.gameState.timeRemaining = session.timeRemaining;
     this.notifyState();
     this.oiTimer = setInterval(() => {
@@ -124,16 +120,6 @@ export class PhaseManager {
       this.notifyState();
       if (session.timeRemaining === 0) this.completeOISession();
     }, 1000);
-  }
-
-  checkOIVotes() {
-    if (
-      this.running
-      && this.gameState.currentPhase === GAME_PHASES.PHASE_4_GLOBAL_OI
-      && InternationalOrganizationEngine.haveAllPlayersVoted(this.gameState)
-    ) {
-      this.completeOISession();
-    }
   }
 
   checkDecisionReadiness() {
@@ -148,12 +134,12 @@ export class PhaseManager {
   }
 
   completeOISession() {
-    if (!this.running || this.gameState.currentPhase !== GAME_PHASES.PHASE_4_GLOBAL_OI) return;
+    if (!this.running || this.gameState.currentPhase !== GAME_PHASES.PHASE_6_OI_SESSION) return;
     this.stopOITimer();
     InternationalOrganizationEngine.finishSession(this.gameState);
     this.gameState.timeRemaining = 2;
     this.notifyState();
-    this.schedulePhase(GAME_PHASES.PHASE_5_SUMMARY, 2000);
+    this.schedulePhase(GAME_PHASES.PHASE_1_STATS, 2000);
   }
 
   stopOITimer() {

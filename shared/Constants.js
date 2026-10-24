@@ -153,6 +153,7 @@ export const GAME_PHASES = {
   PHASE_1_STATS: 1,      // Cálculo demográfico y económico
   PHASE_2_DECISIONS: 2,  // Fase activa de 60s (Impuestos, construcciones, tratados)
   PHASE_3_RESOLUTION: 3, // Resolución de acciones
-  PHASE_4_GLOBAL_OI: 4,   // Organismo Internacional / Propuestas
-  PHASE_5_SUMMARY: 5     // Resumen de ronda e índice GDI
+  PHASE_4_GLOBAL_OI: 4,  // Cierre normal de acciones
+  PHASE_5_SUMMARY: 5,    // Resumen de ronda e índice GDI
+  PHASE_6_OI_SESSION: 6  // Ronda extraordinaria de votación de la OI
 };

@@ -115,9 +115,11 @@ Las partidas se configuran con un límite cerrado de **20 a 30 rondas** (definib
 
 1. **Fase 1 — Crecimiento, Recaudación y Producción:** Cálculo automático de crecimiento poblacional, asignación de Plata fiscal e ingreso de Materiales industriales.
 2. **Fase 2 — Planificación de Órdenes:** Emisión en paralelo de órdenes de construcción, movimientos de tropas, propuestas diplomáticas y ajuste impositivo.
-3. **Fase 3 — Validación de Fondos:** Comprobación del sistema para verificar que los jugadores disponen de los fondos y materiales necesarios para ejecutar sus órdenes.
-4. **Fase 4 — Ejecución Simultánea:** Resolución simultánea de desplazamientos, batallas, bloqueos y votaciones en la Organización Internacional.
+3. **Fase 3 — Resolución de Órdenes:** Validación final y ejecución de las acciones planificadas.
+4. **Fase 4 — Cierre de Acciones:** Cierre breve de las órdenes de la ronda. No se celebra una reunión de la OI en cada fase 4.
 5. **Fase 5 — Actualización del Tablero:** Recálculo de soberanía, actualización visual de la grilla 2D, refresco del marcador global y transición a la siguiente ronda.
+
+Después de completar las rondas 5, 10, 15, etc., se intercala una **ronda extraordinaria de la OI de 60 segundos** antes de comenzar la siguiente ronda normal. En esa ronda no se planifican ni ejecutan acciones normales: los jugadores votan las resoluciones seleccionadas para la sesión.
 
 ---
 
@@ -166,7 +168,7 @@ Cuando un ejército o flota enemiga ingresa a una casilla productiva (`CIU`, `FT
 
 #### 5. Diplomacia, Organización Internacional (OI) y Casus Belli
 
-La Organización Internacional (OI) es la mesa multilateral donde los 4 estados votan resoluciones vinculantes. Las reuniones ocurren **antes de iniciar las rondas 5, 10, 15, 20, 25 y 30**. En el ciclo de fases actual, la reunión se intercala en la fase 4 de la ronda anterior, antes de que la fase 5 avance el contador de ronda.
+La Organización Internacional (OI) es la mesa multilateral donde los 4 estados votan resoluciones vinculantes. Las reuniones ocurren **después de completar las rondas 5, 10, 15, 20, 25 y 30**. Cada reunión es una ronda extraordinaria de 60 segundos dedicada a votar: no se planifican ni ejecutan acciones normales durante ella. La reunión no reemplaza la fase 4 de cada ronda; se inicia después de cerrar el resumen de la ronda múltiplo de cinco y antes de comenzar la siguiente.
 
 ##### Propuestas y selección
 Durante la fase de planificación entre reuniones, cada jugador puede proponer resoluciones pagando **2 puntos de Influencia Política** por propuesta. La propuesta se rechaza si no puede pagar el costo. En el primer ciclo se reciben propuestas durante las rondas 1 a 4; después de cada reunión se abre el periodo de propuestas para la siguiente.
@@ -176,7 +178,7 @@ En cada reunión se seleccionan como máximo **3 propuestas**, priorizando las m
 ##### Voto Ponderado por Influencia
 A diferencia de los sistemas tradicionales de un voto por país, en PAX el peso del voto depende de la Influencia Política que cada jugador apuesta en cada resolución. Cada jugador activo debe emitir una papeleta para todas las resoluciones seleccionadas, eligiendo **A favor**, **En contra** o **Abstención**, y puede apostar una cantidad entera de Influencia que no supere su reserva disponible total. Las papeletas se registran una sola vez y se revelan al cerrar la votación.
 
-La votación termina cuando todos los jugadores humanos conectados han votado o al cabo de **60 segundos**. Si un jugador no vota a tiempo, no aporta votos ni apuestas. Las papeletas se mantienen ocultas hasta el cierre; entonces se publican los totales por resolución. Al cerrar la sesión se consume toda la Influencia apostada, independientemente del resultado. Una resolución solo se aprueba si la suma apostada **A favor es estrictamente mayor** que la suma apostada **En contra**; la abstención no cuenta para comparar.
+La sesión de votación dura **60 segundos**. Los jugadores pueden registrar su papeleta una sola vez durante ese plazo; quien no vote al terminar no aporta votos ni apuestas. La votación no se cierra antes aunque todos hayan votado. Las papeletas se mantienen ocultas hasta el cierre; entonces se publican los totales por resolución. Al cerrar la sesión se consume toda la Influencia apostada, independientemente del resultado. Una resolución solo se aprueba si la suma apostada **A favor es estrictamente mayor** que la suma apostada **En contra**; la abstención no cuenta para comparar.
 
 Los países controlados por bots votan automáticamente: si una resolución los perjudica, apuestan el 50% de su Influencia disponible **En contra**; si los beneficia, apuestan el 50% **A favor**; si es neutra, se abstienen sin apostar. Si deben apostar en varias resoluciones, la apuesta de cada una se calcula sobre la Influencia restante para no exceder su reserva.
 

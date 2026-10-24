@@ -36,6 +36,7 @@ export class Map {
     this.dmzZones = [];
     this.selectionFromUser = false;
     this.actionHighlights = [];
+    this.proposalPreview = null;
     this.zoom = 1;
     this.minZoom = 0.2;
     this.maxZoom = 2;
@@ -84,7 +85,9 @@ export class Map {
 
   setTargetSelectionMode(enabled) {
     this.targetSelectionMode = Boolean(enabled);
+    if (!this.targetSelectionMode) this.proposalPreview = null;
     this.canvas.style.cursor = this.targetSelectionMode ? 'crosshair' : 'grab';
+    if (this.grid) this.render(this.grid, false);
   }
 
   setDemilitarizedZones(zones = [], redraw = true) {
@@ -205,6 +208,7 @@ export class Map {
   }
 
   pan(event) {
+    this.updateProposalPreview(event);
     if (!this.dragStart || event.pointerId !== this.dragStart.pointerId) return;
     const deltaX = event.clientX - this.dragStart.clientX;
     const deltaY = event.clientY - this.dragStart.clientY;
@@ -304,6 +308,7 @@ export class Map {
     this.drawBorders(grid);
     this.drawDemilitarizedZones();
     this.drawSelection();
+    this.drawProposalPreview();
     if (notifySelection && this.selectedPosition) {
       this.onTileSelected(this.getTile(grid, this.selectedPosition.x, this.selectedPosition.y));
     }
@@ -467,6 +472,44 @@ export class Map {
     ctx.setLineDash([4, 2]);
     ctx.strokeRect(posX + 3, posY + 3, this.tileSize - 6, this.tileSize - 6);
     ctx.setLineDash([]);
+  }
+
+  drawProposalPreview() {
+    if (!this.proposalPreview) return;
+    const { x: centerX, y: centerY } = this.proposalPreview;
+    const ctx = this.ctx;
+    for (let y = Math.max(0, centerY - 2); y <= Math.min(this.rows - 1, centerY + 2); y += 1) {
+      for (let x = Math.max(0, centerX - 2); x <= Math.min(this.cols - 1, centerX + 2); x += 1) {
+        const posX = x * this.tileSize;
+        const posY = y * this.tileSize;
+        const isCenter = x === centerX && y === centerY;
+        ctx.fillStyle = isCenter ? 'rgba(203, 213, 225, 0.45)' : 'rgba(148, 163, 184, 0.3)';
+        ctx.fillRect(posX + 2, posY + 2, this.tileSize - 4, this.tileSize - 4);
+        ctx.strokeStyle = isCenter ? '#e2e8f0' : 'rgba(226, 232, 240, 0.75)';
+        ctx.lineWidth = isCenter ? 3 : 1.5;
+        ctx.setLineDash([]);
+        ctx.strokeRect(posX + 2, posY + 2, this.tileSize - 4, this.tileSize - 4);
+      }
+    }
+  }
+
+  updateProposalPreview(event) {
+    if (!this.targetSelectionMode || this.dragStart) return;
+    const bounds = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / bounds.width;
+    const scaleY = this.canvas.height / bounds.height;
+    const x = Math.floor(((event.clientX - bounds.left) * scaleX) / this.tileSize);
+    const y = Math.floor(((event.clientY - bounds.top) * scaleY) / this.tileSize);
+    const tile = this.getTile(this.grid, x, y);
+    const nextPreview = tile ? { x: tile.x, y: tile.y } : null;
+    if (
+      nextPreview?.x === this.proposalPreview?.x
+      && nextPreview?.y === this.proposalPreview?.y
+    ) {
+      return;
+    }
+    this.proposalPreview = nextPreview;
+    this.render(this.grid, false);
   }
 
   handleClick(event) {

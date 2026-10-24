@@ -50,12 +50,12 @@ test('meeting selects the first three proposals, clears the rest, and hides ball
       proposerId: player.id
     });
   });
-  gameState.currentRound = 4;
+  gameState.currentRound = 6;
   gameState.aggressions = [{ attackerId: player.id }];
   gameState.casusBelli = [{ holderId: player.id }];
   gameState.activeDmzZones = [
-    { x: 1, y: 1, expiresAfterRound: 4 },
-    { x: 5, y: 5, expiresAfterRound: 9 }
+    { x: 1, y: 1, expiresAfterRound: 5 },
+    { x: 5, y: 5, expiresAfterRound: 10 }
   ];
 
   const session = OI.startSession(gameState);
@@ -70,7 +70,7 @@ test('meeting selects the first three proposals, clears the rest, and hides ball
   assert.equal(gameState.oiProposals.length, 0);
   assert.equal(gameState.aggressions.length, 1);
   assert.equal(gameState.casusBelli.length, 1);
-  assert.deepEqual(gameState.activeDmzZones, [{ x: 5, y: 5, expiresAfterRound: 9 }]);
+  assert.deepEqual(gameState.activeDmzZones, [{ x: 5, y: 5, expiresAfterRound: 10 }]);
   assert.equal(Object.hasOwn(publicState.oiSession, 'votes'), false);
   assert.ok(publicState.oiSession.votesSubmitted.includes(player.id));
 });
@@ -212,7 +212,7 @@ test('a demilitarized zone evacuates troops and remains active for five rounds',
   destination.type = 'TR';
   destination.building = null;
   destination.troops = 0;
-  gameState.currentRound = 4;
+  gameState.currentRound = 6;
 
   OI.applyResolution(gameState, {
     type: OI_RESOLUTIONS.DEMILITARIZED_ZONE,
@@ -223,7 +223,7 @@ test('a demilitarized zone evacuates troops and remains active for five rounds',
   assert.equal(destination.troops, 3);
   assert.equal(OI.isInActiveDmz(gameState, 12, 12), true);
   assert.equal(OI.isInActiveDmz(gameState, 13, 12), false);
-  assert.equal(gameState.activeDmzZones[0].expiresAfterRound, 9);
+  assert.equal(gameState.activeDmzZones[0].expiresAfterRound, 10);
 });
 
 test('subsidies pay the lowest-GDI country and create five-round non-aggression pacts', () => {
@@ -231,7 +231,7 @@ test('subsidies pay the lowest-GDI country and create five-round non-aggression 
   const beneficiary = gameState.players.get('nation-1');
   const supportingPlayer = gameState.players.get('nation-2');
   beneficiary.gdiPoints = 10;
-  gameState.currentRound = 4;
+  gameState.currentRound = 6;
   const silverBefore = beneficiary.resources.SILVER;
 
   OI.applyResolution(gameState, {
@@ -244,13 +244,13 @@ test('subsidies pay the lowest-GDI country and create five-round non-aggression 
 
   assert.equal(beneficiary.resources.SILVER, silverBefore + 25);
   assert.equal(OI.arePlayersBoundByPact(gameState, beneficiary.id, supportingPlayer.id), true);
-  assert.equal(gameState.nonAggressionPacts[0].expiresAfterRound, 9);
+  assert.equal(gameState.nonAggressionPacts[0].expiresAfterRound, 10);
 });
 
-test('the international meeting pauses phase four before the fifth round', () => {
+test('the international meeting runs as a 60-second extra round after round five', () => {
   const { gameState, player } = createHumanGame();
-  gameState.currentRound = 4;
-  gameState.currentPhase = 3;
+  gameState.currentRound = 5;
+  gameState.currentPhase = 4;
   gameState.oiProposals = [{
     id: 'armament',
     type: OI_RESOLUTIONS.ARMAMENT_LIMIT,
@@ -259,20 +259,48 @@ test('the international meeting pauses phase four before the fifth round', () =>
   }];
   const phaseManager = new PhaseManager(gameState, () => {});
   phaseManager.running = true;
+  let scheduledPhase;
+  phaseManager.schedulePhase = (phase, delay) => {
+    scheduledPhase = { phase, delay };
+  };
 
   phaseManager.transitionToPhase(4);
+  assert.equal(gameState.oiSession, null);
+  phaseManager.transitionToPhase(5);
+  assert.deepEqual(scheduledPhase, { phase: 6, delay: 3000 });
+  assert.equal(gameState.currentRound, 6);
+
+  phaseManager.transitionToPhase(6);
   assert.equal(gameState.oiSession.phase, 'voting');
-  assert.equal(gameState.oiSession.meetingBeforeRound, 5);
-  assert.equal(gameState.currentRound, 4);
+  assert.equal(gameState.oiSession.meetingAfterRound, 5);
+  assert.equal(gameState.oiSession.timeRemaining, 60);
 
   OI.submitVote(gameState, player.socketId, [{
     proposalId: 'armament',
     choice: 'ABSTAIN',
     wager: 0
   }]);
-  phaseManager.checkOIVotes();
-  assert.equal(gameState.oiSession.phase, 'complete');
-  assert.equal(gameState.currentRound, 4);
+  assert.equal(OI.haveAllPlayersVoted(gameState), true);
+  assert.equal(gameState.oiSession.phase, 'voting');
+  assert.equal(gameState.oiSession.timeRemaining, 60);
+  phaseManager.stop();
+});
+
+test('no international meeting is scheduled after a non-fifth round', () => {
+  const { gameState } = createHumanGame();
+  gameState.currentRound = 4;
+  const phaseManager = new PhaseManager(gameState, () => {});
+  phaseManager.running = true;
+  let scheduledPhase;
+  phaseManager.schedulePhase = (phase, delay) => {
+    scheduledPhase = { phase, delay };
+  };
+
+  phaseManager.transitionToPhase(5);
+
+  assert.deepEqual(scheduledPhase, { phase: 1, delay: 3000 });
+  assert.equal(gameState.currentRound, 5);
+  assert.equal(gameState.oiSession, null);
   phaseManager.stop();
 });
 

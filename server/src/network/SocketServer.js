@@ -157,7 +157,6 @@ export class SocketServer {
         );
         socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
         if (result.ok) {
-          room.phaseManager.checkOIVotes();
           this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
         }
       });
@@ -181,7 +180,6 @@ export class SocketServer {
                 session.botVoterIds.push(player.id);
               }
             }
-            room.phaseManager.checkOIVotes();
           }
           this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
         }
