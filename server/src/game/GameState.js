@@ -19,6 +19,7 @@ export class GameState {
     this.gameStarted = false;
     this.currentPhase = 1;
     this.timeRemaining = 60;
+    this.isPaused = false;
     this.currentRound = 1;
     this.seed = Date.now();
     this.actionResolutionId = 0;
@@ -548,6 +549,18 @@ export class GameState {
     return Array.from(this.players.values()).every((player) => player.phaseReady);
   }
 
+  calculateGDI(player) {
+    const resources = ['SILVER', 'MATERIALS', 'INFLUENCE']
+      .reduce((total, resource) => (
+        total + (Number.isFinite(player.resources?.[resource]) ? player.resources[resource] : 0)
+      ), 0);
+    const population = this.grid.flat().reduce(
+      (total, tile) => total + (tile.ownerId === player.id ? tile.population || 0 : 0),
+      0
+    );
+    return Math.floor(resources + population);
+  }
+
   getState() {
     const publicOISession = this.oiSession
       ? ({
@@ -562,8 +575,12 @@ export class GameState {
       : null;
     return {
       grid: this.grid,
-      players: Array.from(this.players.values()),
+      players: Array.from(this.players.values(), (player) => ({
+        ...player,
+        gdiPoints: this.calculateGDI(player)
+      })),
       gameStarted: this.gameStarted,
+      isPaused: this.isPaused,
       actionResolutionId: this.actionResolutionId,
       lastActionResolutions: this.lastActionResolutions,
       currentPhase: this.currentPhase,

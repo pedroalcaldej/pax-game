@@ -214,7 +214,7 @@ Todos los activos acumulados se convierten directamente a puntos con una relaci�
 - **Ejército y Flota:** 1 Punto por cada unidad militar terrestre o naval activa.
 - **Infraestructura:** 1 Punto por cada nivel de fortificación o estructura industrial edificada.
 
-El marcador muestra el puntaje actual de cada nación y su desglose. En la implementación actual, el puntaje parte de 100 y acumula puntos por población e industria al procesar la economía de cada ronda; los demás componentes de la fórmula total se incorporarán posteriormente.
+El marcador muestra Plata, Materiales, Influencia Política y Población para cada nación. El GDI actual de cada país es la suma de esos cuatro valores; la tabla ordena las naciones por ese total.
 
 ---
 

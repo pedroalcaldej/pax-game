@@ -37,6 +37,7 @@ export class SocketServer {
           socket.emit(PROTOCOL.ACTION_ERROR, 'La sala ya tiene cuatro jugadores humanos.');
           return;
         }
+        room.enforcePauseEligibility();
         const session = room.gameState.oiSession;
         if (
           wasBot
@@ -88,6 +89,22 @@ export class SocketServer {
             ? `Listo para terminar la fase (${result.readyCount}/${result.requiredCount}).`
             : `Ya no estás listo (${result.readyCount}/${result.requiredCount}).`
         );
+      });
+
+      socket.on(PROTOCOL.SET_GAME_PAUSED, ({ roomId, paused } = {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la sala antes de pausar la partida.');
+          return;
+        }
+        const result = room.setPaused(socket.id, paused);
+        if (!result.ok) {
+          socket.emit(PROTOCOL.ACTION_ERROR, result.message);
+          return;
+        }
+        if (!result.eligible && paused) {
+          socket.emit(PROTOCOL.ACTION_RESULT, 'La pausa solo está disponible cuando juegas sin otros jugadores humanos.');
+        }
       });
 
       socket.on(PROTOCOL.END_GAME, ({ roomId } = {}) => {
@@ -164,6 +181,7 @@ export class SocketServer {
       socket.on('disconnect', () => {
         for (const room of this.roomManager.rooms.values()) {
           const removed = room.gameState.removePlayer(socket.id);
+          room.enforcePauseEligibility();
           if (removed && room.gameState.currentPhase === 2) {
             room.gameState.runBotDecisions({ resetReadiness: false });
             room.phaseManager.checkDecisionReadiness();

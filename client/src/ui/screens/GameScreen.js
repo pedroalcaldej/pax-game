@@ -278,20 +278,27 @@ const STYLES = `
   .pax-tile-action-copy strong { font-size: 10px; }
   .pax-tile-action-copy small { color: #97a5ba; font-size: 9px; }
   .pax-tile-action-cost { flex: 0 0 auto; padding: 4px 5px; border-radius: 4px; color: #e9bd58; background: #101a2c; font-size: 8px; font-weight: 800; }
-  .pax-dialog { width: min(440px, calc(100vw - 32px)); max-height: min(80vh, 650px); overflow: auto; margin: auto; padding: 0; border: 1px solid #334155; border-radius: 12px; background: #0d1426; color: var(--pax-text); }
+  .pax-dialog { width: min(900px, calc(100vw - 32px)); max-height: min(80vh, 650px); overflow: auto; margin: auto; padding: 0; border: 1px solid #334155; border-radius: 12px; background: #0d1426; color: var(--pax-text); }
   .pax-dialog::backdrop { background: #020617c9; backdrop-filter: blur(3px); }
   .pax-dialog-heading { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--pax-border); font-weight: 900; }
   .pax-dialog-close { padding: 5px 9px; border: 1px solid #334155; border-radius: 5px; color: var(--pax-text); background: #172238; cursor: pointer; }
   .pax-scoreboard-wrap { padding: 12px; }
-  .pax-scoreboard-wrap > div { box-shadow: none !important; }
-  .pax-score-entry { padding: 11px 13px; border-left: 4px solid var(--score-nation-color); border-radius: 8px; background: #0f172a; }
-  .pax-score-entry-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-  .pax-score-player { color: #e2e8f0; font-size: 14px; font-weight: 700; }
-  .pax-score-total { color: #38bdf8; font-size: 14px; font-weight: 800; white-space: nowrap; }
-  .pax-score-breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 10px 0 0; padding-top: 9px; border-top: 1px solid #263249; }
-  .pax-score-breakdown div { display: grid; gap: 4px; }
-  .pax-score-breakdown dt { color: #93a1b5; font-size: 10px; }
-  .pax-score-breakdown dd { margin: 0; color: #dbe5f2; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .pax-scoreboard-status { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #263249; }
+  .pax-scoreboard-status div { display: grid; gap: 4px; }
+  .pax-scoreboard-status span, .pax-scoreboard-note { color: #93a1b5; font-size: 10px; }
+  .pax-scoreboard-status strong { color: #f2bb3b; font-size: 15px; }
+  .pax-scoreboard-clock { text-align: right; }
+  .pax-score-table-scroll { overflow-x: auto; }
+  .pax-score-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+  .pax-score-table th, .pax-score-table td { padding: 10px 12px; border-bottom: 1px solid #263249; text-align: right; font-variant-numeric: tabular-nums; }
+  .pax-score-table thead th { color: #93a1b5; background: #10192b; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+  .pax-score-table thead th:first-child, .pax-score-table tbody th { text-align: left; }
+  .pax-score-table tbody tr { border-left: 3px solid var(--score-nation-color); }
+  .pax-score-table tbody th { color: #e2e8f0; font-weight: 700; }
+  .pax-score-table tbody td { color: #cbd5e1; }
+  .pax-score-table .pax-score-total { color: #38bdf8; font-size: 14px; font-weight: 900; }
+  .pax-score-rank { display: inline-grid; width: 20px; height: 20px; margin-right: 8px; place-items: center; border-radius: 50%; color: #cbd5e1; background: #263249; font-size: 10px; }
+  .pax-scoreboard-note { margin: 10px 2px 0; }
   @media (max-width: 1100px) {
     .pax-main { grid-template-columns: 240px minmax(0, 1fr) 260px; }
     .pax-topbar { grid-template-columns: 36px 62px minmax(150px, 190px) minmax(140px, 1fr) auto 98px; gap: 6px; padding-inline: 7px; }
@@ -432,7 +439,7 @@ export class GameScreen {
             <section class="pax-panel-section">
               <div class="pax-panel-heading"><span class="pax-panel-heading-icon" style="color:#b684e8">♙</span>Organización Int. (OI)<span class="pax-oi-tag">Sesión cada 5 rondas</span></div>
               <div class="pax-oi-card">
-                <div class="pax-oi-row"><span>Próxima reunión:</span><strong id="next-vote">Antes de ronda 5</strong></div>
+                <div class="pax-oi-row"><span>Próxima reunión:</span><strong id="next-vote">Después de ronda 5</strong></div>
                 <div class="pax-oi-note" id="oi-status"></div>
                 <div id="oi-content"></div>
               </div>
@@ -529,13 +536,9 @@ export class GameScreen {
 
     const menuToggle = this.container.querySelector('#menu-toggle');
     const gameMenu = this.container.querySelector('#game-menu');
-    menuToggle.addEventListener('click', () => {
-      gameMenu.hidden = !gameMenu.hidden;
-      menuToggle.setAttribute('aria-expanded', String(!gameMenu.hidden));
-    });
+    menuToggle.addEventListener('click', () => this.setGameMenuOpen(gameMenu.hidden));
     this.container.querySelector('#menu-resume').addEventListener('click', () => {
-      gameMenu.hidden = true;
-      menuToggle.setAttribute('aria-expanded', 'false');
+      this.setGameMenuOpen(false);
     });
     this.container.querySelector('#menu-end-game').addEventListener('click', () => {
       if (!socket.connected || !this.gameState?.gameStarted) return;
@@ -629,6 +632,27 @@ export class GameScreen {
     });
   }
 
+  setGameMenuOpen(open) {
+    const gameMenu = this.container.querySelector('#game-menu');
+    const menuToggle = this.container.querySelector('#menu-toggle');
+    const shouldOpen = Boolean(open);
+    gameMenu.hidden = !shouldOpen;
+    menuToggle.setAttribute('aria-expanded', String(shouldOpen));
+    const players = this.gameState?.players || [];
+    const connectedHumans = players.filter((player) => !player.isBot && player.socketId).length;
+    if (
+      this.gameState?.gameStarted
+      && players.length === 4
+      && connectedHumans === 1
+      && socket.connected
+    ) {
+      socket.emit(PROTOCOL.SET_GAME_PAUSED, {
+        roomId: 'room-1',
+        paused: shouldOpen
+      });
+    }
+  }
+
   updateTaxMetrics(taxRate) {
     const growth = taxRate > 0 ? 1 / (100 * taxRate) : 0;
     this.container.querySelector('#tax-value').textContent = `${Math.round(taxRate * 100)}%`;
@@ -687,14 +711,20 @@ export class GameScreen {
     this.updateActionSlots();
     this.updateActionHighlights();
     this.updateForcePhaseButton(players, phase, gameState.gameStarted);
-    this.scoreboard.update(players, gameState.currentPhase, gameState.timeRemaining);
+    this.scoreboard.update(
+      players,
+      gameState.currentPhase,
+      gameState.timeRemaining,
+      gameState.grid,
+      gameState.isPaused
+    );
 
     const round = gameState.currentRound || 1;
     const roundEl = this.container.querySelector('#round-value');
     roundEl.textContent = `${round}/30`;
-    this.container.querySelector('#timer-value').textContent = `${gameState.timeRemaining ?? 60}s`;
+    this.container.querySelector('#timer-value').textContent = `${gameState.timeRemaining ?? 60}s${gameState.isPaused ? ' · Pausado' : ''}`;
     this.container.querySelector('#phase-value').textContent = `Fase ${phase}: ${PHASE_LABELS[phase] || 'En curso'}`;
-    this.container.querySelector('#next-vote').textContent = `Antes de ronda ${Math.ceil((round + 1) / 5) * 5}`;
+    this.container.querySelector('#next-vote').textContent = `Después de ronda ${Math.ceil(round / 5) * 5}`;
     this.updateOIPanel(gameState, round);
     this.updateNationPanel();
     this.updateResources();
@@ -808,7 +838,7 @@ export class GameScreen {
       : '';
     status.textContent = proposalWindow
       ? 'Puedes proponer resoluciones durante la planificación. Cada propuesta cuesta 2 de Influencia.'
-      : `Próxima sesión antes de ronda ${Math.ceil((round + 1) / 5) * 5}.`;
+      : `Próxima sesión después de ronda ${Math.ceil(round / 5) * 5}.`;
     content.innerHTML = `
       <div class="pax-oi-controls">
         ${resultsMarkup}

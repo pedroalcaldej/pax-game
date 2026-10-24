@@ -4,6 +4,7 @@ import { OI_RESOLUTIONS } from '../../shared/Constants.js';
 import { GameState } from '../src/game/GameState.js';
 import { InternationalOrganizationEngine as OI } from '../src/game/InternationalOrganizationEngine.js';
 import { PhaseManager } from '../src/game/PhaseManager.js';
+import { Room } from '../src/network/RoomManager.js';
 
 function createHumanGame() {
   const gameState = new GameState();
@@ -230,7 +231,7 @@ test('subsidies pay the lowest-GDI country and create five-round non-aggression 
   const { gameState } = createHumanGame();
   const beneficiary = gameState.players.get('nation-1');
   const supportingPlayer = gameState.players.get('nation-2');
-  beneficiary.gdiPoints = 10;
+  beneficiary.resources = { SILVER: 0, MATERIALS: 0, INFLUENCE: 0 };
   gameState.currentRound = 6;
   const silverBefore = beneficiary.resources.SILVER;
 
@@ -245,6 +246,71 @@ test('subsidies pay the lowest-GDI country and create five-round non-aggression 
   assert.equal(beneficiary.resources.SILVER, silverBefore + 25);
   assert.equal(OI.arePlayersBoundByPact(gameState, beneficiary.id, supportingPlayer.id), true);
   assert.equal(gameState.nonAggressionPacts[0].expiresAfterRound, 10);
+});
+
+test('GDI is the sum of a nation’s resources and territory population', () => {
+  const { gameState, player } = createHumanGame();
+  player.resources = { SILVER: 120, MATERIALS: 14, INFLUENCE: 7 };
+  for (const tile of gameState.grid.flat()) {
+    if (tile.ownerId === player.id) tile.population = 0;
+  }
+  const city = gameState.grid.flat().find((tile) => tile.ownerId === player.id);
+  city.population = 235;
+
+  assert.equal(gameState.calculateGDI(player), 376);
+  assert.equal(gameState.getState().players.find((entry) => entry.id === player.id).gdiPoints, 376);
+});
+
+test('a solo player can pause and resume the phase clock while the other countries are bots', () => {
+  const room = new Room('pause-test', () => {});
+  room.gameState.gameStarted = true;
+  room.gameState.currentPhase = 2;
+  const player = room.gameState.players.get('nation-0');
+  player.socketId = 'human-socket';
+  player.isBot = false;
+  room.phaseManager.running = true;
+  room.phaseManager.secondsRemaining = 37;
+  room.gameState.timeRemaining = 37;
+  room.phaseManager.startDecisionTimer();
+
+  assert.equal(room.setPaused(player.socketId, true).paused, true);
+  assert.equal(room.phaseManager.timer, null);
+  assert.equal(room.gameState.timeRemaining, 37);
+  assert.equal(room.setPaused(player.socketId, false).paused, false);
+  assert.notEqual(room.phaseManager.timer, null);
+  room.phaseManager.stop();
+});
+
+test('a room with multiple human players cannot be paused from the menu', () => {
+  const room = new Room('multiplayer-pause-test', () => {});
+  room.gameState.gameStarted = true;
+  room.phaseManager.running = true;
+  room.gameState.players.get('nation-0').socketId = 'human-one';
+  room.gameState.players.get('nation-0').isBot = false;
+  room.gameState.players.get('nation-1').socketId = 'human-two';
+  room.gameState.players.get('nation-1').isBot = false;
+
+  const result = room.setPaused('human-one', true);
+
+  assert.equal(result.eligible, false);
+  assert.equal(room.gameState.isPaused, false);
+  room.phaseManager.stop();
+});
+
+test('a pause preserves the remaining time on an automatic phase transition', () => {
+  const { gameState } = createHumanGame();
+  const phaseManager = new PhaseManager(gameState, () => {});
+  phaseManager.running = true;
+  phaseManager.transitionToPhase(4);
+
+  assert.notEqual(phaseManager.transitionTimer, null);
+  phaseManager.setPaused(true);
+  assert.equal(phaseManager.transitionTimer, null);
+  assert.equal(phaseManager.pausedTransition.phase, 5);
+  assert.ok(phaseManager.pausedTransition.remaining > 0);
+  phaseManager.setPaused(false);
+  assert.notEqual(phaseManager.transitionTimer, null);
+  phaseManager.stop();
 });
 
 test('the international meeting runs as a 60-second extra round after round five', () => {

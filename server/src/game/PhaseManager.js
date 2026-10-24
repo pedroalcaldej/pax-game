@@ -13,8 +13,12 @@ export class PhaseManager {
     this.timer = null;
     this.transitionTimer = null;
     this.oiTimer = null;
+    this.transitionDueAt = null;
+    this.scheduledPhase = null;
+    this.pausedTransition = null;
     this.secondsRemaining = TIMINGS.DECISION_PHASE_DURATION;
     this.running = false;
+    this.paused = false;
   }
 
   startLoop() {
@@ -24,7 +28,7 @@ export class PhaseManager {
   }
 
   transitionToPhase(nextPhase) {
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
     this.stopTimer();
     this.stopTransitionTimer();
     this.gameState.currentPhase = nextPhase;
@@ -83,13 +87,23 @@ export class PhaseManager {
   }
 
   schedulePhase(phase, delay) {
+    if (this.paused) {
+      this.pausedTransition = { phase, remaining: delay };
+      return;
+    }
+    this.stopTransitionTimer();
+    this.scheduledPhase = phase;
+    this.transitionDueAt = Date.now() + delay;
     this.transitionTimer = setTimeout(() => {
       this.transitionTimer = null;
+      this.transitionDueAt = null;
+      this.scheduledPhase = null;
       this.transitionToPhase(phase);
     }, delay);
   }
 
   startDecisionTimer() {
+    if (this.paused || this.timer) return;
     this.timer = setInterval(() => {
       this.secondsRemaining = Math.max(0, this.secondsRemaining - 1);
       this.gameState.timeRemaining = this.secondsRemaining;
@@ -102,7 +116,11 @@ export class PhaseManager {
   }
 
   finishDecisionPhase() {
-    if (!this.running || this.gameState.currentPhase !== GAME_PHASES.PHASE_2_DECISIONS) {
+    if (
+      !this.running
+      || this.paused
+      || this.gameState.currentPhase !== GAME_PHASES.PHASE_2_DECISIONS
+    ) {
       return false;
     }
     this.stopTimer();
@@ -114,6 +132,12 @@ export class PhaseManager {
     const session = InternationalOrganizationEngine.startSession(this.gameState);
     this.gameState.timeRemaining = session.timeRemaining;
     this.notifyState();
+    this.startOITimer();
+  }
+
+  startOITimer() {
+    if (this.paused || this.oiTimer) return;
+    const session = this.gameState.oiSession;
     this.oiTimer = setInterval(() => {
       session.timeRemaining = Math.max(0, session.timeRemaining - 1);
       this.gameState.timeRemaining = session.timeRemaining;
@@ -125,6 +149,7 @@ export class PhaseManager {
   checkDecisionReadiness() {
     if (
       this.running
+      && !this.paused
       && this.gameState.currentPhase === GAME_PHASES.PHASE_2_DECISIONS
       && this.gameState.allPlayersReady()
     ) {
@@ -134,7 +159,7 @@ export class PhaseManager {
   }
 
   completeOISession() {
-    if (!this.running || this.gameState.currentPhase !== GAME_PHASES.PHASE_6_OI_SESSION) return;
+    if (!this.running || this.paused || this.gameState.currentPhase !== GAME_PHASES.PHASE_6_OI_SESSION) return;
     this.stopOITimer();
     InternationalOrganizationEngine.finishSession(this.gameState);
     this.gameState.timeRemaining = 2;
@@ -155,9 +180,47 @@ export class PhaseManager {
   }
 
   stopTransitionTimer() {
-    if (!this.transitionTimer) return;
-    clearTimeout(this.transitionTimer);
-    this.transitionTimer = null;
+    if (this.transitionTimer) {
+      clearTimeout(this.transitionTimer);
+      this.transitionTimer = null;
+    }
+    this.transitionDueAt = null;
+  }
+
+  setPaused(paused) {
+    if (!this.running || this.paused === paused) return false;
+    this.paused = paused;
+    this.gameState.isPaused = paused;
+
+    if (paused) {
+      this.stopTimer();
+      this.stopOITimer();
+      if (this.transitionTimer) {
+        this.pausedTransition = {
+          phase: this.scheduledPhase,
+          remaining: Math.max(0, this.transitionDueAt - Date.now())
+        };
+        this.stopTransitionTimer();
+        this.scheduledPhase = null;
+      }
+    } else {
+      const transition = this.pausedTransition;
+      this.pausedTransition = null;
+      if (transition) {
+        this.schedulePhase(transition.phase, transition.remaining);
+      } else if (this.gameState.currentPhase === GAME_PHASES.PHASE_2_DECISIONS) {
+        if (this.gameState.allPlayersReady()) {
+          this.finishDecisionPhase();
+        } else {
+          this.startDecisionTimer();
+        }
+      } else if (this.gameState.currentPhase === GAME_PHASES.PHASE_6_OI_SESSION) {
+        this.startOITimer();
+      }
+    }
+
+    this.notifyState();
+    return true;
   }
 
   stop() {
@@ -165,6 +228,7 @@ export class PhaseManager {
     this.stopTimer();
     this.stopTransitionTimer();
     this.stopOITimer();
+    this.gameState.isPaused = false;
   }
 
   notifyState() {

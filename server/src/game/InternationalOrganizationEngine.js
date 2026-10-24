@@ -300,7 +300,10 @@ export class InternationalOrganizationEngine {
 
   static getLowestGDIPlayer(gameState) {
     return Array.from(gameState.players.values())
-      .sort((left, right) => left.gdiPoints - right.gdiPoints || left.nationId - right.nationId)[0];
+      .sort((left, right) => (
+        gameState.calculateGDI(left) - gameState.calculateGDI(right)
+        || left.nationId - right.nationId
+      ))[0];
   }
 
   static countTroops(gameState, playerId) {

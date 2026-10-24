@@ -42,6 +42,28 @@ export class Room {
     return result;
   }
 
+  setPaused(socketId, paused) {
+    const players = Array.from(this.gameState.players.values());
+    const humans = players.filter((player) => !player.isBot && player.socketId);
+    const caller = humans.find((player) => player.socketId === socketId);
+    if (!caller || !this.gameState.gameStarted) {
+      return { ok: false, message: 'No puedes pausar esta partida.' };
+    }
+    if (players.length !== 4 || humans.length !== 1) {
+      return { ok: true, paused: this.gameState.isPaused, eligible: false };
+    }
+    const changed = this.phaseManager.setPaused(Boolean(paused));
+    return { ok: true, paused: this.gameState.isPaused, eligible: true, changed };
+  }
+
+  enforcePauseEligibility() {
+    const humans = Array.from(this.gameState.players.values())
+      .filter((player) => !player.isBot && player.socketId);
+    if (this.gameState.isPaused && humans.length !== 1) {
+      this.phaseManager.setPaused(false);
+    }
+  }
+
   end() {
     const connectedPlayers = Array.from(this.gameState.players.values())
       .filter((player) => player.socketId)

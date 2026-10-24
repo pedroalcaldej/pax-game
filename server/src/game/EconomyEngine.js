@@ -29,9 +29,7 @@ export class EconomyEngine {
       const industryPoints = factoryCount * 2;
       player.gdiBreakdown.population += populationPoints;
       player.gdiBreakdown.industry += industryPoints;
-      player.gdiPoints = player.gdiBreakdown.initial
-        + player.gdiBreakdown.population
-        + player.gdiBreakdown.industry;
+      player.gdiPoints = gameState.calculateGDI(player);
     }
   }
 }
