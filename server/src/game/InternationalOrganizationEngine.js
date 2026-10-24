@@ -69,9 +69,7 @@ export class InternationalOrganizationEngine {
     gameState.activeDmzZones = gameState.activeDmzZones.filter(
       (zone) => zone.expiresAfterRound >= nextRound
     );
-    gameState.nonAggressionPacts = gameState.nonAggressionPacts.filter(
-      (pact) => pact.expiresAfterRound >= nextRound
-    );
+    gameState.expireTreatiesAfterRound(nextRound - 1);
     const selected = [...gameState.oiProposals]
       .sort((left, right) => left.sequence - right.sequence)
       .slice(0, 3)
@@ -347,7 +345,9 @@ export class InternationalOrganizationEngine {
 
   static arePlayersBoundByPact(gameState, firstPlayerId, secondPlayerId) {
     return gameState.nonAggressionPacts.some((pact) => (
-      pact.playerIds.includes(firstPlayerId) && pact.playerIds.includes(secondPlayerId)
+      pact.expiresAfterRound >= gameState.currentRound
+      && pact.playerIds.includes(firstPlayerId)
+      && pact.playerIds.includes(secondPlayerId)
     ));
   }
 }

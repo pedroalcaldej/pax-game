@@ -2,7 +2,7 @@
  * Controla el reloj y la transición automática de rondas.
  */
 
-import { GAME_PHASES, TIMINGS } from '../../../shared/Constants.js';
+import { GAME_PHASES, MAX_ROUNDS, TIMINGS } from '../../../shared/Constants.js';
 import { EconomyEngine } from './EconomyEngine.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 
@@ -72,9 +72,17 @@ export class PhaseManager {
         );
         break;
       case GAME_PHASES.PHASE_5_SUMMARY: {
+        this.gameState.timeRemaining = 0;
+        this.gameState.expireTreatiesAfterRound(this.gameState.currentRound);
+        if (this.gameState.currentRound >= MAX_ROUNDS) {
+          this.gameState.gameOver = true;
+          this.gameState.recordEvent(`La partida terminó en la ronda ${MAX_ROUNDS}.`);
+          this.stop();
+          this.notifyState();
+          break;
+        }
         this.gameState.currentRound += 1;
         this.gameState.recordEvent(`Comienza la ronda ${this.gameState.currentRound}.`);
-        this.gameState.timeRemaining = 0;
         this.notifyState();
         this.schedulePhase(GAME_PHASES.PHASE_1_STATS, 0);
         break;

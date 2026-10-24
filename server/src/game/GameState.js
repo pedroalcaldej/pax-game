@@ -9,11 +9,13 @@ import {
   LAND_TERRAIN,
   MAP_CONFIG,
   NATIONS,
+  TREATY_TYPES,
   TERRAIN_TYPES
 } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 
 const createEmptyActionSlots = () => Array(ACTION_SLOT_COUNT).fill(null);
+const TREATY_DURATION_ROUNDS = 5;
 
 export class GameState {
   constructor() {
@@ -21,6 +23,7 @@ export class GameState {
     this.gridHeight = MAP_CONFIG.GRID_HEIGHT;
     this.players = new Map();
     this.gameStarted = false;
+    this.gameOver = false;
     this.currentPhase = 1;
     this.timeRemaining = 60;
     this.isPaused = false;
@@ -39,6 +42,9 @@ export class GameState {
     };
     this.activeDmzZones = [];
     this.nonAggressionPacts = [];
+    this.freeTradeTreaties = [];
+    this.treatyOffers = [];
+    this.nextTreatyOfferId = 1;
     this.aggressions = [];
     this.casusBelli = [];
 
@@ -84,6 +90,197 @@ export class GameState {
     this.nextEventId += 1;
     this.eventHistory.push(event);
     return event;
+  }
+
+  proposeTreaty(socketId, treaty = {}) {
+    const { recipientId, type } = treaty || {};
+    const proposer = Array.from(this.players.values()).find(
+      (player) => player.socketId === socketId && !player.isBot
+    );
+    if (!proposer) return { ok: false, message: 'No tienes un país activo en esta partida.' };
+    if (!this.gameStarted || this.gameOver) {
+      return { ok: false, message: 'Solo puedes proponer tratados durante una partida activa.' };
+    }
+    if (!Object.values(TREATY_TYPES).includes(type)) {
+      return { ok: false, message: 'El tipo de tratado seleccionado no es válido.' };
+    }
+    const recipient = this.players.get(recipientId);
+    if (!recipient || recipient.id === proposer.id) {
+      return { ok: false, message: 'Selecciona otro país como destinatario del tratado.' };
+    }
+
+    const playerIds = [proposer.id, recipient.id].sort();
+    const activeTreaties = type === TREATY_TYPES.NON_AGGRESSION_PACT
+      ? this.nonAggressionPacts
+      : this.freeTradeTreaties;
+    if (activeTreaties.some((treaty) => (
+      treaty.expiresAfterRound >= this.currentRound
+      && treaty.playerIds.join('|') === playerIds.join('|')
+    ))) {
+      return { ok: false, message: 'Ya existe un tratado vigente entre esos países.' };
+    }
+    if (this.treatyOffers.some((offer) => (
+      offer.type === type
+      && [offer.proposerId, offer.recipientId].sort().join('|') === playerIds.join('|')
+    ))) {
+      return { ok: false, message: 'Ya hay una propuesta de ese tratado pendiente.' };
+    }
+
+    const offer = {
+      id: `treaty-offer-${this.nextTreatyOfferId++}`,
+      type,
+      proposerId: proposer.id,
+      proposerName: proposer.name,
+      recipientId: recipient.id,
+      recipientName: recipient.name,
+      proposedRound: this.currentRound
+    };
+
+    if (recipient.isBot) {
+      const accepted = this.botAcceptsTreaty(recipient, proposer, type);
+      this.applyTreatyResponse(offer, accepted);
+      return {
+        ok: true,
+        accepted,
+        message: accepted
+          ? `${recipient.name} aceptó el tratado.`
+          : `${recipient.name} rechazó el tratado.`
+      };
+    }
+
+    this.treatyOffers.push(offer);
+    this.recordEvent(`${proposer.name} propuso ${this.getTreatyName(type)} a ${recipient.name}.`);
+    return { ok: true, accepted: null, message: `Propuesta de ${this.getTreatyName(type)} enviada a ${recipient.name}.` };
+  }
+
+  respondToTreaty(socketId, offerId, accepted) {
+    const recipient = Array.from(this.players.values()).find(
+      (player) => player.socketId === socketId && !player.isBot
+    );
+    if (!recipient) return { ok: false, message: 'No tienes un país activo en esta partida.' };
+    if (!this.gameStarted || this.gameOver) {
+      return { ok: false, message: 'Solo puedes responder a tratados durante una partida activa.' };
+    }
+    const offerIndex = this.treatyOffers.findIndex((offer) => (
+      offer.id === offerId && offer.recipientId === recipient.id
+    ));
+    if (offerIndex < 0) return { ok: false, message: 'La propuesta de tratado ya no está disponible.' };
+    if (typeof accepted !== 'boolean') {
+      return { ok: false, message: 'Indica si aceptas o rechazas el tratado.' };
+    }
+
+    const offer = this.treatyOffers[offerIndex];
+    const activeTreaties = offer.type === TREATY_TYPES.NON_AGGRESSION_PACT
+      ? this.nonAggressionPacts
+      : this.freeTradeTreaties;
+    if (accepted && activeTreaties.some((treaty) => (
+      treaty.expiresAfterRound >= this.currentRound
+      && treaty.playerIds.join('|') === [offer.proposerId, offer.recipientId].sort().join('|')
+    ))) {
+      this.treatyOffers.splice(offerIndex, 1);
+      return { ok: false, message: 'Ya existe un tratado vigente entre esos países.' };
+    }
+    this.treatyOffers.splice(offerIndex, 1);
+    this.applyTreatyResponse(offer, accepted);
+    return {
+      ok: true,
+      message: accepted
+        ? `Aceptaste el ${this.getTreatyName(offer.type)}.`
+        : `Rechazaste el ${this.getTreatyName(offer.type)}.`
+    };
+  }
+
+  cancelTreatyOffer(socketId, offerId) {
+    const proposer = Array.from(this.players.values()).find(
+      (player) => player.socketId === socketId && !player.isBot
+    );
+    if (!proposer) return { ok: false, message: 'No tienes un país activo en esta partida.' };
+    if (!this.gameStarted || this.gameOver) {
+      return { ok: false, message: 'Solo puedes cancelar propuestas durante una partida activa.' };
+    }
+    const offerIndex = this.treatyOffers.findIndex((offer) => (
+      offer.id === offerId && offer.proposerId === proposer.id
+    ));
+    if (offerIndex < 0) {
+      return { ok: false, message: 'Solo puedes cancelar tus propuestas que sigan pendientes.' };
+    }
+    const [offer] = this.treatyOffers.splice(offerIndex, 1);
+    this.recordEvent(`${proposer.name} canceló la propuesta de ${this.getTreatyName(offer.type)} a ${offer.recipientName}.`);
+    return { ok: true, message: `Propuesta de ${this.getTreatyName(offer.type)} cancelada.` };
+  }
+
+  applyTreatyResponse(offer, accepted) {
+    const treaty = {
+      playerIds: [offer.proposerId, offer.recipientId].sort(),
+      expiresAfterRound: this.currentRound + TREATY_DURATION_ROUNDS - 1
+    };
+    if (accepted && offer.type === TREATY_TYPES.NON_AGGRESSION_PACT) {
+      this.nonAggressionPacts.push(treaty);
+    } else if (accepted && offer.type === TREATY_TYPES.FREE_TRADE) {
+      this.freeTradeTreaties.push(treaty);
+    }
+    const proposer = this.players.get(offer.proposerId);
+    const recipient = this.players.get(offer.recipientId);
+    this.recordEvent(accepted
+      ? `${proposer?.name || offer.proposerName} y ${recipient?.name || offer.recipientName} firmaron el ${this.getTreatyName(offer.type)}.`
+      : `${recipient?.name || offer.recipientName} rechazó el ${this.getTreatyName(offer.type)} propuesto por ${proposer?.name || offer.proposerName}.`);
+  }
+
+  expireTreatiesAfterRound(round) {
+    const playerNames = (playerIds) => playerIds
+      .map((id) => this.players.get(id)?.name || id)
+      .join(' y ');
+    for (const [treaties, type] of [
+      [this.nonAggressionPacts, TREATY_TYPES.NON_AGGRESSION_PACT],
+      [this.freeTradeTreaties, TREATY_TYPES.FREE_TRADE]
+    ]) {
+      const expired = treaties.filter((treaty) => treaty.expiresAfterRound <= round);
+      for (const treaty of expired) {
+        this.recordEvent(`${this.getTreatyName(type)} entre ${playerNames(treaty.playerIds)} expiró.`);
+      }
+      const expiredTreaties = new Set(expired);
+      const remaining = treaties.filter((treaty) => !expiredTreaties.has(treaty));
+      if (type === TREATY_TYPES.NON_AGGRESSION_PACT) this.nonAggressionPacts = remaining;
+      else this.freeTradeTreaties = remaining;
+    }
+  }
+
+  breakNonAggressionPact(attacker, defenderId) {
+    const pactIndex = this.nonAggressionPacts.findIndex((pact) => (
+      pact.expiresAfterRound >= this.currentRound
+      && pact.playerIds.includes(attacker.id)
+      && pact.playerIds.includes(defenderId)
+    ));
+    if (pactIndex < 0) return false;
+
+    this.nonAggressionPacts.splice(pactIndex, 1);
+    const influence = Number.isFinite(attacker.resources?.INFLUENCE)
+      ? attacker.resources.INFLUENCE
+      : 0;
+    attacker.resources.INFLUENCE = Math.max(0, influence - 10);
+    const defender = this.players.get(defenderId);
+    this.recordEvent(
+      `${attacker.name} traicionó el Pacto de No Agresión con ${defender?.name || defenderId}: el pacto se rompió y perdió 10 de Influencia Política.`
+    );
+    return true;
+  }
+
+  botAcceptsTreaty(bot, proposer, type) {
+    if (!bot || !proposer || type !== TREATY_TYPES.NON_AGGRESSION_PACT) return false;
+    const proposerTroops = InternationalOrganizationEngine.countTroops(this, proposer.id);
+    const botTroops = InternationalOrganizationEngine.countTroops(this, bot.id);
+    return proposerTroops > botTroops && this.grid.some((row) => row.some((tile) => (
+      tile.ownerId === bot.id
+      && [[0, -1], [1, 0], [0, 1], [-1, 0]].some(([dx, dy]) => (
+        this.grid[tile.y + dy]?.[tile.x + dx]?.ownerId === proposer.id
+      ))
+    )));
+  }
+
+  getTreatyName(type) {
+    return type === TREATY_TYPES.NON_AGGRESSION_PACT
+      ? 'Pacto de No Agresión'
+      : 'Tratado de Libre Comercio';
   }
 
   addPlayer(socketId, playerName, playerId) {
@@ -322,17 +519,6 @@ export class GameState {
         ) {
           return { ok: false, message: 'No se pueden mover tropas hacia, desde o a través de una Zona Desmilitarizada.' };
         }
-        if (
-          destination.ownerId != null
-          && destination.ownerId !== player.id
-          && InternationalOrganizationEngine.arePlayersBoundByPact(
-            this,
-            player.id,
-            destination.ownerId
-          )
-        ) {
-          return { ok: false, message: 'El Pacto de No Agresión impide atacar a este país.' };
-        }
         if (otherActions.some((planned) => (
           planned.type === 'MOVE_TROOPS'
           && planned.targetX === destination.x && planned.targetY === destination.y
@@ -440,20 +626,9 @@ export class GameState {
     ) {
       return { ok: false, message: 'El movimiento ya no es válido o atraviesa una Zona Desmilitarizada.' };
     }
-    if (
-      destination.ownerId != null
-      && destination.ownerId !== player.id
-      && InternationalOrganizationEngine.arePlayersBoundByPact(
-        this,
-        player.id,
-        destination.ownerId
-      )
-    ) {
-      return { ok: false, message: 'El Pacto de No Agresión impide atacar a este país.' };
-    }
-
     if (destination.ownerId != null && destination.ownerId !== player.id) {
       const defenderId = destination.ownerId;
+      const brokePact = this.breakNonAggressionPact(player, defenderId);
       const defenderTroops = this.getTroopsForPlayerOnTile(destination, defenderId);
       const attackerWins = action.troops > defenderTroops;
       if (!attackerWins) {
@@ -461,9 +636,9 @@ export class GameState {
         this.removeTroopsFromPlayerOnTile(source, player.id, action.troops - attackerSurvivors);
         return {
           ok: true,
-          message: attackerSurvivors
+          message: `${brokePact ? 'PNA roto: perdió 10 de Influencia Política. ' : ''}${attackerSurvivors
             ? `Ataque rechazado: ${player.name} pierde ${action.troops - attackerSurvivors} tropas y se retira.`
-            : `Ataque rechazado: ${player.name} pierde todas sus tropas y se retira.`,
+            : `Ataque rechazado: ${player.name} pierde todas sus tropas y se retira.`}`,
           combat: {
             attackerId: player.id,
             defenderId,
@@ -490,9 +665,9 @@ export class GameState {
       destination.troops += action.troops;
       return {
         ok: true,
-        message: defenderSurvivors
+        message: `${brokePact ? 'PNA roto: perdió 10 de Influencia Política. ' : ''}${defenderSurvivors
           ? `Victoria de ${player.name}: territorio conquistado; ${defenderSurvivors} tropas enemigas supervivientes permanecen en la casilla.`
-          : `Victoria de ${player.name}: territorio conquistado; la guarnición fue derrotada.`,
+          : `Victoria de ${player.name}: territorio conquistado; la guarnición fue derrotada.`}`,
         claimed: true,
         combat: {
           attackerId: player.id,
@@ -643,6 +818,17 @@ export class GameState {
   }
 
   runBotDecisions({ resetReadiness = true } = {}) {
+    for (const offer of [...this.treatyOffers]) {
+      const recipient = this.players.get(offer.recipientId);
+      if (!recipient?.isBot) continue;
+      this.treatyOffers = this.treatyOffers.filter((entry) => entry.id !== offer.id);
+      this.applyTreatyResponse(offer, this.botAcceptsTreaty(
+        recipient,
+        this.players.get(offer.proposerId),
+        offer.type
+      ));
+    }
+
     for (const player of this.players.values()) {
       if (resetReadiness) player.phaseReady = false;
       if (!player.isBot) continue;
@@ -864,6 +1050,7 @@ export class GameState {
         gdiPoints: this.calculateGDI(player)
       })),
       gameStarted: this.gameStarted,
+      gameOver: this.gameOver,
       isPaused: this.isPaused,
       actionResolutionId: this.actionResolutionId,
       lastActionResolutions: this.lastActionResolutions,
@@ -877,6 +1064,8 @@ export class GameState {
       oiPolicies: this.oiPolicies,
       activeDmzZones: this.activeDmzZones,
       nonAggressionPacts: this.nonAggressionPacts,
+      freeTradeTreaties: this.freeTradeTreaties,
+      treatyOffers: this.treatyOffers,
       aggressions: this.aggressions,
       casusBelli: this.casusBelli
     };

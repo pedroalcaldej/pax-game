@@ -75,6 +75,26 @@ export class SocketServer {
         this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });
 
+      socket.on(PROTOCOL.RESTART_GAME, ({ roomId } = {}, acknowledge = () => {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          const message = 'Únete a la sala antes de iniciar otra partida.';
+          socket.emit(PROTOCOL.ACTION_ERROR, message);
+          acknowledge({ ok: false, message });
+          return;
+        }
+
+        const state = room.restart();
+        if (!state) {
+          const message = 'Solo puedes volver a jugar cuando termina la partida.';
+          socket.emit(PROTOCOL.ACTION_ERROR, message);
+          acknowledge({ ok: false, message });
+          return;
+        }
+        acknowledge({ ok: true, gameStarted: true });
+        this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, state);
+      });
+
       socket.on(PROTOCOL.READY_PHASE_END, ({ roomId, ready } = {}) => {
         const room = this.roomManager.getRoom(roomId || 'room-1');
         if (!room || !socket.rooms.has(room.id)) {
@@ -183,6 +203,39 @@ export class SocketServer {
           room.phaseManager.checkOIVotes();
           this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
         }
+      });
+
+      socket.on(PROTOCOL.PROPOSE_TREATY, ({ roomId, treaty } = {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la partida antes de proponer un tratado.');
+          return;
+        }
+        const result = room.gameState.proposeTreaty(socket.id, treaty);
+        socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
+        if (result.ok) this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
+      });
+
+      socket.on(PROTOCOL.RESPOND_TO_TREATY, ({ roomId, offerId, accepted } = {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la partida antes de responder a un tratado.');
+          return;
+        }
+        const result = room.gameState.respondToTreaty(socket.id, offerId, accepted);
+        socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
+        if (result.ok) this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
+      });
+
+      socket.on(PROTOCOL.CANCEL_TREATY_OFFER, ({ roomId, offerId } = {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la partida antes de cancelar una propuesta.');
+          return;
+        }
+        const result = room.gameState.cancelTreatyOffer(socket.id, offerId);
+        socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
+        if (result.ok) this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });
 
       socket.on('disconnect', () => {

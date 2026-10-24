@@ -13,6 +13,7 @@ export const MAP_CONFIG = {
 };
 
 export const ACTION_SLOT_COUNT = 3;
+export const MAX_ROUNDS = 30;
 
 // Siglas de terreno según GDD sección 8
 export const TERRAIN_TYPES = {
@@ -87,6 +88,7 @@ export const PROTOCOL = {
   DISCONNECT: 'disconnect',
   JOIN_GAME: 'join_game',
   START_GAME: 'start_game',
+  RESTART_GAME: 'restart_game',
   READY_PHASE_END: 'ready_phase_end',
   SET_GAME_PAUSED: 'set_game_paused',
   END_GAME: 'end_game',
@@ -96,8 +98,16 @@ export const PROTOCOL = {
   PLAYER_ACTION: 'player_action',
   PROPOSE_OI_RESOLUTION: 'propose_oi_resolution',
   SUBMIT_OI_VOTE: 'submit_oi_vote',
+  PROPOSE_TREATY: 'propose_treaty',
+  RESPOND_TO_TREATY: 'respond_to_treaty',
+  CANCEL_TREATY_OFFER: 'cancel_treaty_offer',
   ACTION_RESULT: 'action_result',
   ACTION_ERROR: 'action_error'
+};
+
+export const TREATY_TYPES = {
+  NON_AGGRESSION_PACT: 'NON_AGGRESSION_PACT',
+  FREE_TRADE: 'FREE_TRADE'
 };
 
 export const OI_RESOLUTIONS = {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OI_RESOLUTIONS, TERRAIN_TYPES } from '../../shared/Constants.js';
+import { MAX_ROUNDS, OI_RESOLUTIONS, TERRAIN_TYPES } from '../../shared/Constants.js';
 import { GameState } from '../src/game/GameState.js';
 import { InternationalOrganizationEngine as OI } from '../src/game/InternationalOrganizationEngine.js';
 import { PhaseManager } from '../src/game/PhaseManager.js';
@@ -261,6 +261,170 @@ test('GDI is the sum of a nation’s resources and territory population', () => 
   assert.equal(gameState.getState().players.find((entry) => entry.id === player.id).gdiPoints, 376);
 });
 
+test('players can propose and accept a five-round non-aggression pact', () => {
+  const { gameState, player } = createHumanGame();
+  const recipient = gameState.players.get('nation-1');
+  recipient.socketId = 'recipient-socket';
+  recipient.isBot = false;
+  gameState.currentRound = 3;
+
+  const proposal = gameState.proposeTreaty(player.socketId, {
+    recipientId: recipient.id,
+    type: 'NON_AGGRESSION_PACT'
+  });
+
+  assert.equal(proposal.ok, true);
+  assert.equal(gameState.treatyOffers.length, 1);
+  assert.equal(gameState.nonAggressionPacts.length, 0);
+
+  const response = gameState.respondToTreaty(
+    recipient.socketId,
+    gameState.treatyOffers[0].id,
+    true
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(gameState.treatyOffers.length, 0);
+  assert.equal(gameState.nonAggressionPacts[0].expiresAfterRound, 7);
+  assert.equal(OI.arePlayersBoundByPact(gameState, player.id, recipient.id), true);
+  gameState.currentRound = 8;
+  assert.equal(OI.arePlayersBoundByPact(gameState, player.id, recipient.id), false);
+});
+
+test('only the recipient may reject a pending treaty offer', () => {
+  const { gameState, player } = createHumanGame();
+  const recipient = gameState.players.get('nation-1');
+  const otherPlayer = gameState.players.get('nation-2');
+  recipient.socketId = 'recipient-socket';
+  recipient.isBot = false;
+  otherPlayer.socketId = 'other-socket';
+  otherPlayer.isBot = false;
+
+  gameState.proposeTreaty(player.socketId, {
+    recipientId: recipient.id,
+    type: 'NON_AGGRESSION_PACT'
+  });
+  const offerId = gameState.treatyOffers[0].id;
+
+  const unauthorizedResponse = gameState.respondToTreaty(otherPlayer.socketId, offerId, true);
+  assert.equal(unauthorizedResponse.ok, false);
+  assert.equal(gameState.treatyOffers.length, 1);
+
+  const rejection = gameState.respondToTreaty(recipient.socketId, offerId, false);
+  assert.equal(rejection.ok, true);
+  assert.equal(gameState.treatyOffers.length, 0);
+  assert.equal(gameState.nonAggressionPacts.length, 0);
+});
+
+test('players can negotiate treaties in any phase and only the proposer can cancel an offer', () => {
+  const { gameState, player } = createHumanGame();
+  const recipient = gameState.players.get('nation-1');
+  const otherPlayer = gameState.players.get('nation-2');
+  recipient.socketId = 'recipient-socket';
+  recipient.isBot = false;
+  otherPlayer.socketId = 'other-socket';
+  otherPlayer.isBot = false;
+  gameState.currentPhase = 6;
+
+  const proposal = gameState.proposeTreaty(player.socketId, {
+    recipientId: recipient.id,
+    type: 'FREE_TRADE'
+  });
+  assert.equal(proposal.ok, true);
+
+  const offerId = gameState.treatyOffers[0].id;
+  assert.equal(gameState.cancelTreatyOffer(otherPlayer.socketId, offerId).ok, false);
+  assert.equal(gameState.treatyOffers.length, 1);
+  assert.equal(gameState.cancelTreatyOffer(player.socketId, offerId).ok, true);
+  assert.equal(gameState.treatyOffers.length, 0);
+  assert.match(gameState.eventHistory.at(-1).message, /canceló la propuesta/);
+
+  gameState.proposeTreaty(player.socketId, {
+    recipientId: recipient.id,
+    type: 'NON_AGGRESSION_PACT'
+  });
+  const response = gameState.respondToTreaty(
+    recipient.socketId,
+    gameState.treatyOffers[0].id,
+    true
+  );
+  assert.equal(response.ok, true);
+  assert.equal(gameState.nonAggressionPacts.length, 1);
+  assert.match(gameState.eventHistory.at(-1).message, /firmaron el Pacto de No Agresión/);
+});
+
+test('treaties expire at the end of their fifth round and are logged', () => {
+  const { gameState, player } = createHumanGame();
+  gameState.players.get('nation-1').name = 'Nación Roja';
+  gameState.nonAggressionPacts.push({
+    playerIds: [player.id, 'nation-1'],
+    expiresAfterRound: 5
+  });
+  gameState.freeTradeTreaties.push({
+    playerIds: [player.id, 'nation-1'],
+    expiresAfterRound: 5
+  });
+
+  gameState.expireTreatiesAfterRound(5);
+
+  assert.equal(gameState.nonAggressionPacts.length, 0);
+  assert.equal(gameState.freeTradeTreaties.length, 0);
+  assert.equal(gameState.eventHistory.length, 2);
+  assert.match(gameState.eventHistory[0].message, /Pacto de No Agresión entre .* expiró/);
+  assert.match(gameState.eventHistory[1].message, /Tratado de Libre Comercio entre .* expiró/);
+});
+
+test('free-trade treaties are tracked for five rounds without market effects', () => {
+  const { gameState, player } = createHumanGame();
+  const recipient = gameState.players.get('nation-1');
+  recipient.socketId = 'recipient-socket';
+  recipient.isBot = false;
+
+  gameState.proposeTreaty(player.socketId, {
+    recipientId: recipient.id,
+    type: 'FREE_TRADE'
+  });
+  const result = gameState.respondToTreaty(
+    recipient.socketId,
+    gameState.treatyOffers[0].id,
+    true
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(gameState.freeTradeTreaties.length, 1);
+  assert.equal(gameState.freeTradeTreaties[0].expiresAfterRound, 5);
+});
+
+test('bots accept non-aggression pacts only when an adjacent country is stronger', () => {
+  const { gameState, player: proposer } = createHumanGame();
+  const bot = gameState.players.get('nation-1');
+  for (const tile of gameState.grid.flat()) {
+    if (tile.ownerId === bot.id || tile.ownerId === proposer.id) tile.troops = 0;
+  }
+  const botTile = gameState.grid[10][10];
+  const proposerTile = gameState.grid[10][11];
+  botTile.ownerId = bot.id;
+  botTile.troops = 1;
+  proposerTile.ownerId = proposer.id;
+  proposerTile.troops = 3;
+
+  const response = gameState.proposeTreaty(proposer.socketId, {
+    recipientId: bot.id,
+    type: 'NON_AGGRESSION_PACT'
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.accepted, true);
+  assert.equal(OI.arePlayersBoundByPact(gameState, bot.id, proposer.id), true);
+
+  const rejection = gameState.proposeTreaty(proposer.socketId, {
+    recipientId: bot.id,
+    type: 'FREE_TRADE'
+  });
+  assert.equal(rejection.ok, true);
+  assert.equal(rejection.accepted, false);
+});
+
 test('a solo player can pause and resume the phase clock while the other countries are bots', () => {
   const room = new Room('pause-test', () => {});
   room.gameState.gameStarted = true;
@@ -415,6 +579,45 @@ test('no international meeting is scheduled after a non-fifth round', () => {
   ]);
   assert.equal(gameState.oiSession, null);
   phaseManager.stop();
+});
+
+test('the game ends after round thirty without advancing the displayed round', () => {
+  const { gameState } = createHumanGame();
+  gameState.currentRound = MAX_ROUNDS;
+  const phaseManager = new PhaseManager(gameState, () => {});
+  phaseManager.running = true;
+
+  phaseManager.transitionToPhase(5);
+
+  assert.equal(gameState.gameOver, true);
+  assert.equal(gameState.getState().gameOver, true);
+  assert.equal(gameState.currentRound, MAX_ROUNDS);
+  assert.equal(phaseManager.running, false);
+  assert.equal(phaseManager.transitionTimer, null);
+  assert.equal(gameState.eventHistory.at(-1).message, `La partida terminó en la ronda ${MAX_ROUNDS}.`);
+});
+
+test('restarting a finished room preserves connected human players and starts a fresh game', () => {
+  const room = new Room('restart-test', () => {});
+  const player = room.gameState.players.get('nation-0');
+  player.socketId = 'human-socket';
+  player.boundPlayerId = 'human-player';
+  player.isBot = false;
+  player.name = 'Jugador';
+  room.gameState.gameStarted = true;
+  room.gameState.gameOver = true;
+  room.gameState.currentRound = MAX_ROUNDS;
+
+  const state = room.restart();
+
+  assert.equal(state.gameStarted, true);
+  assert.equal(state.gameOver, false);
+  assert.equal(state.currentRound, 1);
+  const restartedPlayer = state.players.find((entry) => entry.id === player.id);
+  assert.equal(restartedPlayer.socketId, 'human-socket');
+  assert.equal(restartedPlayer.boundPlayerId, 'human-player');
+  assert.equal(restartedPlayer.name, 'Jugador');
+  room.phaseManager.stop();
 });
 
 test('bots plan troop movements that claim adjacent neutral land', () => {
@@ -792,7 +995,7 @@ test('a tie favors the defender and the attacking force loses half its troops', 
   assert.equal(destination.troops, 3);
 });
 
-test('a non-aggression pact prevents planning an attack', () => {
+test('attacking a PNA signatory breaks the pact and applies the influence penalty', () => {
   const { gameState, player } = createHumanGame();
   const source = gameState.grid.flat().find((tile) => (
     tile.ownerId === player.id && tile.x < gameState.gridWidth - 1 && tile.troops > 0
@@ -812,10 +1015,16 @@ test('a non-aggression pact prevents planning an attack', () => {
     troops: 1
   };
 
-  const result = gameState.validatePlannedAction(player, attack, 0);
+  player.resources.INFLUENCE = 6;
+  const validation = gameState.validatePlannedAction(player, attack, 0);
+  assert.equal(validation.ok, true);
 
-  assert.equal(result.ok, false);
-  assert.match(result.message, /Pacto de No Agresión/);
+  const result = gameState.resolveTroopMovement(player, attack);
+  assert.equal(result.ok, true);
+  assert.equal(result.combat.defenderId, 'nation-1');
+  assert.equal(player.resources.INFLUENCE, 0);
+  assert.equal(gameState.nonAggressionPacts.length, 0);
+  assert.match(gameState.eventHistory.at(-1).message, /traicionó el Pacto de No Agresión/);
 });
 
 test('the phase ends as soon as every human is ready because bots are already ready', () => {

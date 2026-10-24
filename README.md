@@ -88,7 +88,8 @@ correspondiente del proyecto.
   desplazarse. Se puede acercar o alejar con los controles o la rueda, ajustar el mapa
   al panel y arrastrarlo para recorrerlo.
 - El movimiento a una casilla enemiga adyacente resuelve combate terrestre: gana el
-  atacante solo con superioridad numérica, captura al vencer y respeta los pactos PNA.
+  atacante solo con superioridad numérica y captura al vencer. Atacar a un firmante de
+  un PNA rompe el pacto y sanciona al atacante con 10 de Influencia Política.
 - Las casillas se resaltan suavemente al pasar el cursor. Todos los botones reproducen
   un sonido breve al pulsarlos.
 - El log conserva el historial completo de la partida y se sincroniza
@@ -100,7 +101,22 @@ correspondiente del proyecto.
 - En la votación de la OI, los votos a favor o en contra usan por defecto 1 punto de
   Influencia (el mínimo); se puede modificar la apuesta antes de registrar la papeleta.
 - La interfaz muestra las cuatro naciones, el estado de la ronda, la fase, los
-  recursos y el GDI; se quitó la etiqueta «GDD v3.0» de la esquina superior.
+  recursos y el GDI. El Panel Global reemplaza al Marcador GDI e incluye el desglose
+  de países, sus recursos, territorio, población, tropas, ciudades, fábricas e impuestos,
+  además de los tratados vigentes y sus propuestas.
+- La partida termina al finalizar la ronda 30 y presenta un resumen con los países
+  ordenados por GDI, con el mismo desglose del Panel Global. Desde el resumen se puede
+  iniciar otra partida con las personas conectadas o volver al menú principal.
+- Durante cualquier fase de una partida activa se pueden proponer, aceptar y rechazar
+  pactos de no agresión y tratados de libre comercio desde el Panel Global. Quien propone
+  puede cancelar su oferta mientras siga pendiente. Los tratados aceptados duran cinco
+  rondas desde su activación; el Panel Global muestra las rondas restantes. Firmas,
+  expiraciones, cancelaciones y rupturas se registran en el Log. Atacar a un firmante de
+  un PNA cancela de inmediato ese pacto y descuenta 10 puntos de Influencia Política al
+  atacante, hasta un mínimo de cero. El tratado de libre comercio queda registrado sin
+  efecto económico hasta que se implemente un mercado. Los bots aceptan un PNA cuando el
+  país proponente tiene más tropas y comparte frontera; rechazan propuestas sin beneficio
+  mecánico.
 
 El documento de diseño completo que sigue reúne las reglas y especificaciones del
 juego, incluida la Organización Internacional, sus propuestas y votaciones.
@@ -181,7 +197,9 @@ Las tropas terrestres pueden atacar una casilla terrestre adyacente que pertenez
 - El atacante gana solo si envía **más tropas** que las que defienden la casilla. En un empate, gana el defensor.
 - El bando perdedor pierde la mitad de sus tropas, redondeada hacia arriba; las tropas supervivientes permanecen en la casilla donde estaban. Si el bando perdedor tenía una sola tropa, la pierde.
 - Si el atacante pierde, sus supervivientes permanecen en la casilla de origen. Si gana, conquista la casilla y mueve allí todas sus tropas atacantes. Las tropas defensoras supervivientes permanecen en ella como fuerzas visitantes; pueden retirarse con una orden de movimiento posterior.
-- Atacar a un país unido por un Pacto de No Agresión vigente no está permitido. Por ahora no se requiere Casus Belli y los ataques no aplican sanciones diplomáticas.
+- Atacar a un firmante de un Pacto de No Agresión vigente rompe inmediatamente el
+  pacto y descuenta hasta 10 puntos de Influencia Política al atacante. Por ahora no se
+  requiere Casus Belli.
 - No se aplica la antigua mecánica de bloqueo en dos etapas; el combate y la captura se resuelven en la misma ronda. El movimiento marítimo y el combate naval aún no están implementados.
 
 ---
@@ -207,7 +225,7 @@ Los países controlados por bots votan automáticamente: si una resolución los 
 - **Límites de Armamento:** Fija un máximo de **10 tropas por país**. Una vez aprobada, permanece activa hasta el final de la partida.
 - **Límites de Industria:** Fija un máximo de **10 fábricas por país**. Una vez aprobada, permanece activa hasta el final de la partida.
 - **Zonas Desmilitarizadas (ZDM):** El proponente elige una casilla central al redactar su propuesta. La ZDM cubre esa casilla y las casillas situadas hasta dos posiciones en cada dirección (un área de 5×5, 25 casillas en el interior del mapa; se recorta en los bordes). No se pueden reclutar, estacionar ni mover tropas hacia, desde o a través de una ZDM. Al aprobarse, las tropas que ya están dentro se desplazan a la casilla propia válida más cercana. La zona permanece activa hasta la siguiente reunión de la OI.
-- **Subsidios Condicionados:** Entrega **25 de Plata** al país con menor GDI en el momento de aplicar la resolución. Crea un **Pacto de No Agresión (PNA) de 5 rondas** entre el beneficiario y cada país que votó a favor. Los países unidos por el pacto no pueden atacarse durante su vigencia.
+- **Subsidios Condicionados:** Entrega **25 de Plata** al país con menor GDI en el momento de aplicar la resolución. Crea un **Pacto de No Agresión (PNA) de 5 rondas** entre el beneficiario y cada país que votó a favor. Una ruptura por ataque cancela el pacto y sanciona al atacante.
 
 ##### Sistema de Casus Belli (CB)
 El diseño contempla que un ataque o bloqueo militar ejecutado sin un Casus Belli (CB) válido genere una sanción diplomática automática y otorgue a la víctima un CB de represalia legal. Las causas previstas para obtener un CB incluyen:

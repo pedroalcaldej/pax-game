@@ -83,6 +83,13 @@ export class Room {
     this.phaseManager = new PhaseManager(this.gameState, (state) => this.publishState(state));
     return this.gameState.getState();
   }
+
+  restart() {
+    if (!this.gameState.gameOver) return null;
+    this.end();
+    this.start();
+    return this.gameState.getState();
+  }
 }
 
 export class RoomManager {

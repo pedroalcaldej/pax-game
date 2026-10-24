@@ -5,15 +5,17 @@
 import { Map } from '../components/Map.js';
 import { Inspector } from '../components/Inspector.js';
 import { TaxSlider } from '../components/TaxSlider.js';
-import { Scoreboard } from '../components/Scoreboard.js';
+import { GlobalPanel } from '../components/GlobalPanel.js';
 import { socket } from '../../network/SocketClient.js';
 import {
   ACTION_SLOT_COUNT,
+  MAX_ROUNDS,
   MAP_CONFIG,
   NATIONS,
   OI_RESOLUTIONS,
   PROTOCOL
 } from '../../../../shared/Constants.js';
+import { getPlayerRankings } from '../components/PlayerRankings.js';
 
 const PHASE_LABELS = {
   1: 'Crecimiento y recaudación',
@@ -92,7 +94,7 @@ const STYLES = `
     border-bottom: 1px solid var(--pax-border);
   }
   .pax-brand { color: var(--pax-gold); font-size: 18px; font-weight: 900; letter-spacing: .05em; white-space: nowrap; }
-  .pax-round, .pax-phase, .pax-resources, .pax-gdi-button {
+  .pax-round, .pax-phase, .pax-resources, .pax-global-panel-button {
     min-height: 40px;
     display: flex;
     align-items: center;
@@ -105,7 +107,7 @@ const STYLES = `
   .pax-label { display: block; color: var(--pax-muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .pax-round-value { font-size: 13px; font-weight: 800; }
   .pax-timer { margin-left: auto; color: var(--pax-gold); font-size: 15px; font-weight: 900; font-variant-numeric: tabular-nums; }
-  .pax-force-button, .pax-gdi-button, .pax-action-button, .pax-development button {
+  .pax-force-button, .pax-global-panel-button, .pax-action-button, .pax-development button {
     border: 1px solid #39455d;
     border-radius: 6px;
     color: var(--pax-text);
@@ -161,8 +163,8 @@ const STYLES = `
   .pax-resource:nth-child(3) .pax-resource-icon { color: #a878e8; }
   .pax-resource:nth-child(4) .pax-resource-icon { color: #60a5fa; }
   .pax-resource-change { margin-left: -2px; color: #29ce9a; font-size: 10px; }
-  .pax-gdi-button { justify-content: center; gap: 8px; cursor: pointer; font-size: 11px; font-weight: 800; }
-  .pax-gdi-button span:first-child { color: #ffd24b; }
+  .pax-global-panel-button { justify-content: center; gap: 8px; cursor: pointer; font-size: 11px; font-weight: 800; }
+  .pax-global-panel-button span:first-child { color: #ffd24b; }
   .pax-main {
     min-height: 0;
     display: grid;
@@ -272,7 +274,8 @@ const STYLES = `
   .pax-tile-action-copy { min-width: 0; display: grid; grid-template-rows: auto auto; gap: 3px; }
   .pax-tile-action-copy strong { font-size: 10px; }
   .pax-tile-action-copy small { color: #97a5ba; font-size: 9px; }
-  .pax-dialog { width: min(900px, calc(100vw - 32px)); max-height: min(80vh, 650px); overflow: auto; margin: auto; padding: 0; border: 1px solid #334155; border-radius: 12px; background: #0d1426; color: var(--pax-text); }
+  .pax-dialog { width: min(1200px, calc(100vw - 32px)); max-height: min(88vh, 820px); overflow: auto; margin: auto; padding: 0; border: 1px solid #334155; border-radius: 12px; background: #0d1426; color: var(--pax-text); }
+  .pax-end-dialog { width: min(1100px, calc(100vw - 32px)); }
   .pax-dialog::backdrop { background: #020617c9; backdrop-filter: blur(3px); }
   .pax-dialog-heading { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--pax-border); font-weight: 900; }
   .pax-dialog-close { padding: 5px 9px; border: 1px solid #334155; border-radius: 5px; color: var(--pax-text); background: #172238; cursor: pointer; }
@@ -282,17 +285,39 @@ const STYLES = `
   .pax-scoreboard-status span, .pax-scoreboard-note { color: #93a1b5; font-size: 10px; }
   .pax-scoreboard-status strong { color: #f2bb3b; font-size: 15px; }
   .pax-scoreboard-clock { text-align: right; }
-  .pax-score-table-scroll { overflow-x: auto; }
-  .pax-score-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
-  .pax-score-table th, .pax-score-table td { padding: 10px 12px; border-bottom: 1px solid #263249; text-align: right; font-variant-numeric: tabular-nums; }
-  .pax-score-table thead th { color: #93a1b5; background: #10192b; font-size: 10px; font-weight: 800; text-transform: uppercase; }
-  .pax-score-table thead th:first-child, .pax-score-table tbody th { text-align: left; }
-  .pax-score-table tbody tr { border-left: 3px solid var(--score-nation-color); }
-  .pax-score-table tbody th { color: #e2e8f0; font-weight: 700; }
-  .pax-score-table tbody td { color: #cbd5e1; }
-  .pax-score-table .pax-score-total { color: #38bdf8; font-size: 14px; font-weight: 900; }
+  .pax-global-table-scroll { overflow-x: auto; }
+  .pax-global-table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+  .pax-global-table th, .pax-global-table td { padding: 9px 10px; border-bottom: 1px solid #263249; text-align: right; font-variant-numeric: tabular-nums; }
+  .pax-global-table thead th { color: #93a1b5; background: #10192b; font-size: 9px; font-weight: 800; text-transform: uppercase; }
+  .pax-global-table thead th:first-child, .pax-global-table tbody th { text-align: left; }
+  .pax-global-table tbody tr { border-left: 3px solid var(--score-nation-color); }
+  .pax-global-table tbody tr.is-local-player { background: #f2bb3b0d; }
+  .pax-global-table tbody th { color: #e2e8f0; font-weight: 700; }
+  .pax-global-table tbody td { color: #cbd5e1; }
+  .pax-global-table .pax-score-total { color: #38bdf8; font-size: 13px; font-weight: 900; }
   .pax-score-rank { display: inline-grid; width: 20px; height: 20px; margin-right: 8px; place-items: center; border-radius: 50%; color: #cbd5e1; background: #263249; font-size: 10px; }
   .pax-scoreboard-note { margin: 10px 2px 0; }
+  .pax-end-result { padding: 18px 16px 6px; text-align: center; }
+  .pax-end-result h2 { margin: 0; color: #f5c451; font-size: 23px; }
+  .pax-end-result p { margin: 8px 0 0; color: #cbd5e1; }
+  .pax-end-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; padding: 12px 16px 18px; }
+  .pax-end-actions button { min-height: 42px; padding: 9px 16px; border: 1px solid #39455d; border-radius: 6px; color: var(--pax-text); background: #1a263b; font: inherit; font-weight: 800; cursor: pointer; }
+  .pax-end-actions button:first-child { border-color: #eab23e; color: #17120a; background: linear-gradient(180deg, #ffd66c, #efa91d); }
+  .pax-end-actions button:disabled { opacity: .6; cursor: wait; }
+  .pax-global-treaties { margin-top: 16px; padding-top: 12px; border-top: 1px solid #263249; }
+  .pax-global-treaties h3, .pax-global-treaty-form h3 { margin: 0 0 9px; color: #e2e8f0; font-size: 12px; }
+  .pax-global-treaty { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 9px; border: 1px solid #263249; border-radius: 6px; background: #10192b; font-size: 10px; }
+  .pax-global-treaty + .pax-global-treaty { margin-top: 6px; }
+  .pax-global-treaty strong { color: #e2e8f0; }
+  .pax-global-treaty span, .pax-global-treaty small, .pax-global-empty, .pax-global-treaty-form p { color: #93a1b5; }
+  .pax-global-treaty button, .pax-global-treaty-form button { padding: 5px 9px; border: 1px solid #42516b; border-radius: 5px; color: #e2e8f0; background: #1b2940; cursor: pointer; font: inherit; }
+  .pax-global-treaty button:disabled { opacity: .5; cursor: not-allowed; }
+  .pax-global-treaty-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 16px; padding-top: 12px; border-top: 1px solid #263249; }
+  .pax-global-treaty-form h3, .pax-global-treaty-form p, .pax-global-treaty-form button, .pax-global-panel-status { grid-column: 1 / -1; }
+  .pax-global-treaty-form label { display: grid; gap: 5px; color: #aab6c9; font-size: 10px; }
+  .pax-global-treaty-form select { min-height: 32px; padding: 5px 7px; border: 1px solid #39455d; border-radius: 5px; color: #e2e8f0; background: #10192b; font: inherit; }
+  .pax-global-treaty-form :disabled { opacity: .5; cursor: not-allowed; }
+  .pax-global-treaty-form p, .pax-global-empty, .pax-global-panel-status { margin: 0; font-size: 10px; line-height: 1.45; }
   @media (max-width: 1100px) {
     .pax-main { grid-template-columns: 240px minmax(0, 1fr) 260px; }
     .pax-topbar { grid-template-columns: 36px 62px minmax(150px, 190px) minmax(140px, 1fr) auto 98px; gap: 6px; padding-inline: 7px; }
@@ -318,7 +343,7 @@ const STYLES = `
     .pax-brand { grid-column: 2; }
     .pax-round { grid-column: 3; }
     .pax-resources { grid-column: 1 / 5; overflow-x: auto; }
-    .pax-gdi-button { font-size: 10px; }
+    .pax-global-panel-button { font-size: 10px; }
     .pax-center { grid-template-rows: 58px minmax(0, 1fr) auto 37px; padding-inline: 5px; }
     .pax-action-slots { gap: 6px; }
     .pax-action-slot { min-height: 54px; gap: 5px; padding: 6px; }
@@ -347,7 +372,7 @@ export class GameScreen {
     this.container = container;
     this.map = null;
     this.inspector = null;
-    this.scoreboard = null;
+    this.globalPanel = null;
     this.taxSlider = null;
     this.gameState = null;
     this.playerId = null;
@@ -398,7 +423,7 @@ export class GameScreen {
           <div class="pax-brand">◉ PAX</div>
           <div class="pax-round">
             <span class="pax-round-icon">⌛</span>
-            <div><span class="pax-label">Ronda</span><span class="pax-round-value" id="round-value">1/30</span></div>
+            <div><span class="pax-label">Ronda</span><span class="pax-round-value" id="round-value">1/${MAX_ROUNDS}</span></div>
             <span class="pax-timer" id="timer-value">60s</span>
             <button class="pax-force-button" id="force-phase-button" type="button" disabled title="La fase termina cuando todos los jugadores humanos confirman que están listos">⏩ Forzar</button>
           </div>
@@ -409,7 +434,7 @@ export class GameScreen {
             <span class="pax-resource" title="Influencia"><i class="pax-resource-icon" data-tooltip="Influencia" tabindex="0" aria-label="Influencia">♧</i><span id="influence-value">—</span></span>
             <span class="pax-resource" title="Población"><i class="pax-resource-icon" data-tooltip="Población" tabindex="0" aria-label="Población">♟</i><span id="population-value">0</span></span>
           </div>
-          <button class="pax-gdi-button" id="gdi-open" type="button" title="Ver puntaje total y desglose de cada jugador"><span aria-hidden="true">🏆</span><span>Marcador<br>GDI</span></button>
+          <button class="pax-global-panel-button" id="global-panel-open" type="button" title="Ver información de todos los países y tratados"><span aria-hidden="true">🌐</span><span>Panel<br>Global</span></button>
         </header>
         <main class="pax-main">
           <aside class="pax-sidebar">
@@ -454,9 +479,32 @@ export class GameScreen {
           </section>
           <aside class="pax-inspector" id="inspector-container"></aside>
         </main>
-        <dialog class="pax-dialog" id="gdi-dialog">
-          <header class="pax-dialog-heading"><span>🏆 Marcador GDI</span><button class="pax-dialog-close" type="button" id="gdi-close">Cerrar</button></header>
-          <div class="pax-scoreboard-wrap" id="scoreboard-container"></div>
+        <dialog class="pax-dialog" id="global-panel-dialog">
+          <header class="pax-dialog-heading"><span>🌐 Panel Global</span><button class="pax-dialog-close" type="button" id="global-panel-close">Cerrar</button></header>
+          <div class="pax-scoreboard-wrap" id="global-panel-container"></div>
+        </dialog>
+        <dialog class="pax-dialog pax-end-dialog" id="game-summary-dialog" aria-labelledby="game-summary-title">
+          <header class="pax-dialog-heading"><span>Resumen de la partida</span></header>
+          <div class="pax-end-result" id="game-summary-content"></div>
+          <div class="pax-scoreboard-wrap">
+            <div class="pax-global-table-scroll">
+              <table class="pax-global-table">
+                <thead>
+                  <tr>
+                    <th>País</th><th>Control</th><th>Territorio</th><th>Población</th>
+                    <th>Tropas</th><th>Ciudades</th><th>Fábricas</th><th>Impuesto</th>
+                    <th>Plata</th><th>Materiales</th><th>Influencia</th><th>GDI</th>
+                  </tr>
+                </thead>
+                <tbody id="game-summary-rankings"></tbody>
+              </table>
+            </div>
+            <p class="pax-scoreboard-note">GDI: Plata + Materiales + Influencia + Población.</p>
+          </div>
+          <div class="pax-end-actions">
+            <button id="game-summary-replay" type="button">Volver a jugar</button>
+            <button id="game-summary-menu" type="button">Ir al menú principal</button>
+          </div>
         </dialog>
       </div>
     `;
@@ -464,7 +512,21 @@ export class GameScreen {
     const taxEl = this.container.querySelector('#tax-container');
     this.inspector = new Inspector(this.container.querySelector('#inspector-container'));
     this.map = new Map(this.container.querySelector('#map-container'), (tile) => this.handleTileSelection(tile));
-    this.scoreboard = new Scoreboard(this.container.querySelector('#scoreboard-container'));
+    this.globalPanel = new GlobalPanel(this.container.querySelector('#global-panel-container'), {
+      onProposeTreaty: (treaty) => socket.emit(PROTOCOL.PROPOSE_TREATY, {
+        roomId: 'room-1',
+        treaty
+      }),
+      onRespondToTreaty: ({ offerId, accepted }) => socket.emit(PROTOCOL.RESPOND_TO_TREATY, {
+        roomId: 'room-1',
+        offerId,
+        accepted
+      }),
+      onCancelTreatyOffer: (offerId) => socket.emit(PROTOCOL.CANCEL_TREATY_OFFER, {
+        roomId: 'room-1',
+        offerId
+      })
+    });
     this.taxSlider = new TaxSlider(taxEl, (newTaxRate) => {
       this.updateTaxMetrics(newTaxRate);
       socket.emit(PROTOCOL.SET_TAX_RATE, { roomId: 'room-1', taxRate: newTaxRate });
@@ -587,11 +649,31 @@ export class GameScreen {
       );
     });
 
-    this.container.querySelector('#gdi-open').addEventListener('click', () => {
-      this.container.querySelector('#gdi-dialog').showModal();
+    this.container.querySelector('#global-panel-open').addEventListener('click', () => {
+      this.container.querySelector('#global-panel-dialog').showModal();
     });
-    this.container.querySelector('#gdi-close').addEventListener('click', () => {
-      this.container.querySelector('#gdi-dialog').close();
+    this.container.querySelector('#global-panel-close').addEventListener('click', () => {
+      this.container.querySelector('#global-panel-dialog').close();
+    });
+    this.container.querySelector('#game-summary-replay').addEventListener('click', () => {
+      if (!socket.connected || !this.gameState?.gameOver) return;
+      const button = this.container.querySelector('#game-summary-replay');
+      button.disabled = true;
+      socket.timeout(5000).emit(
+        PROTOCOL.RESTART_GAME,
+        { roomId: 'room-1' },
+        (error, result) => {
+          if (error || !result?.ok) {
+            button.disabled = false;
+            this.addEvent(`No se pudo iniciar otra partida: ${result?.message || 'el servidor no respondió.'}`);
+          }
+        }
+      );
+    });
+    this.container.querySelector('#game-summary-menu').addEventListener('click', () => {
+      if (!socket.connected || !this.gameState?.gameOver) return;
+      this.container.querySelector('#game-summary-dialog').close();
+      socket.emit(PROTOCOL.END_GAME, { roomId: 'room-1' });
     });
     this.container.querySelector('#taxInput').addEventListener('input', (event) => {
       this.container.querySelector('#tax-value').textContent = `${Math.round(Number(event.target.value) * 100)}%`;
@@ -730,19 +812,13 @@ export class GameScreen {
     this.updateActionSlots();
     this.updateActionHighlights();
     this.updateForcePhaseButton(players, phase, gameState.gameStarted);
-    this.scoreboard.update(
-      players,
-      gameState.currentPhase,
-      gameState.timeRemaining,
-      gameState.grid,
-      gameState.isPaused
-    );
+    this.globalPanel.update(gameState, this.player?.id);
 
     const round = gameState.oiSession?.phase === 'voting'
       ? gameState.oiSession.meetingAfterRound
       : gameState.currentRound || 1;
     const roundEl = this.container.querySelector('#round-value');
-    roundEl.textContent = `${round}/30`;
+    roundEl.textContent = `${round}/${MAX_ROUNDS}`;
     this.container.querySelector('#timer-value').textContent = `${gameState.timeRemaining ?? 60}s${gameState.isPaused ? ' · Pausado' : ''}`;
     this.container.querySelector('#phase-value').textContent = `Fase ${phase}: ${PHASE_LABELS[phase] || 'En curso'}`;
     this.container.querySelector('#next-vote').textContent = gameState.oiSession?.phase === 'voting'
@@ -751,8 +827,9 @@ export class GameScreen {
     this.updateOIPanel(gameState, round);
     this.updateNationPanel();
     this.updateResources();
-    this.taxSlider.setEnabled(Boolean(this.player && phase === 2));
+    this.taxSlider.setEnabled(Boolean(this.player && phase === 2 && !gameState.gameOver));
     this.syncGameEventHistory(gameState.eventHistory);
+    this.updateGameSummary(gameState);
 
     if (this.player && Number.isFinite(this.player.taxRate)) {
       this.taxSlider.setValue(this.player.taxRate);
@@ -834,6 +911,7 @@ export class GameScreen {
     }
 
     const proposalWindow = gameState.gameStarted
+      && !gameState.gameOver
       && gameState.currentPhase === 2;
     const resultsMarkup = session?.phase === 'complete' && session.results
       ? `
@@ -939,7 +1017,7 @@ export class GameScreen {
     const participants = players;
     const readyCount = participants.filter((player) => player.phaseReady).length;
     const requiredCount = participants.length;
-    const canForce = Boolean(gameStarted && this.player && phase === 2);
+    const canForce = Boolean(gameStarted && !this.gameState?.gameOver && this.player && phase === 2);
     const isReady = Boolean(this.player?.phaseReady);
     button.disabled = !canForce;
     button.textContent = isReady
@@ -956,7 +1034,7 @@ export class GameScreen {
     const slots = this.container.querySelector('#action-slots');
     if (!slots) return;
     const plannedActions = this.player?.plannedActions || Array(ACTION_SLOT_COUNT).fill(null);
-    const canPlan = Boolean(this.player && this.gameState?.currentPhase === 2);
+    const canPlan = Boolean(this.player && !this.gameState?.gameOver && this.gameState?.currentPhase === 2);
     const labels = {
       BUILD_CITY: 'Construir ciudad',
       BUILD_FACTORY: 'Construir fábrica',
@@ -1075,6 +1153,46 @@ export class GameScreen {
           : !this.player
             ? 'Asignando tu país…'
             : `Listo: ${this.player.name}. Los otros países serán bots.`;
+  }
+
+  updateGameSummary(gameState) {
+    const dialog = this.container.querySelector('#game-summary-dialog');
+    const replayButton = this.container.querySelector('#game-summary-replay');
+    if (!dialog || !replayButton) return;
+
+    if (!gameState.gameOver) {
+      if (dialog.open) dialog.close();
+      replayButton.disabled = false;
+      return;
+    }
+
+    const rankings = getPlayerRankings(gameState);
+    const winner = rankings[0]?.player;
+    this.container.querySelector('#game-summary-content').innerHTML = `
+      <h2 id="game-summary-title">Partida finalizada</h2>
+      <p>Ronda ${gameState.currentRound} de ${MAX_ROUNDS}${winner ? ` · País ganador: <strong>${escapeHTML(winner.name)}</strong>` : ''}</p>
+    `;
+    this.container.querySelector('#game-summary-rankings').innerHTML = rankings.map((entry, index) => {
+      const { player } = entry;
+      const color = /^#[0-9a-f]{6}$/i.test(player.color || '') ? player.color : '#2563eb';
+      return `
+        <tr style="--score-nation-color:${color}" class="${player.id === this.player?.id ? 'is-local-player' : ''}">
+          <th><span class="pax-score-rank">${index + 1}</span>${escapeHTML(player.name || 'País')}</th>
+          <td>${player.isBot ? 'Bot' : 'Humano'}</td>
+          <td>${formatValue(entry.ownedTiles.length)}</td>
+          <td>${formatValue(entry.population)}</td>
+          <td>${formatValue(entry.troops)}</td>
+          <td>${formatValue(entry.cities)}</td>
+          <td>${formatValue(entry.factories)}</td>
+          <td>${formatValue((player.taxRate || 0) * 100)}%</td>
+          <td>${formatValue(entry.silver)}</td>
+          <td>${formatValue(entry.materials)}</td>
+          <td>${formatValue(entry.influence)}</td>
+          <td class="pax-score-total">${formatValue(entry.total)}</td>
+        </tr>
+      `;
+    }).join('');
+    if (!dialog.open) dialog.showModal();
   }
 
   updateNationPanel() {
