@@ -9,6 +9,7 @@ import {
   NATIONS,
   TERRAIN_TYPES
 } from '../../../shared/Constants.js';
+import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 
 export class GameState {
   constructor() {
@@ -22,6 +23,17 @@ export class GameState {
     this.seed = Date.now();
     this.actionResolutionId = 0;
     this.lastActionResolutions = [];
+    this.oiProposals = [];
+    this.nextOIProposalId = 1;
+    this.oiSession = null;
+    this.oiPolicies = {
+      armamentLimit: null,
+      industryLimit: null
+    };
+    this.activeDmzZones = [];
+    this.nonAggressionPacts = [];
+    this.aggressions = [];
+    this.casusBelli = [];
 
     this.grid = generateInitialGrid(this.seed);
     this.createNations();
@@ -84,6 +96,7 @@ export class GameState {
   }
 
   removePlayer(socketId) {
+    let removed = false;
     for (const player of this.players.values()) {
       if (player.socketId === socketId) {
         player.socketId = null;
@@ -91,8 +104,10 @@ export class GameState {
         player.isBot = true;
         player.phaseReady = false;
         player.name = NATIONS[player.nationId].name;
+        removed = true;
       }
     }
+    return removed;
   }
 
   setPlayerTaxRate(socketId, taxRate) {
@@ -125,9 +140,7 @@ export class GameState {
     }
 
     player.phaseReady = Boolean(ready);
-    const participants = Array.from(this.players.values()).filter(
-      (entry) => !entry.isBot && entry.socketId
-    );
+    const participants = Array.from(this.players.values());
     const readyCount = participants.filter((entry) => entry.phaseReady).length;
     return {
       ok: true,
@@ -216,6 +229,17 @@ export class GameState {
           || tile.building) {
           return { ok: false, message: 'No puedes construir una fábrica en esta casilla.' };
         }
+        if (this.oiPolicies.industryLimit != null) {
+          const plannedFactories = otherActions.filter(
+            (planned) => planned.type === 'BUILD_FACTORY'
+          ).length;
+          if (
+            InternationalOrganizationEngine.countFactories(this, player.id) + plannedFactories + 1
+            > this.oiPolicies.industryLimit
+          ) {
+            return { ok: false, message: `El límite de industria es de ${this.oiPolicies.industryLimit} fábricas.` };
+          }
+        }
         silverCost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA ? 5 : 10;
         break;
       case 'RECRUIT_TROOP':
@@ -224,7 +248,23 @@ export class GameState {
           if (!Number.isInteger(count) || count < 1) {
             return { ok: false, message: 'La cantidad de tropas a reclutar no es válida.' };
           }
+          if (InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)) {
+            return { ok: false, message: 'No puedes reclutar tropas dentro de una Zona Desmilitarizada.' };
+          }
           action.count = count;
+          if (this.oiPolicies.armamentLimit != null) {
+            const plannedRecruitment = otherActions
+              .filter((planned) => planned.type === 'RECRUIT_TROOP')
+              .reduce((sum, planned) => sum + (planned.count ?? 1), 0);
+            if (
+              InternationalOrganizationEngine.countTroops(this, player.id)
+              + plannedRecruitment
+              + count
+              > this.oiPolicies.armamentLimit
+            ) {
+              return { ok: false, message: `El límite de armamento es de ${this.oiPolicies.armamentLimit} tropas.` };
+            }
+          }
           silverCost = 5 * count;
           materialCost = 2 * count;
         }
@@ -246,6 +286,12 @@ export class GameState {
         }
         if (destination.type !== TERRAIN_TYPES.TR && destination.type !== TERRAIN_TYPES.MPT) {
           return { ok: false, message: 'Las tropas solo pueden avanzar sobre tierra.' };
+        }
+        if (
+          InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)
+          || InternationalOrganizationEngine.isInActiveDmz(this, destination.x, destination.y)
+        ) {
+          return { ok: false, message: 'No se pueden mover tropas hacia, desde o a través de una Zona Desmilitarizada.' };
         }
         if (otherActions.some((planned) => (
           planned.type === 'MOVE_TROOPS'
@@ -340,8 +386,10 @@ export class GameState {
       || (destination.type !== TERRAIN_TYPES.TR && destination.type !== TERRAIN_TYPES.MPT)
       || Math.abs(source.x - destination.x) + Math.abs(source.y - destination.y) !== 1
       || source.troops < action.troops
+      || InternationalOrganizationEngine.isInActiveDmz(this, source?.x, source?.y)
+      || InternationalOrganizationEngine.isInActiveDmz(this, destination?.x, destination?.y)
     ) {
-      return { ok: false, message: 'El movimiento ya no es válido.' };
+      return { ok: false, message: 'El movimiento ya no es válido o atraviesa una Zona Desmilitarizada.' };
     }
     source.troops -= action.troops;
     destination.troops = (destination.troops || 0) + action.troops;
@@ -378,6 +426,12 @@ export class GameState {
         if ((!isLand && !isWater) || tile.building) {
           return { ok: false, message: 'No puedes construir una fábrica en esta casilla.' };
         }
+        if (
+          this.oiPolicies.industryLimit != null
+          && InternationalOrganizationEngine.countFactories(this, player.id) >= this.oiPolicies.industryLimit
+        ) {
+          return { ok: false, message: `El límite de industria es de ${this.oiPolicies.industryLimit} fábricas.` };
+        }
         const cost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA ? 5 : 10;
         if (resources.SILVER < cost) return { ok: false, message: `Necesitas ${cost} de plata.` };
         resources.SILVER -= cost;
@@ -392,6 +446,16 @@ export class GameState {
         const materialCost = 2 * count;
         if (!Number.isInteger(count) || count < 1) {
           return { ok: false, message: 'La cantidad de tropas a reclutar no es válida.' };
+        }
+        if (
+          this.oiPolicies.armamentLimit != null
+          && InternationalOrganizationEngine.countTroops(this, player.id) + count
+            > this.oiPolicies.armamentLimit
+        ) {
+          return { ok: false, message: `El límite de armamento es de ${this.oiPolicies.armamentLimit} tropas.` };
+        }
+        if (InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)) {
+          return { ok: false, message: 'No puedes reclutar tropas dentro de una Zona Desmilitarizada.' };
         }
         if (resources.SILVER < silverCost || resources.MATERIALS < materialCost) {
           return { ok: false, message: `Necesitas ${silverCost} de plata y ${materialCost} materiales para reclutar.` };
@@ -427,29 +491,75 @@ export class GameState {
     }
   }
 
-  runBotDecisions() {
+  runBotDecisions({ resetReadiness = true } = {}) {
     for (const player of this.players.values()) {
-      player.phaseReady = false;
+      if (resetReadiness) player.phaseReady = false;
       if (!player.isBot) continue;
-      const taxChoices = [0.15, 0.2, 0.25];
-      player.taxRate = taxChoices[(this.currentRound + player.nationId) % taxChoices.length];
+      if (!resetReadiness && player.phaseReady) continue;
+      player.phaseReady = false;
+      player.plannedActions = [null, null];
+      player.taxRate = 0.15;
 
-      const ownedTile = this.grid.flat().find((tile) => (
+      const factoryTile = this.grid.flat().find((tile) => (
         tile.ownerId === player.id
-        && (tile.type === TERRAIN_TYPES.TR || tile.type === TERRAIN_TYPES.MPT)
+        && [TERRAIN_TYPES.TR, TERRAIN_TYPES.MPT, TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA].includes(tile.type)
         && !tile.building
+        && !InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)
       ));
-      if (ownedTile && player.resources.SILVER >= 10) {
-        player.plannedActions = [{
+      if (factoryTile) {
+        this.planBotAction(player, {
           type: 'BUILD_FACTORY',
-          x: ownedTile.x,
-          y: ownedTile.y
-        }, null];
+          x: factoryTile.x,
+          y: factoryTile.y
+        }, 0);
       }
+
+      const troopLimit = this.oiPolicies.armamentLimit ?? 10;
+      const currentTroops = InternationalOrganizationEngine.countTroops(this, player.id);
+      const recruitTile = this.grid.flat().find((tile) => (
+        tile.ownerId === player.id
+        && !InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)
+      ));
+      if (recruitTile && currentTroops < troopLimit) {
+        const count = Math.min(
+          troopLimit - currentTroops,
+          Math.floor(player.resources.SILVER / 5),
+          Math.floor(player.resources.MATERIALS / 2)
+        );
+        if (count > 0) {
+          this.planBotAction(player, {
+            type: 'RECRUIT_TROOP',
+            x: recruitTile.x,
+            y: recruitTile.y,
+            count
+          }, 1);
+        }
+      }
+      player.phaseReady = true;
     }
   }
 
+  planBotAction(player, action, slot) {
+    const validation = this.validatePlannedAction(player, action, slot);
+    if (validation.ok) player.plannedActions[slot] = action;
+  }
+
+  allPlayersReady() {
+    return Array.from(this.players.values()).every((player) => player.phaseReady);
+  }
+
   getState() {
+    const publicOISession = this.oiSession
+      ? ({
+        id: this.oiSession.id,
+        phase: this.oiSession.phase,
+        meetingBeforeRound: this.oiSession.meetingBeforeRound,
+        timeRemaining: this.oiSession.timeRemaining,
+        proposals: this.oiSession.proposals,
+        results: this.oiSession.results,
+        votesSubmitted: Object.keys(this.oiSession.votes)
+      })
+      : null;
     return {
       grid: this.grid,
       players: Array.from(this.players.values()),
@@ -459,7 +569,14 @@ export class GameState {
       currentPhase: this.currentPhase,
       timeRemaining: this.timeRemaining,
       currentRound: this.currentRound,
-      seed: this.seed
+      seed: this.seed,
+      oiProposals: this.oiProposals,
+      oiSession: publicOISession,
+      oiPolicies: this.oiPolicies,
+      activeDmzZones: this.activeDmzZones,
+      nonAggressionPacts: this.nonAggressionPacts,
+      aggressions: this.aggressions,
+      casusBelli: this.casusBelli
     };
   }
 }

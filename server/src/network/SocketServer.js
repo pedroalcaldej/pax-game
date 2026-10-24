@@ -3,6 +3,7 @@
  */
 
 import { PROTOCOL } from '../../../shared/Constants.js';
+import { InternationalOrganizationEngine } from '../game/InternationalOrganizationEngine.js';
 
 export class SocketServer {
   constructor(io, roomManager) {
@@ -27,10 +28,23 @@ export class SocketServer {
         const room = this.roomManager.getOrCreateRoom(targetRoomId);
 
         // Registrar o reconectar al jugador
+        const existingPlayer = playerId && Array.from(room.gameState.players.values()).find(
+          (entry) => entry.boundPlayerId === playerId
+        );
+        const wasBot = existingPlayer?.isBot;
         const player = room.gameState.addPlayer(socket.id, playerName || 'Nación Alpha', playerId);
         if (!player) {
           socket.emit(PROTOCOL.ACTION_ERROR, 'La sala ya tiene cuatro jugadores humanos.');
           return;
+        }
+        const session = room.gameState.oiSession;
+        if (
+          wasBot
+          && session?.phase === 'voting'
+          && session.botVoterIds.includes(player.id)
+        ) {
+          delete session.votes[player.id];
+          session.botVoterIds = session.botVoterIds.filter((id) => id !== player.id);
         }
 
         socket.join(room.id);
@@ -113,9 +127,62 @@ export class SocketServer {
         }
       });
 
+      socket.on(PROTOCOL.PROPOSE_OI_RESOLUTION, ({ roomId, proposal } = {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la sala antes de proponer una resolución.');
+          return;
+        }
+        const result = InternationalOrganizationEngine.propose(
+          room.gameState,
+          socket.id,
+          proposal
+        );
+        socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
+        if (result.ok) {
+          this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
+        }
+      });
+
+      socket.on(PROTOCOL.SUBMIT_OI_VOTE, ({ roomId, ballot } = {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la sala antes de votar en la OI.');
+          return;
+        }
+        const result = InternationalOrganizationEngine.submitVote(
+          room.gameState,
+          socket.id,
+          ballot
+        );
+        socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
+        if (result.ok) {
+          room.phaseManager.checkOIVotes();
+          this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
+        }
+      });
+
       socket.on('disconnect', () => {
         for (const room of this.roomManager.rooms.values()) {
-          room.gameState.removePlayer(socket.id);
+          const removed = room.gameState.removePlayer(socket.id);
+          if (removed && room.gameState.currentPhase === 2) {
+            room.gameState.runBotDecisions({ resetReadiness: false });
+            room.phaseManager.checkDecisionReadiness();
+          }
+          const session = room.gameState.oiSession;
+          if (session?.phase === 'voting') {
+            for (const player of room.gameState.players.values()) {
+              if (player.isBot && !session.votes[player.id]) {
+                session.votes[player.id] = InternationalOrganizationEngine.getBotBallot(
+                  room.gameState,
+                  player,
+                  session.proposals
+                );
+                session.botVoterIds.push(player.id);
+              }
+            }
+            room.phaseManager.checkOIVotes();
+          }
           this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
         }
         console.log(`[Network] Cliente desconectado: ${socket.id}`);

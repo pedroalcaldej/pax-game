@@ -18,18 +18,30 @@ export class Map {
    * @param {(tile: object | null) => void} onTileSelected - Notifica la casilla seleccionada.
    */
   constructor(container, onTileSelected = () => {}) {
-    this.container = container;
+    this.viewport = container;
+    this.container = document.createElement('div');
+    this.container.style.cssText = [
+      'position:absolute',
+      'inset:0',
+      'display:flex',
+      'overflow:auto',
+      'align-items:center',
+      'justify-content:center'
+    ].join(';');
     this.onTileSelected = onTileSelected;
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d');
     this.grid = null;
     this.selectedPosition = null;
+    this.dmzZones = [];
+    this.selectionFromUser = false;
     this.actionHighlights = [];
     this.zoom = 1;
     this.minZoom = 0.2;
     this.maxZoom = 2;
     this.dragStart = null;
     this.didDrag = false;
+    this.targetSelectionMode = false;
 
     this.tileSize = MAP_CONFIG?.TILE_SIZE || 40;
     this.cols = MAP_CONFIG?.GRID_WIDTH || 30;
@@ -51,7 +63,8 @@ export class Map {
     this.canvas.style.cursor = 'grab';
     this.canvas.style.touchAction = 'none';
 
-    this.container.innerHTML = '';
+    this.viewport.innerHTML = '';
+    this.viewport.appendChild(this.container);
     this.container.appendChild(this.canvas);
 
     this.canvas.addEventListener('click', (event) => this.handleClick(event));
@@ -69,13 +82,23 @@ export class Map {
     this.render(generateInitialGrid());
   }
 
+  setTargetSelectionMode(enabled) {
+    this.targetSelectionMode = Boolean(enabled);
+    this.canvas.style.cursor = this.targetSelectionMode ? 'crosshair' : 'grab';
+  }
+
+  setDemilitarizedZones(zones = [], redraw = true) {
+    this.dmzZones = zones;
+    if (redraw && this.grid) this.render(this.grid, false);
+  }
+
   createZoomControls() {
     this.controls = document.createElement('div');
     this.controls.style.cssText = [
       'position:absolute',
       'top:12px',
       'right:12px',
-      'z-index:1',
+      'z-index:2',
       'display:flex',
       'align-items:center',
       'gap:6px',
@@ -112,7 +135,7 @@ export class Map {
     }
 
     this.zoomLabel = this.controls.querySelector('[data-zoom-label]');
-    this.container.appendChild(this.controls);
+    this.viewport.appendChild(this.controls);
   }
 
   getFitZoom() {
@@ -198,7 +221,7 @@ export class Map {
   endPan() {
     if (!this.dragStart) return;
     this.dragStart = null;
-    this.canvas.style.cursor = 'grab';
+    this.canvas.style.cursor = this.targetSelectionMode ? 'crosshair' : 'grab';
   }
 
   getTerrainColor(type) {
@@ -279,9 +302,27 @@ export class Map {
     }
 
     this.drawBorders(grid);
+    this.drawDemilitarizedZones();
     this.drawSelection();
     if (notifySelection && this.selectedPosition) {
       this.onTileSelected(this.getTile(grid, this.selectedPosition.x, this.selectedPosition.y));
+    }
+  }
+
+  drawDemilitarizedZones() {
+    const ctx = this.ctx;
+    for (const zone of this.dmzZones) {
+      for (let y = Math.max(0, zone.y - 2); y <= Math.min(this.rows - 1, zone.y + 2); y += 1) {
+        for (let x = Math.max(0, zone.x - 2); x <= Math.min(this.cols - 1, zone.x + 2); x += 1) {
+          const posX = x * this.tileSize;
+          const posY = y * this.tileSize;
+          ctx.fillStyle = 'rgba(147, 51, 234, 0.2)';
+          ctx.fillRect(posX, posY, this.tileSize, this.tileSize);
+          ctx.strokeStyle = 'rgba(216, 180, 254, 0.75)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(posX + 0.5, posY + 0.5, this.tileSize - 1, this.tileSize - 1);
+        }
+      }
     }
   }
 
@@ -443,6 +484,12 @@ export class Map {
     if (!tile) return;
 
     this.selectedPosition = { x, y };
-    this.render(this.grid);
+    this.selectionFromUser = true;
+    try {
+      this.render(this.grid, false);
+      this.onTileSelected(tile);
+    } finally {
+      this.selectionFromUser = false;
+    }
   }
 }

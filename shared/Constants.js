@@ -85,8 +85,17 @@ export const PROTOCOL = {
   PHASE_CHANGE: 'phase_change',
   SET_TAX_RATE: 'set_tax_rate',
   PLAYER_ACTION: 'player_action',
+  PROPOSE_OI_RESOLUTION: 'propose_oi_resolution',
+  SUBMIT_OI_VOTE: 'submit_oi_vote',
   ACTION_RESULT: 'action_result',
   ACTION_ERROR: 'action_error'
+};
+
+export const OI_RESOLUTIONS = {
+  ARMAMENT_LIMIT: 'ARMAMENT_LIMIT',
+  INDUSTRY_LIMIT: 'INDUSTRY_LIMIT',
+  DEMILITARIZED_ZONE: 'DEMILITARIZED_ZONE',
+  CONDITIONAL_SUBSIDY: 'CONDITIONAL_SUBSIDY'
 };
 
 export const INITIAL_STATE = {

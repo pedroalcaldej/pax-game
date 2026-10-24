@@ -10,6 +10,7 @@ import { socket } from '../../network/SocketClient.js';
 import {
   MAP_CONFIG,
   NATIONS,
+  OI_RESOLUTIONS,
   PROTOCOL
 } from '../../../../shared/Constants.js';
 
@@ -76,12 +77,12 @@ const STYLES = `
     font-weight: 900;
     cursor: pointer;
   }
-  .pax-start-button:disabled { opacity: .5; cursor: wait; }
+  .pax-start-button:disabled { opacity: .5; cursor: not-allowed; }
   .pax-start-status { min-height: 18px; margin-top: 12px !important; font-size: 11px; }
   .pax-shell *, .pax-shell *::before, .pax-shell *::after { box-sizing: border-box; }
   .pax-topbar {
     display: grid;
-    grid-template-columns: 38px 68px 74px minmax(186px, 240px) minmax(170px, 1fr) auto 112px;
+    grid-template-columns: 38px 68px minmax(186px, 240px) minmax(170px, 1fr) auto 112px;
     align-items: center;
     gap: 9px;
     padding: 7px 10px;
@@ -89,7 +90,7 @@ const STYLES = `
     border-bottom: 1px solid var(--pax-border);
   }
   .pax-brand { color: var(--pax-gold); font-size: 18px; font-weight: 900; letter-spacing: .05em; white-space: nowrap; }
-  .pax-version, .pax-round, .pax-phase, .pax-resources, .pax-gdi-button {
+  .pax-round, .pax-phase, .pax-resources, .pax-gdi-button {
     min-height: 40px;
     display: flex;
     align-items: center;
@@ -97,7 +98,6 @@ const STYLES = `
     border-radius: 7px;
     background: #10192b;
   }
-  .pax-version { padding: 0 9px; color: #98a6bd; font-size: 11px; line-height: 1.2; }
   .pax-round { gap: 10px; padding: 0 10px; }
   .pax-round-icon { color: var(--pax-gold); font-size: 17px; }
   .pax-label { display: block; color: var(--pax-muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
@@ -208,6 +208,15 @@ const STYLES = `
   .pax-oi-row strong { color: #d1b0ef; }
   .pax-oi-proposal { color: #bac5d6; font-size: 10px; line-height: 1.45; }
   .pax-oi-proposal strong { display: block; margin-top: 4px; color: #e4eaf3; }
+  .pax-oi-controls { display: grid; gap: 8px; margin-top: 9px; }
+  .pax-oi-controls label { display: grid; gap: 4px; color: #aab6c9; font-size: 10px; }
+  .pax-oi-controls select, .pax-oi-controls input { width: 100%; min-height: 30px; padding: 5px 7px; border: 1px solid #39455d; border-radius: 5px; color: #e2e8f0; background: #10192b; font: inherit; }
+  .pax-oi-controls button { min-height: 31px; padding: 6px 8px; border: 1px solid #5b4770; border-radius: 5px; color: #ead9fa; background: #21172e; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
+  .pax-oi-controls button:disabled { opacity: .45; cursor: not-allowed; }
+  .pax-oi-vote { padding: 8px 0; border-top: 1px solid #202c41; }
+  .pax-oi-vote > strong { display: block; margin-bottom: 6px; color: #e4eaf3; font-size: 10px; line-height: 1.4; }
+  .pax-oi-vote-fields { display: grid; grid-template-columns: 1fr 80px; gap: 6px; }
+  .pax-oi-note { color: #8f9cb2; font-size: 10px; line-height: 1.45; }
   .pax-event-log { max-height: 120px; overflow: auto; padding: 8px 9px; border: 1px solid #202c41; border-radius: 6px; background: #070d1c; color: #a9b5c8; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
   .pax-event-entry + .pax-event-entry { margin-top: 6px; }
   .pax-center { min-width: 0; min-height: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr) auto 37px; padding: 0 14px; background: #050a19; }
@@ -217,7 +226,7 @@ const STYLES = `
   .pax-legend-swatch { width: 9px; height: 9px; border-radius: 2px; }
   .pax-legend-status .pax-legend-item { gap: 5px; }
   .pax-status-mini { width: 8px; height: 8px; border-radius: 50%; background: var(--status-color); }
-  .pax-map-viewport { position: relative; min-width: 0; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center; border: 1px solid #26334a; border-radius: 12px; background: #0d1527; box-shadow: 0 8px 24px #0005; }
+  .pax-map-viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #26334a; border-radius: 12px; background: #0d1527; box-shadow: 0 8px 24px #0005; }
   .pax-action-slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 9px 0; }
   .pax-action-slots-heading { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; color: #aab6c9; font-size: 10px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
   .pax-action-slots-heading small { color: #77849a; font-size: 9px; font-weight: 500; letter-spacing: 0; text-transform: none; }
@@ -284,15 +293,15 @@ const STYLES = `
   .pax-score-breakdown dd { margin: 0; color: #dbe5f2; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
   @media (max-width: 1100px) {
     .pax-main { grid-template-columns: 240px minmax(0, 1fr) 260px; }
-    .pax-topbar { grid-template-columns: 36px 62px 58px minmax(150px, 190px) minmax(140px, 1fr) auto 98px; gap: 6px; padding-inline: 7px; }
+    .pax-topbar { grid-template-columns: 36px 62px minmax(150px, 190px) minmax(140px, 1fr) auto 98px; gap: 6px; padding-inline: 7px; }
     .pax-resource { gap: 4px; padding-inline: 6px; }
     .pax-center { padding-inline: 9px; }
   }
   @media (max-width: 820px) {
     .pax-shell { height: auto; min-height: 100dvh; grid-template-rows: auto minmax(70vh, 1fr); overflow: auto; }
-    .pax-topbar { grid-template-columns: 36px 62px 58px minmax(0, 1fr) 92px; }
+    .pax-topbar { grid-template-columns: 36px 62px minmax(0, 1fr) 92px; }
     .pax-phase { display: none; }
-    .pax-resources { grid-column: 1 / 6; grid-row: 2; justify-content: flex-start; min-height: 34px; }
+    .pax-resources { grid-column: 1 / 5; grid-row: 2; justify-content: flex-start; min-height: 34px; }
     .pax-topbar { grid-template-rows: 40px 34px; }
     .pax-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(55vh, 1fr) auto auto; }
     .pax-center { grid-row: 1; min-height: 55vh; }
@@ -305,7 +314,6 @@ const STYLES = `
     .pax-topbar { grid-template-columns: 36px 58px minmax(0, 1fr) 90px; }
     .pax-brand { font-size: 13px; letter-spacing: 0; }
     .pax-brand { grid-column: 2; }
-    .pax-version { display: none; }
     .pax-round { grid-column: 3; }
     .pax-resources { grid-column: 1 / 5; overflow-x: auto; }
     .pax-gdi-button { font-size: 10px; }
@@ -321,6 +329,16 @@ const STYLES = `
 
 function formatValue(value) {
   return Number.isFinite(value) ? Math.floor(value).toLocaleString('es-ES') : '—';
+}
+
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]);
 }
 
 export class GameScreen {
@@ -339,6 +357,11 @@ export class GameScreen {
     this.activeActionSlot = 0;
     this.startPending = false;
     this.startError = '';
+    this.connectionError = '';
+    this.oiTargetSelection = false;
+    this.oiDraftBallot = {};
+    this.oiSessionId = null;
+    this.oiRenderKey = '';
 
     this.init();
   }
@@ -371,12 +394,11 @@ export class GameScreen {
         <header class="pax-topbar">
           <button class="pax-menu-button" id="menu-toggle" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="game-menu" title="Menú">☰</button>
           <div class="pax-brand">◉ PAX</div>
-          <div class="pax-version">GDD<br>v3.0</div>
           <div class="pax-round">
             <span class="pax-round-icon">⌛</span>
             <div><span class="pax-label">Ronda</span><span class="pax-round-value" id="round-value">1/30</span></div>
             <span class="pax-timer" id="timer-value">60s</span>
-            <button class="pax-force-button" id="force-phase-button" type="button" disabled title="La fase termina cuando todos los jugadores conectados fuerzan su fin">⏩ Forzar</button>
+            <button class="pax-force-button" id="force-phase-button" type="button" disabled title="La fase termina cuando todos los jugadores humanos confirman que están listos">⏩ Forzar</button>
           </div>
           <div class="pax-phase"><span class="pax-label">Fase actual:</span><strong id="phase-value">Fase 1: Crecimiento y recaudación</strong></div>
           <div class="pax-resources" aria-label="Recursos nacionales">
@@ -409,8 +431,9 @@ export class GameScreen {
             <section class="pax-panel-section">
               <div class="pax-panel-heading"><span class="pax-panel-heading-icon" style="color:#b684e8">♙</span>Organización Int. (OI)<span class="pax-oi-tag">Sesión cada 5 rondas</span></div>
               <div class="pax-oi-card">
-                <div class="pax-oi-row"><span>Próxima votación:</span><strong id="next-vote">Ronda 5</strong></div>
-                <div class="pax-oi-proposal">Resolución propuesta:<strong>Límites Ambientales de Industria (Max. 4 FT/FA)</strong></div>
+                <div class="pax-oi-row"><span>Próxima reunión:</span><strong id="next-vote">Antes de ronda 5</strong></div>
+                <div class="pax-oi-note" id="oi-status"></div>
+                <div id="oi-content"></div>
               </div>
             </section>
             <section class="pax-panel-section">
@@ -425,6 +448,7 @@ export class GameScreen {
                 <span class="pax-legend-item"><i class="pax-legend-swatch" style="background:#8D5B4C"></i>Tierra (TR/MPT/FT)</span>
                 <span class="pax-legend-item"><i class="pax-legend-swatch" style="background:#3182CE"></i>Agua (AG/MPA/FA)</span>
                 <span class="pax-legend-item"><i class="pax-legend-swatch" style="background:#38BDF8"></i>Río</span>
+                <span class="pax-legend-item"><i class="pax-legend-swatch" style="background:#9333EA"></i>ZDM activa</span>
               </div>
               <div class="pax-legend-status">
                 <span class="pax-legend-item"><i class="pax-status-mini" style="--status-color:#22C55E"></i>Normal</span>
@@ -466,17 +490,24 @@ export class GameScreen {
     this.onConnect = () => {
       this.startPending = false;
       this.startError = '';
+      this.connectionError = '';
       this.joinGame();
       this.updateStartMenu();
     };
     this.onDisconnect = () => {
       this.startPending = false;
       this.startError = 'Se perdió la conexión con el servidor. Reconectando…';
+      this.connectionError = '';
+      this.updateStartMenu();
+    };
+    this.onConnectError = () => {
+      this.connectionError = 'No se pudo conectar con el servidor. Comprueba que esté iniciado en la Terminal 1.';
       this.updateStartMenu();
     };
     this.onGameState = (gameState) => this.updateGameState(gameState);
     socket.on('connect', this.onConnect);
     socket.on('disconnect', this.onDisconnect);
+    socket.on('connect_error', this.onConnectError);
     socket.on(PROTOCOL.GAME_STATE_UPDATE, this.onGameState);
     this.onActionResult = (message) => this.addEvent(message);
     socket.on(PROTOCOL.ACTION_RESULT, this.onActionResult);
@@ -577,6 +608,24 @@ export class GameScreen {
     this.container.querySelector('#taxInput').addEventListener('input', (event) => {
       this.container.querySelector('#tax-value').textContent = `${Math.round(Number(event.target.value) * 100)}%`;
     });
+
+    const oiCard = this.container.querySelector('.pax-oi-card');
+    oiCard.addEventListener('click', (event) => {
+      const button = event.target.closest('button');
+      if (!button) return;
+      if (button.id === 'oi-propose') this.handleOIProposal();
+      if (button.id === 'oi-select-target') this.beginOITargetSelection();
+      if (button.id === 'oi-submit-vote') this.submitOIVote();
+    });
+    oiCard.addEventListener('input', () => this.captureOIDraft());
+    oiCard.addEventListener('change', (event) => {
+      this.captureOIDraft();
+      if (event.target.matches('#oi-resolution-type')) {
+        this.container.querySelector('#oi-select-target').hidden = (
+          event.target.value !== OI_RESOLUTIONS.DEMILITARIZED_ZONE
+        );
+      }
+    });
   }
 
   updateTaxMetrics(taxRate) {
@@ -608,6 +657,7 @@ export class GameScreen {
     this.gameState = gameState;
     const phase = gameState.currentPhase || 1;
     if (phase !== 2) this.pendingMoveSource = null;
+    this.map.setDemilitarizedZones(gameState.activeDmzZones || [], false);
     this.map.render(gameState.grid);
 
     const players = Array.isArray(gameState.players) ? gameState.players : [];
@@ -643,7 +693,8 @@ export class GameScreen {
     roundEl.textContent = `${round}/30`;
     this.container.querySelector('#timer-value').textContent = `${gameState.timeRemaining ?? 60}s`;
     this.container.querySelector('#phase-value').textContent = `Fase ${phase}: ${PHASE_LABELS[phase] || 'En curso'}`;
-    this.container.querySelector('#next-vote').textContent = `Ronda ${Math.ceil((round + 1) / 5) * 5}`;
+    this.container.querySelector('#next-vote').textContent = `Antes de ronda ${Math.ceil((round + 1) / 5) * 5}`;
+    this.updateOIPanel(gameState, round);
     this.updateNationPanel();
     this.updateResources();
     this.taxSlider.setEnabled(Boolean(this.player && phase === 2));
@@ -666,10 +717,176 @@ export class GameScreen {
     }
   }
 
+  updateOIPanel(gameState, round) {
+    const card = this.container.querySelector('.pax-oi-card');
+    const status = card.querySelector('#oi-status');
+    const content = card.querySelector('#oi-content');
+    const session = gameState.oiSession;
+    const sessionId = session?.id || null;
+    if (sessionId !== this.oiSessionId) {
+      this.oiSessionId = sessionId;
+      this.oiDraftBallot = {};
+    }
+
+    const hasVoted = Boolean(this.player && session?.votesSubmitted?.includes(this.player.id));
+    const renderKey = JSON.stringify({
+      round,
+      phase: gameState.currentPhase,
+      playerId: this.player?.id,
+      influence: this.player?.resources?.INFLUENCE,
+      proposals: gameState.oiProposals,
+      session: session && {
+        id: session.id,
+        phase: session.phase,
+        proposals: session.proposals,
+        votes: session.votes,
+        results: session.results
+      },
+      votesSubmitted: session?.votesSubmitted,
+      policies: gameState.oiPolicies,
+      zones: gameState.activeDmzZones,
+      pacts: gameState.nonAggressionPacts
+    });
+    if (renderKey === this.oiRenderKey) {
+      if (session?.phase === 'voting') {
+        status.textContent = `Votación abierta · ${session.timeRemaining}s restantes · ${this.player?.resources?.INFLUENCE || 0} de Influencia disponible.`;
+      }
+      return;
+    }
+    this.oiRenderKey = renderKey;
+
+    if (session?.phase === 'voting') {
+      status.textContent = `Votación abierta · ${session.timeRemaining}s restantes · ${this.player?.resources?.INFLUENCE || 0} de Influencia disponible.`;
+      content.innerHTML = `
+        <div class="pax-oi-controls">
+          <p class="pax-oi-note">Votación antes de la ronda ${session.meetingBeforeRound}. Votos registrados: ${session.votesSubmitted?.length || 0}/${gameState.players.length}. Las papeletas se revelan al cerrar la sesión.</p>
+          ${hasVoted
+            ? '<p class="pax-oi-note">Tu papeleta quedó registrada. Espera a que voten los demás o termine el plazo.</p>'
+            : `${session.proposals.map((proposal) => {
+              const draft = this.oiDraftBallot[proposal.id] || { choice: 'ABSTAIN', wager: 0 };
+              return `
+                <div class="pax-oi-vote">
+                  <strong>${escapeHTML(proposal.name)}${proposal.target ? ` · casilla (${proposal.target.x}, ${proposal.target.y})` : ''}</strong>
+                  <div class="pax-oi-vote-fields">
+                    <label>Voto
+                      <select data-oi-choice="${escapeHTML(proposal.id)}">
+                        <option value="FOR" ${draft.choice === 'FOR' ? 'selected' : ''}>A favor</option>
+                        <option value="AGAINST" ${draft.choice === 'AGAINST' ? 'selected' : ''}>En contra</option>
+                        <option value="ABSTAIN" ${draft.choice === 'ABSTAIN' ? 'selected' : ''}>Abstención</option>
+                      </select>
+                    </label>
+                    <label>Apuesta
+                      <input data-oi-wager="${escapeHTML(proposal.id)}" type="number" min="0" step="1" value="${draft.wager}" />
+                    </label>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+            <button id="oi-submit-vote" type="button" ${this.player ? '' : 'disabled'}>Registrar todos los votos</button>`}
+        </div>
+      `;
+      return;
+    }
+
+    const proposalWindow = gameState.gameStarted
+      && gameState.currentPhase === 2;
+    const resultsMarkup = session?.phase === 'complete' && session.results
+      ? `
+        <div class="pax-oi-controls">
+          <p class="pax-oi-note">Resultados de la sesión anterior:</p>
+          ${session.results.length
+            ? session.results.map((result) => `
+              <div class="pax-oi-vote">
+                <strong>${escapeHTML(result.name)}</strong>
+                <span class="pax-oi-note">${result.message}: a favor ${result.forInfluence} · en contra ${result.againstInfluence}.</span>
+              </div>
+            `).join('')
+            : '<p class="pax-oi-note">No se presentaron resoluciones en la última sesión.</p>'}
+        </div>
+      `
+      : '';
+    status.textContent = proposalWindow
+      ? 'Puedes proponer resoluciones durante la planificación. Cada propuesta cuesta 2 de Influencia.'
+      : `Próxima sesión antes de ronda ${Math.ceil((round + 1) / 5) * 5}.`;
+    content.innerHTML = `
+      <div class="pax-oi-controls">
+        ${resultsMarkup}
+        ${proposalWindow ? `
+          <label>Resolución
+            <select id="oi-resolution-type">
+              <option value="${OI_RESOLUTIONS.ARMAMENT_LIMIT}">Límite de armamento · 10 tropas</option>
+              <option value="${OI_RESOLUTIONS.INDUSTRY_LIMIT}">Límite de industria · 10 fábricas</option>
+              <option value="${OI_RESOLUTIONS.DEMILITARIZED_ZONE}">Zona Desmilitarizada · elegir casilla</option>
+              <option value="${OI_RESOLUTIONS.CONDITIONAL_SUBSIDY}">Subsidio condicionado · 25 de plata</option>
+            </select>
+          </label>
+          <button id="oi-select-target" type="button" hidden>Elegir casilla para la ZDM</button>
+          <button id="oi-propose" type="button" ${this.player?.resources?.INFLUENCE >= 2 ? '' : 'disabled'}>Proponer (cuesta 2 Influencia)</button>
+          ${this.oiTargetSelection ? '<p class="pax-oi-note">Haz clic en la casilla objetivo del mapa (el centro de una zona de 5×5).</p>' : ''}
+        ` : ''}
+        ${gameState.oiProposals.length
+          ? `<div class="pax-oi-note">Propuestas acumuladas: ${gameState.oiProposals.map((proposal) => `
+            <div class="pax-oi-proposal">${escapeHTML(proposal.name)} · ${escapeHTML(proposal.proposerName)}${proposal.target ? ` · (${proposal.target.x}, ${proposal.target.y})` : ''}</div>
+          `).join('')}</div>`
+          : '<p class="pax-oi-note">Aún no hay propuestas para la próxima sesión.</p>'}
+        <p class="pax-oi-note">Los límites aprobados se mantienen activos. Las ZDM y los pactos duran hasta la siguiente sesión.</p>
+      </div>
+    `;
+    const selectTargetButton = content.querySelector('#oi-select-target');
+    if (selectTargetButton) {
+      selectTargetButton.hidden = (
+        content.querySelector('#oi-resolution-type').value !== OI_RESOLUTIONS.DEMILITARIZED_ZONE
+      );
+    }
+  }
+
+  captureOIDraft() {
+    const card = this.container.querySelector('.pax-oi-card');
+    for (const select of card.querySelectorAll('[data-oi-choice]')) {
+      const proposalId = select.dataset.oiChoice;
+      this.oiDraftBallot[proposalId] ||= {};
+      this.oiDraftBallot[proposalId].choice = select.value;
+    }
+    for (const input of card.querySelectorAll('[data-oi-wager]')) {
+      const proposalId = input.dataset.oiWager;
+      this.oiDraftBallot[proposalId] ||= {};
+      this.oiDraftBallot[proposalId].wager = Number(input.value);
+    }
+  }
+
+  handleOIProposal() {
+    const type = this.container.querySelector('#oi-resolution-type')?.value;
+    if (!type || type === OI_RESOLUTIONS.DEMILITARIZED_ZONE || !socket.connected) return;
+    socket.emit(PROTOCOL.PROPOSE_OI_RESOLUTION, {
+      roomId: 'room-1',
+      proposal: { type }
+    });
+  }
+
+  beginOITargetSelection() {
+    if (!socket.connected || !this.container.querySelector('#oi-resolution-type')) return;
+    this.oiTargetSelection = true;
+    this.map.setTargetSelectionMode(true);
+    this.updateOIPanel(this.gameState, this.gameState.currentRound);
+    this.container.querySelector('#oi-status').textContent = 'Selecciona la casilla central de la ZDM en el mapa.';
+  }
+
+  submitOIVote() {
+    const session = this.gameState?.oiSession;
+    if (!socket.connected || session?.phase !== 'voting') return;
+    this.captureOIDraft();
+    const ballot = session.proposals.map((proposal) => ({
+      proposalId: proposal.id,
+      choice: this.oiDraftBallot[proposal.id]?.choice || 'ABSTAIN',
+      wager: this.oiDraftBallot[proposal.id]?.wager ?? 0
+    }));
+    socket.emit(PROTOCOL.SUBMIT_OI_VOTE, { roomId: 'room-1', ballot });
+  }
+
   updateForcePhaseButton(players, phase, gameStarted) {
     const button = this.container.querySelector('#force-phase-button');
     if (!button) return;
-    const participants = players.filter((player) => !player.isBot && player.socketId);
+    const participants = players;
     const readyCount = participants.filter((player) => player.phaseReady).length;
     const requiredCount = participants.length;
     const canForce = Boolean(gameStarted && this.player && phase === 2);
@@ -682,7 +899,7 @@ export class GameScreen {
         : '⏩ Forzar';
     button.title = isReady
       ? 'Retirar tu confirmación para que continúe la planificación'
-      : 'La fase termina cuando todos los jugadores conectados fuerzan su fin';
+      : 'Los bots ya están listos; la fase termina cuando todos los jugadores humanos confirman que están listos.';
   }
 
   updateActionSlots() {
@@ -786,7 +1003,7 @@ export class GameScreen {
 
     button.disabled = !socket.connected || !this.player || this.startPending;
     status.textContent = !socket.connected
-      ? 'No hay conexión con el servidor. Reconectando…'
+      ? this.connectionError || 'No hay conexión con el servidor. Reconectando…'
       : this.startError
         ? this.startError
       : this.startPending
@@ -820,6 +1037,17 @@ export class GameScreen {
   }
 
   handleTileSelection(tile) {
+    if (this.oiTargetSelection && this.map.selectionFromUser && tile) {
+      const type = this.container.querySelector('#oi-resolution-type')?.value;
+      this.oiTargetSelection = false;
+      this.map.setTargetSelectionMode(false);
+      socket.emit(PROTOCOL.PROPOSE_OI_RESOLUTION, {
+        roomId: 'room-1',
+        proposal: { type, x: tile.x, y: tile.y }
+      });
+      this.updateOIPanel(this.gameState, this.gameState.currentRound);
+      return;
+    }
     this.inspector.render(tile);
     if (!this.pendingMoveSource || !tile) return;
 
@@ -888,6 +1116,7 @@ export class GameScreen {
     socket.off(PROTOCOL.GAME_STATE_UPDATE, this.onGameState);
     socket.off('connect', this.onConnect);
     socket.off('disconnect', this.onDisconnect);
+    socket.off('connect_error', this.onConnectError);
     socket.off(PROTOCOL.ACTION_RESULT, this.onActionResult);
     socket.off(PROTOCOL.ACTION_ERROR, this.onActionError);
     this.styleElement.remove();

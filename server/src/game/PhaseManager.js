@@ -4,6 +4,7 @@
 
 import { GAME_PHASES, TIMINGS } from '../../../shared/Constants.js';
 import { EconomyEngine } from './EconomyEngine.js';
+import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 
 const NEXT_PHASE = {
   [GAME_PHASES.PHASE_3_RESOLUTION]: GAME_PHASES.PHASE_4_GLOBAL_OI,
@@ -16,6 +17,7 @@ export class PhaseManager {
     this.onPhaseChange = onPhaseChangeCallback;
     this.timer = null;
     this.transitionTimer = null;
+    this.oiTimer = null;
     this.secondsRemaining = TIMINGS.DECISION_PHASE_DURATION;
     this.running = false;
   }
@@ -46,6 +48,10 @@ export class PhaseManager {
         this.gameState.timeRemaining = this.secondsRemaining;
         this.gameState.runBotDecisions();
         this.notifyState();
+        if (this.gameState.allPlayersReady()) {
+          this.finishDecisionPhase();
+          break;
+        }
         this.startDecisionTimer();
         break;
       case GAME_PHASES.PHASE_3_RESOLUTION:
@@ -56,6 +62,10 @@ export class PhaseManager {
         this.schedulePhase(GAME_PHASES.PHASE_4_GLOBAL_OI, 2000);
         break;
       case GAME_PHASES.PHASE_4_GLOBAL_OI:
+        if ((this.gameState.currentRound + 1) % 5 === 0) {
+          this.startOISession();
+          break;
+        }
         this.gameState.timeRemaining = 2;
         this.notifyState();
         this.schedulePhase(GAME_PHASES.PHASE_5_SUMMARY, 2000);
@@ -99,6 +109,59 @@ export class PhaseManager {
     return true;
   }
 
+  startOISession() {
+    const session = InternationalOrganizationEngine.startSession(this.gameState);
+    if (!session.proposals.length || InternationalOrganizationEngine.haveAllPlayersVoted(this.gameState)) {
+      this.completeOISession();
+      return;
+    }
+
+    this.gameState.timeRemaining = session.timeRemaining;
+    this.notifyState();
+    this.oiTimer = setInterval(() => {
+      session.timeRemaining = Math.max(0, session.timeRemaining - 1);
+      this.gameState.timeRemaining = session.timeRemaining;
+      this.notifyState();
+      if (session.timeRemaining === 0) this.completeOISession();
+    }, 1000);
+  }
+
+  checkOIVotes() {
+    if (
+      this.running
+      && this.gameState.currentPhase === GAME_PHASES.PHASE_4_GLOBAL_OI
+      && InternationalOrganizationEngine.haveAllPlayersVoted(this.gameState)
+    ) {
+      this.completeOISession();
+    }
+  }
+
+  checkDecisionReadiness() {
+    if (
+      this.running
+      && this.gameState.currentPhase === GAME_PHASES.PHASE_2_DECISIONS
+      && this.gameState.allPlayersReady()
+    ) {
+      return this.finishDecisionPhase();
+    }
+    return false;
+  }
+
+  completeOISession() {
+    if (!this.running || this.gameState.currentPhase !== GAME_PHASES.PHASE_4_GLOBAL_OI) return;
+    this.stopOITimer();
+    InternationalOrganizationEngine.finishSession(this.gameState);
+    this.gameState.timeRemaining = 2;
+    this.notifyState();
+    this.schedulePhase(GAME_PHASES.PHASE_5_SUMMARY, 2000);
+  }
+
+  stopOITimer() {
+    if (!this.oiTimer) return;
+    clearInterval(this.oiTimer);
+    this.oiTimer = null;
+  }
+
   stopTimer() {
     if (!this.timer) return;
     clearInterval(this.timer);
@@ -115,6 +178,7 @@ export class PhaseManager {
     this.running = false;
     this.stopTimer();
     this.stopTransitionTimer();
+    this.stopOITimer();
   }
 
   notifyState() {
