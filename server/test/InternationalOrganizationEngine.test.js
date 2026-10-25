@@ -374,7 +374,7 @@ test('treaties expire at the end of their fifth round and are logged', () => {
   assert.match(gameState.eventHistory[1].message, /Tratado de Libre Comercio entre .* expiró/);
 });
 
-test('free-trade treaties are tracked for five rounds without market effects', () => {
+test('free-trade treaties are active for five rounds', () => {
   const { gameState, player } = createHumanGame();
   const recipient = gameState.players.get('nation-1');
   recipient.socketId = 'recipient-socket';
@@ -393,6 +393,154 @@ test('free-trade treaties are tracked for five rounds without market effects', (
   assert.equal(result.ok, true);
   assert.equal(gameState.freeTradeTreaties.length, 1);
   assert.equal(gameState.freeTradeTreaties[0].expiresAfterRound, 5);
+});
+
+test('the global market buys and sells materials at the fixed prices', () => {
+  const { gameState, player } = createHumanGame();
+  gameState.currentPhase = 6;
+  player.resources.SILVER = 100;
+  player.resources.MATERIALS = 10;
+
+  assert.equal(gameState.performFinancialAction(player.socketId, {
+    type: 'BUY_MATERIALS',
+    quantity: 2
+  }).ok, true);
+  assert.equal(player.resources.SILVER, 94);
+  assert.equal(player.resources.MATERIALS, 12);
+  assert.equal(gameState.bankFund.SILVER, 6);
+
+  assert.equal(gameState.performFinancialAction(player.socketId, {
+    type: 'SELL_MATERIALS',
+    quantity: 3
+  }).ok, true);
+  assert.equal(player.resources.SILVER, 97);
+  assert.equal(player.resources.MATERIALS, 9);
+  assert.equal(gameState.bankFund.MATERIALS, 3);
+});
+
+test('direct transfers charge the 20 percent tariff and TLC transfers are exempt', () => {
+  const { gameState, player } = createHumanGame();
+  const recipient = gameState.players.get('nation-1');
+  player.resources.SILVER = 20;
+  recipient.resources.SILVER = 0;
+
+  const taxed = gameState.performFinancialAction(player.socketId, {
+    type: 'TRANSFER_RESOURCE',
+    recipientId: recipient.id,
+    resource: 'SILVER',
+    amount: 10
+  });
+  assert.equal(taxed.ok, true);
+  assert.equal(player.resources.SILVER, 10);
+  assert.equal(recipient.resources.SILVER, 8);
+  assert.equal(gameState.bankFund.SILVER, 2);
+
+  gameState.freeTradeTreaties.push({
+    playerIds: [player.id, recipient.id].sort(),
+    expiresAfterRound: 5
+  });
+  const exempt = gameState.performFinancialAction(player.socketId, {
+    type: 'TRANSFER_RESOURCE',
+    recipientId: recipient.id,
+    resource: 'SILVER',
+    amount: 5
+  });
+  assert.equal(exempt.ok, true);
+  assert.equal(player.resources.SILVER, 5);
+  assert.equal(recipient.resources.SILVER, 13);
+  assert.equal(gameState.bankFund.SILVER, 2);
+
+  gameState.registerMilitaryConflict(player, recipient.id);
+  const afterWar = gameState.performFinancialAction(player.socketId, {
+    type: 'TRANSFER_RESOURCE',
+    recipientId: recipient.id,
+    resource: 'MATERIALS',
+    amount: 5
+  });
+  assert.equal(afterWar.ok, true);
+  assert.equal(recipient.resources.MATERIALS, 14);
+  assert.equal(gameState.bankFund.MATERIALS, 1);
+  assert.equal(gameState.freeTradeTreaties.length, 0);
+});
+
+test('bonds default at maturity, lose influence, accrue one interest per round, and accept partial payment', () => {
+  const { gameState, player } = createHumanGame();
+  player.resources.SILVER = 100;
+  const issued = gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
+  assert.equal(issued.ok, true);
+  assert.equal(player.resources.SILVER, 120);
+  assert.equal(gameState.bonds[0].dueRound, 5);
+
+  player.resources.SILVER = 24;
+  gameState.processBondsAtRoundStart(5);
+  assert.equal(gameState.bonds[0].defaulted, true);
+  assert.equal(gameState.bonds[0].balance, 25);
+  assert.equal(player.resources.INFLUENCE, 15);
+
+  gameState.processBondsAtRoundStart(6);
+  gameState.processBondsAtRoundStart(6);
+  assert.equal(gameState.bonds[0].balance, 26);
+  const repayment = gameState.performFinancialAction(player.socketId, {
+    type: 'REPAY_BOND',
+    bondId: gameState.bonds[0].id,
+    amount: 10
+  });
+  assert.equal(repayment.ok, true);
+  assert.equal(player.resources.SILVER, 14);
+  assert.equal(gameState.bonds[0].balance, 16);
+  assert.equal(gameState.bankFund.SILVER, 10);
+  gameState.processBondsAtRoundStart(7);
+  assert.equal(gameState.bonds[0].balance, 17);
+});
+
+test('a bond is automatically repaid when the player can cover its maturity balance', () => {
+  const { gameState, player } = createHumanGame();
+  gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
+  player.resources.SILVER = 25;
+
+  gameState.processBondsAtRoundStart(5);
+
+  assert.equal(gameState.bonds[0].paid, true);
+  assert.equal(gameState.bonds[0].balance, 0);
+  assert.equal(player.resources.SILVER, 0);
+  assert.equal(gameState.bankFund.SILVER, 25);
+  assert.equal(player.resources.INFLUENCE, 20);
+});
+
+test('a recent conflict disables new TLC proposals', () => {
+  const { gameState, player } = createHumanGame();
+  const recipient = gameState.players.get('nation-1');
+  gameState.conflicts.push({
+    attackerId: player.id,
+    defenderId: recipient.id,
+    round: gameState.currentRound - 1
+  });
+
+  const proposal = gameState.proposeTreaty(player.socketId, {
+    recipientId: recipient.id,
+    type: 'FREE_TRADE'
+  });
+  assert.equal(proposal.ok, false);
+  assert.equal(gameState.isPlayersAtWar(player.id, recipient.id), true);
+
+  gameState.currentRound += 3;
+  assert.equal(gameState.isPlayersAtWar(player.id, recipient.id), false);
+});
+
+test('troops occupying another country’s territory block new TLC proposals', () => {
+  const { gameState, player } = createHumanGame();
+  const recipient = gameState.players.get('nation-1');
+  const tile = gameState.grid.flat().find((entry) => entry.ownerId === recipient.id);
+  tile.visitingTroops = { [player.id]: 1 };
+
+  const proposal = gameState.proposeTreaty(player.socketId, {
+    recipientId: recipient.id,
+    type: 'FREE_TRADE'
+  });
+
+  assert.equal(proposal.ok, false);
+  assert.equal(gameState.getState().activeConflicts.length, 1);
+  assert.equal(gameState.getState().activeConflicts[0].occupied, true);
 });
 
 test('bots accept non-aggression pacts only when an adjacent country is stronger', () => {
@@ -1008,6 +1156,10 @@ test('attacking a PNA signatory breaks the pact and applies the influence penalt
     playerIds: [player.id, 'nation-1'].sort(),
     expiresAfterRound: 5
   });
+  gameState.nonAggressionPacts.push({
+    playerIds: [player.id, 'nation-1'].sort(),
+    expiresAfterRound: 7
+  });
   const attack = {
     type: 'MOVE_TROOPS',
     x: source.x, y: source.y,
@@ -1025,6 +1177,37 @@ test('attacking a PNA signatory breaks the pact and applies the influence penalt
   assert.equal(player.resources.INFLUENCE, 0);
   assert.equal(gameState.nonAggressionPacts.length, 0);
   assert.match(gameState.eventHistory.at(-1).message, /traicionó el Pacto de No Agresión/);
+});
+
+test('moving into a TLC signatory’s territory breaks the treaty and records the conflict', () => {
+  const { gameState, player } = createHumanGame();
+  const source = gameState.grid.flat().find((tile) => (
+    tile.ownerId === player.id && tile.x < gameState.gridWidth - 1 && tile.troops > 0
+  ));
+  const destination = gameState.grid[source.y][source.x + 1];
+  const defender = gameState.players.get('nation-1');
+  destination.ownerId = defender.id;
+  destination.nationId = defender.nationId;
+  destination.type = TERRAIN_TYPES.TR;
+  destination.troops = 0;
+  gameState.freeTradeTreaties.push({
+    playerIds: [player.id, defender.id].sort(),
+    expiresAfterRound: 5
+  });
+
+  const result = gameState.resolveTroopMovement(player, {
+    type: 'MOVE_TROOPS',
+    x: source.x,
+    y: source.y,
+    targetX: destination.x,
+    targetY: destination.y,
+    troops: 1
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(gameState.freeTradeTreaties.length, 0);
+  assert.equal(gameState.isPlayersAtWar(player.id, defender.id), true);
+  assert.ok(gameState.eventHistory.some((event) => /rompió el Tratado de Libre Comercio/.test(event.message)));
 });
 
 test('the phase ends as soon as every human is ready because bots are already ready', () => {

@@ -6,6 +6,7 @@ import { Map } from '../components/Map.js';
 import { Inspector } from '../components/Inspector.js';
 import { TaxSlider } from '../components/TaxSlider.js';
 import { GlobalPanel } from '../components/GlobalPanel.js';
+import { FinancePanel } from '../components/FinancePanel.js';
 import { socket } from '../../network/SocketClient.js';
 import {
   ACTION_SLOT_COUNT,
@@ -318,6 +319,17 @@ const STYLES = `
   .pax-global-treaty-form select { min-height: 32px; padding: 5px 7px; border: 1px solid #39455d; border-radius: 5px; color: #e2e8f0; background: #10192b; font: inherit; }
   .pax-global-treaty-form :disabled { opacity: .5; cursor: not-allowed; }
   .pax-global-treaty-form p, .pax-global-empty, .pax-global-panel-status { margin: 0; font-size: 10px; line-height: 1.45; }
+  .pax-finance { display: grid; gap: 9px; }
+  .pax-finance h3 { margin: 8px 0 0; color: #dce4f2; font-size: 11px; }
+  .pax-finance form { display: grid; gap: 7px; padding: 8px; border: 1px solid #263249; border-radius: 6px; background: #070d1c; }
+  .pax-finance label { display: grid; gap: 4px; color: #aab6c9; font-size: 10px; }
+  .pax-finance input, .pax-finance select { width: 100%; min-height: 29px; padding: 4px 6px; border: 1px solid #39455d; border-radius: 5px; color: #e2e8f0; background: #10192b; font: inherit; }
+  .pax-finance button { min-height: 30px; padding: 6px 8px; border: 1px solid #39455d; border-radius: 5px; color: #e2e8f0; background: #1a263b; font: inherit; font-size: 10px; font-weight: 800; cursor: pointer; }
+  .pax-finance button:disabled, .pax-finance input:disabled, .pax-finance select:disabled { opacity: .45; cursor: not-allowed; }
+  .pax-finance-note, .pax-finance-debt small, .pax-finance-status { margin: 0; color: #93a1b5; font-size: 10px; line-height: 1.45; }
+  .pax-finance-debt { margin-top: 7px; }
+  .pax-finance-debt strong { color: #e2e8f0; font-size: 10px; }
+  .pax-finance-status { color: #f2bb3b; }
   @media (max-width: 1100px) {
     .pax-main { grid-template-columns: 240px minmax(0, 1fr) 260px; }
     .pax-topbar { grid-template-columns: 36px 62px minmax(150px, 190px) minmax(140px, 1fr) auto 98px; gap: 6px; padding-inline: 7px; }
@@ -456,6 +468,10 @@ export class GameScreen {
               </div>
             </section>
             <section class="pax-panel-section">
+              <div class="pax-panel-heading"><span class="pax-panel-heading-icon">¤</span>Finanzas</div>
+              <div id="finance-panel"></div>
+            </section>
+            <section class="pax-panel-section">
               <div class="pax-panel-heading"><span class="pax-panel-heading-icon" style="color:#b684e8">♙</span>Organización Int. (OI)<span class="pax-oi-tag">Sesión cada 5 rondas</span></div>
               <div class="pax-oi-card">
                 <div class="pax-oi-row"><span>Próxima reunión:</span><strong id="next-vote">Después de ronda 5</strong></div>
@@ -527,6 +543,20 @@ export class GameScreen {
         offerId
       })
     });
+    this.financePanel = new FinancePanel(
+      this.container.querySelector('#finance-panel'),
+      (action) => {
+        socket.timeout(5000).emit(
+          PROTOCOL.FINANCIAL_ACTION,
+          { roomId: 'room-1', action },
+          (error, result) => {
+            this.financePanel.setStatus(error
+              ? 'El servidor no respondió; comprueba la conexión e inténtalo otra vez.'
+              : result?.message || 'No se pudo completar la operación financiera.');
+          }
+        );
+      }
+    );
     this.taxSlider = new TaxSlider(taxEl, (newTaxRate) => {
       this.updateTaxMetrics(newTaxRate);
       socket.emit(PROTOCOL.SET_TAX_RATE, { roomId: 'room-1', taxRate: newTaxRate });
@@ -813,6 +843,7 @@ export class GameScreen {
     this.updateActionHighlights();
     this.updateForcePhaseButton(players, phase, gameState.gameStarted);
     this.globalPanel.update(gameState, this.player?.id);
+    this.financePanel.update(gameState, this.player?.id);
 
     const round = gameState.oiSession?.phase === 'voting'
       ? gameState.oiSession.meetingAfterRound

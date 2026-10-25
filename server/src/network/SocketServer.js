@@ -238,6 +238,20 @@ export class SocketServer {
         if (result.ok) this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });
 
+      socket.on(PROTOCOL.FINANCIAL_ACTION, ({ roomId, action } = {}, acknowledge = () => {}) => {
+        const room = this.roomManager.getRoom(roomId || 'room-1');
+        if (!room || !socket.rooms.has(room.id)) {
+          const message = 'Únete a la partida antes de realizar una operación financiera.';
+          socket.emit(PROTOCOL.ACTION_ERROR, message);
+          acknowledge({ ok: false, message });
+          return;
+        }
+        const result = room.gameState.performFinancialAction(socket.id, action);
+        socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
+        acknowledge(result);
+        if (result.ok) this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
+      });
+
       socket.on('disconnect', () => {
         for (const room of this.roomManager.rooms.values()) {
           const disconnectedPlayer = Array.from(room.gameState.players.values())

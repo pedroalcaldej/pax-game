@@ -90,6 +90,21 @@ correspondiente del proyecto.
 - El movimiento a una casilla enemiga adyacente resuelve combate terrestre: gana el
   atacante solo con superioridad numérica y captura al vencer. Atacar a un firmante de
   un PNA rompe el pacto y sanciona al atacante con 10 de Influencia Política.
+- El Mercado Global permite comprar materiales por 3 de plata cada uno y venderlos
+  por 1 de plata cada uno. Las transferencias directas de Plata o Materiales a otro
+  país aplican un arancel del 20% al monto enviado, salvo entre firmantes de un TLC
+  vigente, que están exentos mientras no haya guerra.
+- Emitir un bono entrega 20 de plata y crea una deuda de 25 con vencimiento en la
+  quinta ronda, contando la ronda de emisión. Si no se puede pagar el total al
+  vencimiento, el jugador pierde 5 de Influencia y la deuda impaga acumula 1 de plata
+  de interés al inicio de cada ronda posterior. Los pagos parciales o totales se pueden
+  hacer manualmente desde Finanzas; los bonos que sí tienen saldo suficiente se cobran
+  automáticamente al vencer.
+- El Panel Global muestra los conflictos militares: un combate o la ocupación de
+  territorio rival mantiene el estado de guerra durante las últimas tres rondas y
+  mientras haya tropas extranjeras en el territorio. No se pueden proponer TLC nuevos
+  durante un conflicto; una acción militar rompe de inmediato el TLC activo entre los
+  países involucrados.
 - Las casillas se resaltan suavemente al pasar el cursor. Todos los botones reproducen
   un sonido breve al pulsarlos.
 - El log conserva el historial completo de la partida y se sincroniza
@@ -113,8 +128,9 @@ correspondiente del proyecto.
   rondas desde su activación; el Panel Global muestra las rondas restantes. Firmas,
   expiraciones, cancelaciones y rupturas se registran en el Log. Atacar a un firmante de
   un PNA cancela de inmediato ese pacto y descuenta 10 puntos de Influencia Política al
-  atacante, hasta un mínimo de cero. El tratado de libre comercio queda registrado sin
-  efecto económico hasta que se implemente un mercado. Los bots aceptan un PNA cuando el
+  atacante, hasta un mínimo de cero. El TLC elimina el arancel bancario del 20% en las
+  transferencias directas entre sus firmantes y se rompe al iniciar un conflicto militar.
+  Los bots aceptan un PNA cuando el
   país proponente tiene más tropas y comparte frontera; rechazan propuestas sin beneficio
   mecánico.
 
@@ -180,8 +196,20 @@ Los Materiales son indispensables para construir defensas y entrenar fuerzas arm
 
 ##### 3.3. Emisión de Deuda y Comercio
 
-- **Emisión de Bonos:** Permite solicitar liquidez al Banco Mundial. El interés y el monto de las cuotas futuras se calculan dinámicamente según la cantidad de rondas restantes para el fin de la partida.
-- **Tratado de Libre Comercio (TLC):** Acuerdo político entre dos naciones que elimina las comisiones del Mercado Global para sus transacciones.
+- **Mercado Global:** Cada jugador puede comprar materiales por **3 de Plata** o
+  venderlos por **1 de Plata** cada uno. El sistema neutral no tiene límites de stock.
+- **Transferencias directas:** Enviar Plata o Materiales a otro país retiene el **20%**
+  como arancel del Banco Mundial, redondeado hacia abajo. El receptor obtiene el resto;
+  los TLC activos entre ambos países eliminan el arancel.
+- **Emisión de Bonos:** Un bono entrega **20 de Plata** y crea una deuda de **25 de Plata**
+  con vencimiento en la quinta ronda, contando la ronda de emisión. El saldo se cobra
+  automáticamente al vencimiento si hay fondos suficientes. El impago resta
+  **5 de Influencia** y añade **1 de Plata** de interés al comienzo de cada ronda
+  posterior; se permiten pagos parciales y totales manuales en cualquier momento.
+- **Tratado de Libre Comercio (TLC):** Acuerdo político de cinco rondas que exime del
+  arancel de transferencias directas. Una acción militar contra el firmante rompe el TLC.
+  No se permiten nuevos TLC durante una guerra: combate en las últimas tres rondas o
+  tropas de un país ocupando territorio del otro.
 
 ---
 

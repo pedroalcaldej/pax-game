@@ -16,6 +16,8 @@ import { InternationalOrganizationEngine } from './InternationalOrganizationEngi
 
 const createEmptyActionSlots = () => Array(ACTION_SLOT_COUNT).fill(null);
 const TREATY_DURATION_ROUNDS = 5;
+const BANK_TARIFF_RATE = 0.2;
+const VALID_TRADE_RESOURCES = new Set(['SILVER', 'MATERIALS']);
 
 export class GameState {
   constructor() {
@@ -45,6 +47,10 @@ export class GameState {
     this.freeTradeTreaties = [];
     this.treatyOffers = [];
     this.nextTreatyOfferId = 1;
+    this.bankFund = { SILVER: 0, MATERIALS: 0 };
+    this.bonds = [];
+    this.nextBondId = 1;
+    this.conflicts = [];
     this.aggressions = [];
     this.casusBelli = [];
 
@@ -108,6 +114,12 @@ export class GameState {
     if (!recipient || recipient.id === proposer.id) {
       return { ok: false, message: 'Selecciona otro país como destinatario del tratado.' };
     }
+    if (
+      type === TREATY_TYPES.FREE_TRADE
+      && this.isPlayersAtWar(proposer.id, recipient.id)
+    ) {
+      return { ok: false, message: 'No puedes proponer un TLC mientras exista un conflicto activo con ese país.' };
+    }
 
     const playerIds = [proposer.id, recipient.id].sort();
     const activeTreaties = type === TREATY_TYPES.NON_AGGRESSION_PACT
@@ -170,6 +182,13 @@ export class GameState {
     }
 
     const offer = this.treatyOffers[offerIndex];
+    if (
+      accepted
+      && offer.type === TREATY_TYPES.FREE_TRADE
+      && this.isPlayersAtWar(offer.proposerId, offer.recipientId)
+    ) {
+      return { ok: false, message: 'No se puede firmar un TLC mientras exista un conflicto activo entre esos países.' };
+    }
     const activeTreaties = offer.type === TREATY_TYPES.NON_AGGRESSION_PACT
       ? this.nonAggressionPacts
       : this.freeTradeTreaties;
@@ -246,14 +265,18 @@ export class GameState {
   }
 
   breakNonAggressionPact(attacker, defenderId) {
-    const pactIndex = this.nonAggressionPacts.findIndex((pact) => (
+    const hadActivePact = this.nonAggressionPacts.some((pact) => (
       pact.expiresAfterRound >= this.currentRound
       && pact.playerIds.includes(attacker.id)
       && pact.playerIds.includes(defenderId)
     ));
-    if (pactIndex < 0) return false;
+    if (!hadActivePact) return false;
 
-    this.nonAggressionPacts.splice(pactIndex, 1);
+    this.nonAggressionPacts = this.nonAggressionPacts.filter((pact) => !(
+      pact.expiresAfterRound >= this.currentRound
+      && pact.playerIds.includes(attacker.id)
+      && pact.playerIds.includes(defenderId)
+    ));
     const influence = Number.isFinite(attacker.resources?.INFLUENCE)
       ? attacker.resources.INFLUENCE
       : 0;
@@ -263,6 +286,249 @@ export class GameState {
       `${attacker.name} traicionó el Pacto de No Agresión con ${defender?.name || defenderId}: el pacto se rompió y perdió 10 de Influencia Política.`
     );
     return true;
+  }
+
+  isPlayersAtWar(firstPlayerId, secondPlayerId) {
+    const pair = [firstPlayerId, secondPlayerId].sort();
+    const recentConflict = this.conflicts.some((conflict) => (
+      conflict.round >= this.currentRound - 2
+      && conflict.round <= this.currentRound
+      && [conflict.attackerId, conflict.defenderId].sort().join('|') === pair.join('|')
+    ));
+    if (recentConflict) return true;
+    return this.grid.some((row) => row.some((tile) => (
+      (tile.ownerId === firstPlayerId && (tile.visitingTroops?.[secondPlayerId] || 0) > 0)
+      || (tile.ownerId === secondPlayerId && (tile.visitingTroops?.[firstPlayerId] || 0) > 0)
+    )));
+  }
+
+  getActiveConflicts() {
+    const pairs = new Map();
+    for (const conflict of this.conflicts) {
+      if (
+        conflict.round < this.currentRound - 2
+        || conflict.round > this.currentRound
+      ) continue;
+      const playerIds = [conflict.attackerId, conflict.defenderId].sort();
+      const key = playerIds.join('|');
+      const existing = pairs.get(key);
+      if (!existing || conflict.round > existing.round) {
+        pairs.set(key, { playerIds, round: conflict.round });
+      }
+    }
+    for (const row of this.grid) {
+      for (const tile of row) {
+        if (tile.ownerId == null) continue;
+        for (const [visitorId, count] of Object.entries(tile.visitingTroops || {})) {
+          if (count <= 0 || visitorId === tile.ownerId) continue;
+          const playerIds = [tile.ownerId, visitorId].sort();
+          const key = playerIds.join('|');
+          if (!pairs.has(key)) pairs.set(key, { playerIds, round: this.currentRound, occupied: true });
+          else pairs.get(key).occupied = true;
+        }
+      }
+    }
+    return Array.from(pairs.values(), (conflict) => ({
+      ...conflict,
+      playerNames: conflict.playerIds.map((id) => this.players.get(id)?.name || id)
+    }));
+  }
+
+  registerMilitaryConflict(attacker, defenderId) {
+    const existing = this.conflicts.find((conflict) => (
+      conflict.round === this.currentRound
+      && [conflict.attackerId, conflict.defenderId].sort().join('|')
+        === [attacker.id, defenderId].sort().join('|')
+    ));
+    if (!existing) {
+      this.conflicts.push({
+        attackerId: attacker.id,
+        defenderId,
+        round: this.currentRound
+      });
+    }
+
+    const hadFreeTrade = this.freeTradeTreaties.some((treaty) => (
+      treaty.expiresAfterRound >= this.currentRound
+      && treaty.playerIds.includes(attacker.id)
+      && treaty.playerIds.includes(defenderId)
+    ));
+    if (hadFreeTrade) {
+      this.freeTradeTreaties = this.freeTradeTreaties.filter((treaty) => !(
+        treaty.expiresAfterRound >= this.currentRound
+        && treaty.playerIds.includes(attacker.id)
+        && treaty.playerIds.includes(defenderId)
+      ));
+      const defender = this.players.get(defenderId);
+      this.recordEvent(
+        `La acción militar de ${attacker.name} contra ${defender?.name || defenderId} rompió el Tratado de Libre Comercio; se restablece el arancel del Banco Mundial.`
+      );
+    }
+  }
+
+  areTreatyPartners(firstPlayerId, secondPlayerId, type) {
+    const treaties = type === TREATY_TYPES.FREE_TRADE
+      ? this.freeTradeTreaties
+      : this.nonAggressionPacts;
+    return treaties.some((treaty) => (
+      treaty.expiresAfterRound >= this.currentRound
+      && treaty.playerIds.includes(firstPlayerId)
+      && treaty.playerIds.includes(secondPlayerId)
+    ));
+  }
+
+  performFinancialAction(socketId, action = {}) {
+    const player = Array.from(this.players.values()).find(
+      (entry) => entry.socketId === socketId && !entry.isBot
+    );
+    if (!player) return { ok: false, message: 'No tienes un país activo en esta partida.' };
+    if (!this.gameStarted || this.gameOver) {
+      return { ok: false, message: 'Las operaciones financieras requieren una partida activa.' };
+    }
+    if (!action || typeof action.type !== 'string') {
+      return { ok: false, message: 'La operación financiera no es válida.' };
+    }
+
+    if (action.type === 'BUY_MATERIALS' || action.type === 'SELL_MATERIALS') {
+      const quantity = action.quantity;
+      if (!Number.isSafeInteger(quantity) || quantity < 1) {
+        return { ok: false, message: 'Indica una cantidad entera de materiales mayor que cero.' };
+      }
+      if (action.type === 'BUY_MATERIALS') {
+        const cost = quantity * 3;
+        if (!Number.isSafeInteger(cost) || player.resources.SILVER < cost) {
+          return { ok: false, message: 'No tienes suficiente plata para comprar esos materiales.' };
+        }
+        player.resources.SILVER -= cost;
+        player.resources.MATERIALS += quantity;
+        this.bankFund.SILVER += cost;
+        this.recordEvent(`${player.name} compró ${quantity} materiales por ${cost} de plata en el Mercado Global.`);
+        return { ok: true, message: `Compraste ${quantity} materiales por ${cost} de plata.` };
+      }
+      if (player.resources.MATERIALS < quantity) {
+        return { ok: false, message: 'No tienes suficientes materiales para vender esa cantidad.' };
+      }
+      player.resources.MATERIALS -= quantity;
+      player.resources.SILVER += quantity;
+      this.bankFund.MATERIALS += quantity;
+      this.recordEvent(`${player.name} vendió ${quantity} materiales por ${quantity} de plata en el Mercado Global.`);
+      return { ok: true, message: `Vendiste ${quantity} materiales por ${quantity} de plata.` };
+    }
+
+    if (action.type === 'TRANSFER_RESOURCE') {
+      const { recipientId, resource, amount } = action;
+      const recipient = this.players.get(recipientId);
+      if (!recipient || recipient.id === player.id) {
+        return { ok: false, message: 'Selecciona otro país como destinatario.' };
+      }
+      if (!VALID_TRADE_RESOURCES.has(resource)) {
+        return { ok: false, message: 'Solo puedes transferir plata o materiales.' };
+      }
+      if (!Number.isSafeInteger(amount) || amount < 1) {
+        return { ok: false, message: 'Indica una cantidad entera mayor que cero.' };
+      }
+      if (player.resources[resource] < amount) {
+        return { ok: false, message: `No tienes suficientes ${resource === 'SILVER' ? 'plata' : 'materiales'}.` };
+      }
+      const tariffExempt = this.areTreatyPartners(
+        player.id,
+        recipient.id,
+        TREATY_TYPES.FREE_TRADE
+      ) && !this.isPlayersAtWar(player.id, recipient.id);
+      const tariff = tariffExempt ? 0 : Math.floor(amount * BANK_TARIFF_RATE);
+      const received = amount - tariff;
+      player.resources[resource] -= amount;
+      recipient.resources[resource] += received;
+      this.bankFund[resource] += tariff;
+      const resourceName = resource === 'SILVER' ? 'de plata' : 'materiales';
+      this.recordEvent(
+        `${player.name} transfirió ${amount} ${resourceName} a ${recipient.name}; ${tariff} ${resourceName} ingresaron al Banco Mundial y el destinatario recibió ${received}.`
+      );
+      return {
+        ok: true,
+        message: `Transferiste ${amount} ${resourceName}; ${recipient.name} recibió ${received}${tariff ? ` tras el arancel de ${tariff}` : ' sin arancel por el TLC'}.`
+      };
+    }
+
+    if (action.type === 'ISSUE_BOND') {
+      const bond = {
+        id: `bond-${this.nextBondId++}`,
+        playerId: player.id,
+        principal: 25,
+        balance: 25,
+        issueRound: this.currentRound,
+        dueRound: this.currentRound + TREATY_DURATION_ROUNDS - 1,
+        defaulted: false,
+        paid: false,
+        lastInterestRound: null
+      };
+      this.bonds.push(bond);
+      player.resources.SILVER += 20;
+      this.recordEvent(
+        `${player.name} emitió el bono ${bond.id}: recibió 20 de plata y debe pagar 25 en la ronda ${bond.dueRound}.`
+      );
+      return { ok: true, message: `Bono emitido: recibiste 20 de plata; debes 25 en la ronda ${bond.dueRound}.` };
+    }
+
+    if (action.type === 'REPAY_BOND') {
+      const bond = this.bonds.find((entry) => (
+        entry.id === action.bondId
+        && entry.playerId === player.id
+        && !entry.paid
+      ));
+      if (!bond) return { ok: false, message: 'No se encontró una deuda pendiente para ese bono.' };
+      const amount = action.amount;
+      if (!Number.isSafeInteger(amount) || amount < 1 || amount > bond.balance) {
+        return { ok: false, message: `Indica un pago entre 1 y ${bond.balance} de plata.` };
+      }
+      if (player.resources.SILVER < amount) {
+        return { ok: false, message: 'No tienes suficiente plata para ese pago.' };
+      }
+      player.resources.SILVER -= amount;
+      this.bankFund.SILVER += amount;
+      bond.balance -= amount;
+      if (bond.balance === 0) bond.paid = true;
+      this.recordEvent(
+        `${player.name} pagó ${amount} de plata del bono ${bond.id}${bond.paid ? '; deuda saldada' : `; quedan ${bond.balance} de deuda`}.`
+      );
+      return {
+        ok: true,
+        message: bond.paid
+          ? 'Deuda saldada.'
+          : `Pago realizado; quedan ${bond.balance} de deuda.`
+      };
+    }
+
+    return { ok: false, message: 'La operación financiera no está disponible.' };
+  }
+
+  processBondsAtRoundStart(round) {
+    for (const bond of this.bonds) {
+      if (bond.paid) continue;
+      const player = this.players.get(bond.playerId);
+      if (!player) continue;
+      if (!bond.defaulted && round >= bond.dueRound) {
+        if (player.resources.SILVER >= bond.balance) {
+          player.resources.SILVER -= bond.balance;
+          this.bankFund.SILVER += bond.balance;
+          bond.balance = 0;
+          bond.paid = true;
+          this.recordEvent(`${player.name} pagó automáticamente el bono ${bond.id}; deuda saldada.`);
+        } else {
+          bond.defaulted = true;
+          player.resources.INFLUENCE = Math.max(0, player.resources.INFLUENCE - 5);
+          this.recordEvent(
+            `${player.name} incumplió el bono ${bond.id}: no pudo pagar ${bond.balance} de plata y perdió 5 de Influencia Política.`
+          );
+        }
+      } else if (bond.defaulted && round > bond.dueRound && bond.lastInterestRound !== round) {
+        bond.balance += 1;
+        bond.lastInterestRound = round;
+        this.recordEvent(
+          `El bono ${bond.id} de ${player.name} acumuló 1 de interés; la deuda asciende a ${bond.balance} de plata.`
+        );
+      }
+    }
   }
 
   botAcceptsTreaty(bot, proposer, type) {
@@ -626,9 +892,21 @@ export class GameState {
     ) {
       return { ok: false, message: 'El movimiento ya no es válido o atraviesa una Zona Desmilitarizada.' };
     }
+    const hostilePlayers = new Set(
+      Object.entries(destination.visitingTroops || {})
+        .filter(([visitorId, count]) => visitorId !== player.id && count > 0)
+        .map(([visitorId]) => visitorId)
+    );
+    if (destination.ownerId != null && destination.ownerId !== player.id) {
+      hostilePlayers.add(destination.ownerId);
+    }
+    const brokePacts = [];
+    for (const defenderId of hostilePlayers) {
+      this.registerMilitaryConflict(player, defenderId);
+      if (this.breakNonAggressionPact(player, defenderId)) brokePacts.push(defenderId);
+    }
     if (destination.ownerId != null && destination.ownerId !== player.id) {
       const defenderId = destination.ownerId;
-      const brokePact = this.breakNonAggressionPact(player, defenderId);
       const defenderTroops = this.getTroopsForPlayerOnTile(destination, defenderId);
       const attackerWins = action.troops > defenderTroops;
       if (!attackerWins) {
@@ -636,7 +914,7 @@ export class GameState {
         this.removeTroopsFromPlayerOnTile(source, player.id, action.troops - attackerSurvivors);
         return {
           ok: true,
-          message: `${brokePact ? 'PNA roto: perdió 10 de Influencia Política. ' : ''}${attackerSurvivors
+          message: `${brokePacts.length ? 'PNA roto: perdió Influencia Política. ' : ''}${attackerSurvivors
             ? `Ataque rechazado: ${player.name} pierde ${action.troops - attackerSurvivors} tropas y se retira.`
             : `Ataque rechazado: ${player.name} pierde todas sus tropas y se retira.`}`,
           combat: {
@@ -665,7 +943,7 @@ export class GameState {
       destination.troops += action.troops;
       return {
         ok: true,
-        message: `${brokePact ? 'PNA roto: perdió 10 de Influencia Política. ' : ''}${defenderSurvivors
+        message: `${brokePacts.length ? 'PNA roto: perdió Influencia Política. ' : ''}${defenderSurvivors
           ? `Victoria de ${player.name}: territorio conquistado; ${defenderSurvivors} tropas enemigas supervivientes permanecen en la casilla.`
           : `Victoria de ${player.name}: territorio conquistado; la guarnición fue derrotada.`}`,
         claimed: true,
@@ -1066,6 +1344,9 @@ export class GameState {
       nonAggressionPacts: this.nonAggressionPacts,
       freeTradeTreaties: this.freeTradeTreaties,
       treatyOffers: this.treatyOffers,
+      bankFund: this.bankFund,
+      bonds: this.bonds,
+      activeConflicts: this.getActiveConflicts(),
       aggressions: this.aggressions,
       casusBelli: this.casusBelli
     };

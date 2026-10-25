@@ -36,6 +36,7 @@ export class PhaseManager {
 
     switch (nextPhase) {
       case GAME_PHASES.PHASE_1_STATS:
+        this.gameState.processBondsAtRoundStart(this.gameState.currentRound);
         if (this.gameState.currentRound > 1) {
           EconomyEngine.processRoundEconomy(this.gameState);
         }

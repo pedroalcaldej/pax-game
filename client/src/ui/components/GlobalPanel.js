@@ -26,6 +26,9 @@ export class GlobalPanel {
     this.onProposeTreaty = onProposeTreaty || (() => {});
     this.onRespondToTreaty = onRespondToTreaty || (() => {});
     this.onCancelTreatyOffer = onCancelTreatyOffer || (() => {});
+    this.container.addEventListener('change', (event) => {
+      if (event.target.matches('#treaty-recipient')) this.updateTLCOption();
+    });
     this.container.addEventListener('submit', (event) => {
       const form = event.target.closest?.('[data-treaty-form]');
       if (!form) return;
@@ -76,6 +79,10 @@ export class GlobalPanel {
           <div id="global-treaty-list"></div>
         </section>
         <section class="pax-global-treaties">
+          <h3>Conflictos activos</h3>
+          <div id="global-conflict-list"></div>
+        </section>
+        <section class="pax-global-treaties">
           <h3>Propuestas pendientes</h3>
           <div id="global-treaty-offers"></div>
         </section>
@@ -90,7 +97,7 @@ export class GlobalPanel {
               <option value="${TREATY_TYPES.FREE_TRADE}">Tratado de Libre Comercio</option>
             </select>
           </label>
-          <p>Los tratados aceptados duran cinco rondas. El Libre Comercio queda registrado, pero no tiene efecto económico hasta que se implemente un mercado.</p>
+          <p>Los tratados aceptados duran cinco rondas. Un TLC exime del arancel del 20% en transferencias directas mientras no haya conflicto militar.</p>
           <button type="submit" id="treaty-propose-button">Enviar propuesta</button>
           <p class="pax-global-panel-status" id="treaty-status" role="status"></p>
         </form>
@@ -99,6 +106,8 @@ export class GlobalPanel {
   }
 
   update(gameState, localPlayerId) {
+    this.gameState = gameState;
+    this.localPlayerId = localPlayerId;
     const players = Array.isArray(gameState?.players) ? gameState.players : [];
     const round = gameState?.currentRound || 1;
     const localPlayer = players.find((player) => player.id === localPlayerId);
@@ -150,6 +159,17 @@ export class GlobalPanel {
       `).join('')
       : '<p class="pax-global-empty">No hay tratados vigentes.</p>';
 
+    const conflicts = gameState?.activeConflicts || [];
+    this.container.querySelector('#global-conflict-list').innerHTML = conflicts.length
+      ? conflicts.map((conflict) => `
+        <div class="pax-global-treaty">
+          <strong>En guerra</strong>
+          <span>${conflict.playerNames.map(escapeHtml).join(' · ')}</span>
+          <small>${conflict.occupied ? 'Tropas en territorio rival' : `Combate en las últimas tres rondas (ronda ${conflict.round})`}</small>
+        </div>
+      `).join('')
+      : '<p class="pax-global-empty">No hay conflictos activos.</p>';
+
     const offers = gameState?.treatyOffers || [];
     const canRespond = Boolean(localPlayer && gameState?.gameStarted && !gameState?.gameOver);
     this.container.querySelector('#global-treaty-offers').innerHTML = offers.length
@@ -181,12 +201,38 @@ export class GlobalPanel {
     if (players.some((player) => player.id === previousRecipient)) {
       recipientSelect.value = previousRecipient;
     }
+    const recipientIsAtWar = this.updateTLCOption();
     const canPropose = Boolean(localPlayer && gameState?.gameStarted && !gameState?.gameOver);
     for (const input of this.container.querySelectorAll('[data-treaty-form] select, #treaty-propose-button')) {
       input.disabled = !canPropose || recipientSelect.options.length === 0;
     }
     this.container.querySelector('#treaty-status').textContent = canPropose
-      ? ''
+      ? recipientIsAtWar
+        ? 'No se puede proponer un TLC durante un conflicto activo con ese país.'
+        : ''
       : 'La negociación está disponible durante una partida activa.';
+  }
+
+  updateTLCOption() {
+    const recipientId = this.container.querySelector('#treaty-recipient').value;
+    const conflicts = this.gameState?.activeConflicts || [];
+    const isAtWar = conflicts.some((conflict) => (
+      conflict.playerIds.includes(this.localPlayerId)
+      && conflict.playerIds.includes(recipientId)
+    ));
+    const freeTradeOption = this.container.querySelector(
+      `[name="type"] option[value="${TREATY_TYPES.FREE_TRADE}"]`
+    );
+    freeTradeOption.disabled = isAtWar;
+    if (isAtWar && this.container.querySelector('[name="type"]').value === TREATY_TYPES.FREE_TRADE) {
+      this.container.querySelector('[name="type"]').value = TREATY_TYPES.NON_AGGRESSION_PACT;
+    }
+    const status = this.container.querySelector('#treaty-status');
+    if (status && isAtWar && this.gameState?.gameStarted && !this.gameState?.gameOver) {
+      status.textContent = 'No se puede proponer un TLC durante un conflicto activo con ese país.';
+    } else if (status && this.gameState?.gameStarted && !this.gameState?.gameOver) {
+      status.textContent = '';
+    }
+    return isAtWar;
   }
 }

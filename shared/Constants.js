@@ -101,6 +101,7 @@ export const PROTOCOL = {
   PROPOSE_TREATY: 'propose_treaty',
   RESPOND_TO_TREATY: 'respond_to_treaty',
   CANCEL_TREATY_OFFER: 'cancel_treaty_offer',
+  FINANCIAL_ACTION: 'financial_action',
   ACTION_RESULT: 'action_result',
   ACTION_ERROR: 'action_error'
 };
