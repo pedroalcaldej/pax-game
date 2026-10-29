@@ -30,6 +30,10 @@ roomManager.getOrCreateRoom('room-1');
 
 const PORT = process.env.PORT || 3000;
 
-httpServer.listen(PORT, () => {
-  console.log(`[Server] Servidor ejecutándose en http://localhost:${PORT}`);
+app.get('/health', (_request, response) => {
+  response.json({ ok: true, service: 'pax-game-server' });
+});
+
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`[Server] Servidor ejecutándose en http://0.0.0.0:${PORT}`);
 });

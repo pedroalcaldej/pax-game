@@ -26,11 +26,12 @@ Abre otra terminal distinta y ejecuta:
 ```sh
 cd /Users/pedroalcalde/repos/pax-game
 npm install --prefix client
-npm run dev --prefix client -- --host 0.0.0.0
+npm --prefix client run dev
 ```
 
-Luego abre la URL que muestra Vite en el navegador. Normalmente será algo como:
-`http://localhost:5173`.
+Luego abre la URL que muestra Vite en el navegador. Para jugar en la misma
+computadora puedes usar `http://localhost:5173`; para otros equipos usa la URL
+`Network` que muestra Vite, por ejemplo `http://192.168.1.7:5173`.
 
 ### Cómo jugar
 
@@ -50,20 +51,73 @@ En cada terminal, presiona `Ctrl + C` para detener el servidor o el cliente.
 
 ### Jugar desde otra máquina en la misma red
 
-Para jugar desde otros dispositivos en la misma red, usa la URL de red del equipo
-que ejecuta el servidor y permite el acceso al puerto `3000` de ese equipo. El
-cliente se conecta por defecto al puerto `3000` del mismo host desde el que se abrió
-la web; para otra ubicación, configura `VITE_SERVER_URL` al ejecutar el cliente,
-por ejemplo:
+Para jugar desde otros dispositivos en la misma red, abre en todos los equipos la
+URL `http://IP_LOCAL_DEL_SERVIDOR:5173`. Vite y el servidor escuchan en todas las
+interfaces de red. El cliente se conecta automáticamente al puerto `3000` del
+mismo host desde el que se abrió la web, por lo que normalmente no hace falta
+configurar `VITE_SERVER_URL`.
 
 ```sh
 cd /Users/pedroalcalde/repos/pax-game
-VITE_SERVER_URL=http://192.168.1.20:3000 npm run dev --prefix client -- --host 0.0.0.0
+npm --prefix client run dev
 ```
 
-Si la máquina que ejecuta el servidor no está en la misma red, o si estás usando
-otro puerto, también podés ajustar la URL del cliente a mano en la configuración
-correspondiente del proyecto.
+Para comprobar la conectividad desde otro equipo, visita
+`http://IP_LOCAL_DEL_SERVIDOR:3000/health`; debe devolver
+`{"ok":true,"service":"pax-game-server"}`.
+
+Si `localhost` funciona pero la IP `192.168.x.x` no responde, permite Node.js
+en el firewall de macOS. El modo «Bloquear todas las conexiones entrantes»
+impide el acceso LAN aunque Vite y el servidor estén escuchando correctamente:
+
+```sh
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp /usr/local/bin/node
+sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /usr/local/bin/node
+```
+
+Acepta las conexiones entrantes cuando macOS lo solicite y vuelve a iniciar
+ambos procesos. Si la instalación de Node usa otra ruta, obtén la ruta con
+`which node` y reemplaza `/usr/local/bin/node`. Como alternativa, desactiva
+temporalmente el firewall desde Configuración del Sistema > Red > Firewall
+solo para confirmar el diagnóstico. Verifica también que ambos equipos estén
+en la misma red y que no haya una VPN o red Wi-Fi de invitados activa.
+
+Al conectarse una sola persona, la sala conserva los cuatro países y los tres
+países sin conexión permanecen bajo control de bots. No hace falta esperar a otros
+jugadores para iniciar una partida.
+
+### Salas online con Firebase Realtime Database
+
+El cliente incluye un lobby opcional sincronizado con Firebase usando los SDK
+compatibles v10 cargados por CDN, sin añadir dependencias ni un build separado.
+Para activarlo:
+
+1. Crea un proyecto gratuito en Firebase.
+2. Activa **Authentication > Sign-in method > Anonymous**.
+3. Crea una base **Realtime Database** y copia la configuración de la aplicación web.
+4. Completa `window.PAX_FIREBASE_CONFIG` en
+   [`client/index.html`](./client/index.html).
+5. Configura las reglas de la base para exigir autenticación:
+
+```json
+{
+  "rules": {
+    "salas": {
+      "$codigo": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}
+```
+
+La pantalla inicial permitirá crear una sala o unirse con un código de seis
+caracteres. El creador puede iniciar con menos de cuatro personas y las ranuras
+restantes se completan con bots; con cuatro personas la sala pasa a `en_juego`
+automáticamente cuando el estado de Firebase se sincroniza. Las salas solo
+coordinan el lobby: el servidor Node/Socket.IO sigue siendo el propietario del
+estado de la partida y debe permanecer ejecutándose.
 
 ## 2. Reglas y funcionalidades del juego
 

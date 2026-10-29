@@ -8,6 +8,7 @@ import { TaxSlider } from '../components/TaxSlider.js';
 import { GlobalPanel } from '../components/GlobalPanel.js';
 import { FinancePanel } from '../components/FinancePanel.js';
 import { socket } from '../../network/SocketClient.js';
+import { FirebaseLobby } from '../../network/FirebaseLobby.js';
 import {
   ACTION_SLOT_COUNT,
   GAME_STAGES,
@@ -85,6 +86,43 @@ const STYLES = `
   }
   .pax-start-button:disabled { opacity: .5; cursor: not-allowed; }
   .pax-start-status { min-height: 18px; margin-top: 12px !important; font-size: 11px; }
+  .pax-room-actions { display: grid; gap: 14px; margin-top: 22px; }
+  .pax-join-room { display: grid; gap: 6px; text-align: left; }
+  .pax-join-room label { color: #a7b3c7; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+  .pax-join-room-row, .pax-lobby-code-row { display: flex; gap: 8px; align-items: center; }
+  .pax-join-room input {
+    min-width: 0;
+    flex: 1;
+    padding: 12px;
+    border: 1px solid #34435d;
+    border-radius: 7px;
+    color: #f1f5f9;
+    background: #0f172a;
+    font: inherit;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .pax-join-room-row .pax-start-button { width: auto; margin-top: 0; }
+  .pax-lobby-code-row { justify-content: space-between; margin: 14px 0; color: #a7b3c7; font-size: 11px; }
+  .pax-lobby-code-row span { font-variant-numeric: tabular-nums; }
+  .pax-lobby-copy {
+    padding: 7px 10px;
+    border: 1px solid #53627d;
+    border-radius: 6px;
+    color: #e2e8f0;
+    background: #1a263b;
+    font: inherit;
+    cursor: pointer;
+  }
+  .pax-lobby-slots { display: grid; gap: 7px; margin: 16px 0; text-align: left; }
+  .pax-lobby-slot {
+    padding: 9px 10px;
+    border: 1px solid #34435d;
+    border-radius: 6px;
+    color: #cbd5e1;
+    background: rgba(15, 23, 42, .65);
+    font-size: 12px;
+  }
   .pax-stage-overlay {
     position: fixed; inset: 0; z-index: 8; display: grid; place-items: center;
     pointer-events: none; background: rgba(3, 7, 18, .18);
@@ -798,6 +836,12 @@ export class GameScreen {
     this.resourceAnimationFrame = null;
     this.lastAnimatedResolutionId = 0;
     this.stageOverlayTimer = null;
+    this.roomCode = 'room-1';
+    this.lobby = null;
+    this.lobbyState = null;
+    this.lobbyError = '';
+    this.serverJoinedRoom = null;
+    this.autoStartPending = false;
 
     this.init();
   }
@@ -812,10 +856,31 @@ export class GameScreen {
         <section class="pax-start-menu" id="start-menu" aria-label="Menú inicial">
           <div class="pax-start-card">
             <div class="pax-start-brand">PAX</div>
-            <h1>El mundo espera tus órdenes</h1>
-            <p>Juega contra los demás países. Los países sin jugador serán controlados por bots. Cada nación comienza con 100 de plata.</p>
-            <button class="pax-start-button" id="play-button" type="button" disabled>Jugar</button>
-            <p class="pax-start-status" id="start-status" role="status">Conectando con la partida…</p>
+            <div id="room-menu">
+              <h1>El mundo espera tus órdenes</h1>
+              <p>Crea una sala o únete con un código de seis caracteres.</p>
+              <div class="pax-room-actions">
+                <button class="pax-start-button" id="create-room-button" type="button">Crear sala</button>
+                <div class="pax-join-room">
+                  <label for="room-code-input">Código de sala</label>
+                  <div class="pax-join-room-row">
+                    <input id="room-code-input" maxlength="6" autocomplete="off" placeholder="PAX123" />
+                    <button class="pax-start-button" id="join-room-button" type="button">Unirse</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="lobby-view" hidden>
+              <h1>Sala <strong id="lobby-code"></strong></h1>
+              <div class="pax-lobby-code-row">
+                <button class="pax-lobby-copy" id="copy-room-code" type="button">Copiar código</button>
+                <span id="lobby-count">Jugadores conectados: 0 / 4</span>
+              </div>
+              <div class="pax-lobby-slots" id="lobby-slots"></div>
+              <button class="pax-start-button" id="start-room-button" type="button" hidden>Iniciar partida</button>
+              <button class="pax-lobby-copy" id="leave-lobby-button" type="button">Volver al menú principal</button>
+            </div>
+            <p class="pax-start-status" id="start-status" role="status">Configura Firebase para crear o unirte a salas.</p>
           </div>
         </section>
         <section class="pax-menu-overlay" id="game-menu" aria-label="Menú de partida" hidden>
@@ -953,18 +1018,18 @@ export class GameScreen {
     this.globalPanel = new GlobalPanel(this.container.querySelector('#global-panel-container'), {
       onProposeTreaty: (treaty) => {
         socket.emit(PROTOCOL.PROPOSE_TREATY, {
-          roomId: 'room-1',
+          roomId: this.roomCode,
           treaty
         });
         this.showToast('Propuesta diplomática enviada.', 'info');
       },
       onRespondToTreaty: ({ offerId, accepted }) => socket.emit(PROTOCOL.RESPOND_TO_TREATY, {
-        roomId: 'room-1',
+        roomId: this.roomCode,
         offerId,
         accepted
       }),
       onCancelTreatyOffer: (offerId) => socket.emit(PROTOCOL.CANCEL_TREATY_OFFER, {
-        roomId: 'room-1',
+        roomId: this.roomCode,
         offerId
       })
     });
@@ -973,7 +1038,7 @@ export class GameScreen {
       (action) => {
         socket.timeout(5000).emit(
           PROTOCOL.FINANCIAL_ACTION,
-          { roomId: 'room-1', action },
+          { roomId: this.roomCode, action },
           (error, result) => {
             this.financePanel.setStatus(error
               ? 'El servidor no respondió; comprueba la conexión e inténtalo otra vez.'
@@ -991,12 +1056,12 @@ export class GameScreen {
     );
     this.taxSlider = new TaxSlider(taxEl, (newTaxRate) => {
       this.updateTaxMetrics(newTaxRate);
-      socket.emit(PROTOCOL.SET_TAX_RATE, { roomId: 'room-1', taxRate: newTaxRate });
+      socket.emit(PROTOCOL.SET_TAX_RATE, { roomId: this.roomCode, taxRate: newTaxRate });
     });
     this.updateTaxMetrics(this.taxSlider.currentValue);
     this.bindEvents();
     this.addEvent('Esperando actividad de la partida.');
-    this.joinGame();
+    this.setupLobby();
   }
 
   bindEvents() {
@@ -1051,7 +1116,7 @@ export class GameScreen {
       this.startPending = false;
       this.startError = '';
       this.connectionError = '';
-      this.joinGame();
+      if (!this.lobby?.enabled) this.joinGame();
       this.updateStartMenu();
     };
     this.onDisconnect = () => {
@@ -1093,12 +1158,12 @@ export class GameScreen {
     });
     this.container.querySelector('#menu-end-game').addEventListener('click', () => {
       if (!socket.connected || !this.gameState?.gameStarted) return;
-      socket.emit(PROTOCOL.END_GAME, { roomId: 'room-1' });
+      this.returnToMainMenu();
     });
     this.container.querySelector('#force-phase-button').addEventListener('click', () => {
       if (!socket.connected || this.gameState?.currentStage !== GAME_STAGES.PLANNING) return;
       socket.emit(PROTOCOL.READY_PHASE_END, {
-        roomId: 'room-1',
+        roomId: this.roomCode,
         ready: !this.player?.phaseReady
       });
     });
@@ -1133,26 +1198,23 @@ export class GameScreen {
       this.updateActionHighlights();
     });
 
-    this.container.querySelector('#play-button').addEventListener('click', () => {
-      if (!socket.connected || !this.player || this.startPending) return;
-      this.startPending = true;
-      this.startError = '';
-      this.updateStartMenu();
-      socket.timeout(5000).emit(
-        PROTOCOL.START_GAME,
-        { roomId: 'room-1' },
-        (error, result) => {
-          this.startPending = false;
-          if (error) {
-            this.startError = 'El servidor no respondió. Comprueba la conexión e inténtalo otra vez.';
-          } else if (!result?.ok) {
-            this.startError = result?.message || 'No se pudo iniciar la partida.';
-          } else {
-            this.startError = '';
-          }
-          this.updateStartMenu(result?.gameStarted);
-        }
-      );
+    this.container.querySelector('#create-room-button').addEventListener('click', () => {
+      this.createRoom();
+    });
+    this.container.querySelector('#join-room-button').addEventListener('click', () => {
+      this.joinRoom(this.container.querySelector('#room-code-input').value);
+    });
+    this.container.querySelector('#room-code-input').addEventListener('input', (event) => {
+      event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    });
+    this.container.querySelector('#copy-room-code').addEventListener('click', async () => {
+      await this.copyRoomCode();
+    });
+    this.container.querySelector('#start-room-button').addEventListener('click', () => {
+      this.startRoom();
+    });
+    this.container.querySelector('#leave-lobby-button').addEventListener('click', () => {
+      this.returnToMainMenu();
     });
 
     this.container.querySelector('#global-panel-open').addEventListener('click', () => {
@@ -1167,7 +1229,7 @@ export class GameScreen {
       button.disabled = true;
       socket.timeout(5000).emit(
         PROTOCOL.RESTART_GAME,
-        { roomId: 'room-1' },
+        { roomId: this.roomCode },
         (error, result) => {
           if (error || !result?.ok) {
             button.disabled = false;
@@ -1178,8 +1240,7 @@ export class GameScreen {
     });
     this.container.querySelector('#game-summary-menu').addEventListener('click', () => {
       if (!socket.connected || !this.gameState?.gameOver) return;
-      this.container.querySelector('#game-summary-dialog').close();
-      socket.emit(PROTOCOL.END_GAME, { roomId: 'room-1' });
+      this.returnToMainMenu();
     });
     this.container.querySelector('#taxInput').addEventListener('input', (event) => {
       this.container.querySelector('#tax-value').textContent = `${Math.round(Number(event.target.value) * 100)}%`;
@@ -1301,7 +1362,7 @@ export class GameScreen {
       && socket.connected
     ) {
       socket.emit(PROTOCOL.SET_GAME_PAUSED, {
-        roomId: 'room-1',
+        roomId: this.roomCode,
         paused: shouldOpen
       });
     }
@@ -1604,7 +1665,7 @@ export class GameScreen {
     const type = this.container.querySelector('#oi-resolution-type')?.value;
     if (!type || type === OI_RESOLUTIONS.DEMILITARIZED_ZONE || !socket.connected) return;
     socket.emit(PROTOCOL.PROPOSE_OI_RESOLUTION, {
-      roomId: 'room-1',
+      roomId: this.roomCode,
       proposal: { type }
     });
   }
@@ -1631,7 +1692,7 @@ export class GameScreen {
       if (input) input.value = String(wager);
       return { proposalId: proposal.id, choice: draft.choice, wager };
     });
-    socket.emit(PROTOCOL.SUBMIT_OI_VOTE, { roomId: 'room-1', ballot });
+    socket.emit(PROTOCOL.SUBMIT_OI_VOTE, { roomId: this.roomCode, ballot });
   }
 
   updateForcePhaseButton(players, phase, gameStarted) {
@@ -1757,7 +1818,7 @@ export class GameScreen {
     this.updateActionSlots();
     this.updateActionHighlights();
     socket.emit(PROTOCOL.PLAYER_ACTION, {
-      roomId: 'room-1',
+      roomId: this.roomCode,
       action: { type: 'PLAN_ACTION', slot, plannedAction }
     });
   }
@@ -1766,17 +1827,20 @@ export class GameScreen {
     const menu = this.container.querySelector('#start-menu');
     if (!menu) return;
     menu.hidden = Boolean(gameStarted && socket.connected);
-    const button = this.container.querySelector('#play-button');
     const status = this.container.querySelector('#start-status');
-    if (!button || !status) return;
+    if (!status) return;
+    if (this.lobby?.enabled && !this.lobbyState) {
+      this.setStartStatus(socket.connected
+        ? 'Crea una sala o introduce un código para unirte.'
+        : 'Conectando con el servidor…');
+      return;
+    }
     if (gameStarted) {
       this.startPending = false;
-      button.disabled = true;
       status.textContent = 'Partida iniciada.';
       return;
     }
 
-    button.disabled = !socket.connected || !this.player || this.startPending;
     status.textContent = !socket.connected
       ? this.connectionError || 'No hay conexión con el servidor. Reconectando…'
       : this.startError
@@ -1856,7 +1920,7 @@ export class GameScreen {
       this.oiTargetSelection = false;
       this.map.setTargetSelectionMode(false);
       socket.emit(PROTOCOL.PROPOSE_OI_RESOLUTION, {
-        roomId: 'room-1',
+        roomId: this.roomCode,
         proposal: { type, x: tile.x, y: tile.y }
       });
       this.updateOIPanel(this.gameState, this.gameState.currentRound);
@@ -1955,8 +2019,169 @@ export class GameScreen {
     }
   }
 
+  setupLobby() {
+    this.playerId = localStorage.getItem('pax_player_id');
+    if (!this.playerId) {
+      this.playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
+      localStorage.setItem('pax_player_id', this.playerId);
+    }
+    this.lobby = new FirebaseLobby({
+      playerId: this.playerId,
+      playerName: 'Nación Alpha',
+      onChange: (room) => this.handleLobbyChange(room),
+      onError: (error) => {
+        this.lobbyError = error.message;
+        this.setStartStatus(error.message);
+      }
+    });
+    const buttons = this.container.querySelectorAll('#create-room-button, #join-room-button');
+    buttons.forEach((button) => { button.disabled = !this.lobby.enabled; });
+    if (!this.lobby.enabled) {
+      this.setStartStatus('Completa PAX_FIREBASE_CONFIG en client/index.html para usar salas.');
+      return;
+    }
+    if (socket.connected) this.updateStartMenu();
+  }
+
+  async createRoom() {
+    await this.enterLobby(() => this.lobby.createRoom());
+  }
+
+  async joinRoom(code) {
+    await this.enterLobby(() => this.lobby.joinRoom(code));
+  }
+
+  async enterLobby(operation) {
+    if (!this.lobby?.enabled) return;
+    this.setStartStatus('Conectando con la sala…');
+    this.setRoomControlsEnabled(false);
+    try {
+      await operation();
+    } catch (error) {
+      this.setStartStatus(error.message);
+      this.setRoomControlsEnabled(true);
+    }
+  }
+
+  setRoomControlsEnabled(enabled) {
+    this.container
+      .querySelectorAll('#create-room-button, #join-room-button')
+      .forEach((button) => { button.disabled = !enabled; });
+  }
+
+  handleLobbyChange(room) {
+    this.lobbyState = room;
+    this.roomCode = room.code;
+    const humanCount = room.slots.filter((player) => player?.tipo === 'humano').length;
+    this.container.querySelector('#room-menu').hidden = true;
+    this.container.querySelector('#lobby-view').hidden = false;
+    this.container.querySelector('#lobby-code').textContent = room.code;
+    this.container.querySelector('#lobby-count').textContent = `Jugadores conectados: ${humanCount} / 4`;
+    this.container.querySelector('#lobby-slots').innerHTML = room.slots.map((player, index) => `
+      <div class="pax-lobby-slot">
+        <strong>Ranura ${index + 1}:</strong>
+        ${player
+          ? `${escapeHTML(player.nombre)} <span>(${player.tipo === 'bot' ? 'Bot' : 'Humano'})</span>`
+          : 'Esperando jugador…'}
+      </div>
+    `).join('');
+    const startButton = this.container.querySelector('#start-room-button');
+    startButton.hidden = !room.isHost || room.estado !== 'esperando';
+    startButton.disabled = humanCount < 1;
+    if (room.isHost && room.estado === 'esperando' && humanCount === 4 && !this.autoStartPending) {
+      this.autoStartPending = true;
+      this.lobby.startGame()
+        .catch((error) => this.setStartStatus(error.message))
+        .finally(() => { this.autoStartPending = false; });
+    }
+    if (room.estado === 'en_juego') {
+      this.setStartStatus('Partida iniciada. Cargando el mapa…');
+      if (socket.connected && this.serverJoinedRoom !== room.code) {
+        this.serverJoinedRoom = room.code;
+        this.joinGame();
+        socket.timeout(5000).emit(PROTOCOL.START_GAME, { roomId: this.roomCode });
+      }
+    } else {
+      this.setStartStatus(room.isHost
+        ? 'Eres el creador. Puedes iniciar y completar las ranuras con bots.'
+        : 'Esperando al creador de la sala…');
+    }
+  }
+
+  async startRoom() {
+    try {
+      await this.lobby.startGame();
+    } catch (error) {
+      this.setStartStatus(error.message);
+    }
+  }
+
+  async copyRoomCode() {
+    if (!this.roomCode) {
+      this.setStartStatus('No hay un código de sala disponible.');
+      return;
+    }
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(this.roomCode);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = this.roomCode;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.append(input);
+        input.select();
+        const copied = document.execCommand('copy');
+        input.remove();
+        if (!copied) throw new Error('El navegador rechazó el copiado.');
+      }
+      this.setStartStatus(`Código ${this.roomCode} copiado.`);
+    } catch (error) {
+      this.setStartStatus(`No se pudo copiar automáticamente. Código: ${this.roomCode}`);
+      this.showToast(error.message, 'error');
+    }
+  }
+
+  async returnToMainMenu() {
+    const roomCode = this.roomCode;
+    if (this.serverJoinedRoom === roomCode && socket.connected) {
+      socket.emit(PROTOCOL.END_GAME, { roomId: roomCode });
+    }
+
+    try {
+      await this.lobby?.leaveRoom();
+    } catch (error) {
+      this.setStartStatus(`No se pudo salir de la sala: ${error.message}`);
+      return;
+    }
+
+    this.container.querySelector('#game-summary-dialog')?.close();
+    this.setGameMenuOpen(false);
+    this.lobbyState = null;
+    this.lobbyError = '';
+    this.gameState = null;
+    this.player = null;
+    this.roomCode = null;
+    this.serverJoinedRoom = null;
+    this.startPending = false;
+    this.startError = '';
+    this.container.querySelector('#start-menu').hidden = false;
+    this.container.querySelector('#room-menu').hidden = false;
+    this.container.querySelector('#lobby-view').hidden = true;
+    this.container.querySelector('#room-code-input').value = '';
+    this.setRoomControlsEnabled(Boolean(this.lobby?.enabled));
+    this.setStartStatus('Crea una sala o introduce un código para unirte.');
+  }
+
+  setStartStatus(message) {
+    const status = this.container.querySelector('#start-status');
+    if (status) status.textContent = message;
+  }
+
   joinGame() {
-    if (!socket.connected) return;
+    if (!socket.connected || !this.roomCode) return;
     this.playerId = localStorage.getItem('pax_player_id');
     if (!this.playerId) {
       this.playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
@@ -1965,7 +2190,7 @@ export class GameScreen {
     socket.emit(PROTOCOL.JOIN_GAME, {
       playerId: this.playerId,
       playerName: 'Nación Alpha',
-      roomId: 'room-1'
+      roomId: this.roomCode
     });
   }
 

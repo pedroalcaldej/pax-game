@@ -22,10 +22,7 @@ export class Room {
   }
 
   addPlayer(socketId, playerName) {
-    const player = this.gameState.addPlayer(socketId, playerName);
-    if (!player) return null;
-    this.start();
-    return player;
+    return this.gameState.addPlayer(socketId, playerName);
   }
 
   removePlayer(socketId) {
