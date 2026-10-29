@@ -38,7 +38,7 @@ Al abrir la web, pulsa «Jugar» para iniciar la primera ronda. Hasta entonces l
 partida permanece en espera y no corre el reloj. Cada país comienza con 100 de
 plata; los países sin jugadores conectados quedan bajo control de bots.
 
-Las acciones territoriales se pueden ejecutar durante la fase 2, tras seleccionar
+Las acciones territoriales se pueden ejecutar durante la etapa de planificación, tras seleccionar
 una casilla propia y cumplir los requisitos que indica cada botón. «Mover tropas»
 permite ajustar la cantidad (por defecto, todas las tropas disponibles) antes de
 seleccionar una casilla terrestre adyacente como destino. Al ocupar un espacio de
@@ -71,15 +71,15 @@ correspondiente del proyecto.
 
 - La partida tiene cuatro países. Los países sin una persona conectada se completan
   y quedan bajo control de bots; al conectarse, cada persona ocupa un país bot libre.
-- Al comenzar cada fase de planificación, los bots ajustan sus impuestos al 15%,
+- Al comenzar cada etapa de planificación, los bots ajustan sus impuestos al 15%,
   intentan expandirse a territorio neutral, atacar países más débiles, construir fábricas
   o ciudades y reclutar tropas hasta un máximo de 10 (o el límite de armamento vigente),
   según el territorio y los recursos disponibles. Si no tienen una acción útil y legal
   disponible, dejan el espacio vacío en lugar de simular una orden de mantener posición.
   Después confirman que están listos.
 - Los jugadores humanos pueden pulsar «Forzar» para confirmar que terminaron de
-  planificar. La confirmación se puede retirar mientras la fase no haya terminado.
-  La fase avanza cuando todos los jugadores humanos están listos; si no, termina al
+  planificar. La confirmación se puede retirar mientras la etapa no haya terminado.
+  La etapa avanza cuando todos los jugadores humanos están listos; si no, termina al
   cumplirse su temporizador de 60 segundos. Si una persona se desconecta durante la
   planificación, su país pasa a control de un bot.
 - Las órdenes de cada país se planifican en tres espacios y se resuelven al terminar la
@@ -91,11 +91,11 @@ correspondiente del proyecto.
   atacante solo con superioridad numérica y captura al vencer. Atacar a un firmante de
   un PNA rompe el pacto y sanciona al atacante con 10 de Influencia Política.
 - El Mercado Global permite comprar materiales por 3 de plata cada uno y venderlos
-  por 1 de plata cada uno. Las transferencias directas de Plata o Materiales a otro
-  país aplican un arancel del 20% al monto enviado, salvo entre firmantes de un TLC
-  vigente, que están exentos mientras no haya guerra.
-- Emitir un bono entrega 20 de plata y crea una deuda de 25 con vencimiento en la
-  quinta ronda, contando la ronda de emisión. Si no se puede pagar el total al
+  por 1 de plata cada uno. La interfaz presenta un único selector de cantidad con
+  controles de decremento, incremento y máximo, seguido de las acciones Comprar y
+  Vender.
+- Emitir un bono entrega 20 de plata y crea una deuda de 25 con vencimiento cinco
+  rondas después de la emisión. Si no se puede pagar el total al
   vencimiento, el jugador pierde 5 de Influencia y la deuda impaga acumula 1 de plata
   de interés al inicio de cada ronda posterior. Los pagos parciales o totales se pueden
   hacer manualmente desde Finanzas; los bonos que sí tienen saldo suficiente se cobran
@@ -119,11 +119,27 @@ correspondiente del proyecto.
   recursos y el GDI. El Panel Global reemplaza al Marcador GDI e incluye el desglose
   de países, sus recursos, territorio, población, tropas, ciudades, fábricas e impuestos,
   además de los tratados vigentes y sus propuestas.
+- El panel lateral de la nación usa tres pestañas instantáneas: **Economía** para
+  impuestos y mercado; **Banca & Diplomacia** para bonos, deuda, donaciones
+  y reuniones de la Organización Internacional; y **Log** para eventos y
+  advertencias. La cabecera con la nación y el tipo de jugador permanece fija mientras
+  se navega por el contenido.
+- El bloque del Banco Mundial vive exclusivamente en **Banca & Diplomacia**. El **Log**
+  ocupa toda la altura disponible de su pestaña y los encabezados de las secciones
+  incluyen un indicador circular `?` con una descripción contextual al pasar el cursor.
+- Las operaciones financieras, propuestas diplomáticas y errores de acciones muestran
+  Toasts breves sobre la parte superior del mapa. Los mensajes se clasifican por color,
+  desaparecen automáticamente después de tres segundos y los controles deshabilitados
+  explican mediante tooltip el requisito que falta o la restricción activa.
+- La interfaz utiliza una estética de terminal geopolítico minimalista: fondo pizarra
+  oscuro, tarjetas elevadas con separadores sutiles, ámbar para finanzas, púrpura
+  pastel para la OI, verde suave para acciones positivas, tipografía de sistema y
+  datos cuantitativos monoespaciados.
 - La partida termina al finalizar la ronda 30 y presenta un resumen con los países
   ordenados por GDI, con el mismo desglose del Panel Global. Desde el resumen se puede
   iniciar otra partida con las personas conectadas o volver al menú principal.
-- Durante cualquier fase de una partida activa se pueden proponer, aceptar y rechazar
-  pactos de no agresión y tratados de libre comercio desde el Panel Global. Quien propone
+- Durante la etapa de planificación se pueden proponer, aceptar y rechazar pactos
+  de no agresión y tratados de libre comercio desde el Panel Global. Quien propone
   puede cancelar su oferta mientras siga pendiente. Los tratados aceptados duran cinco
   rondas desde su activación; el Panel Global muestra las rondas restantes. Firmas,
   expiraciones, cancelaciones y rupturas se registran en el Log. Atacar a un firmante de
@@ -159,15 +175,15 @@ El objetivo principal de la partida es consolidar a la nación como la potencia 
 
 #### 2. Estructura de la Partida y Dinámica de Ronda
 
-Las partidas se configuran con un límite cerrado de **20 a 30 rondas** (definible en la sala) y un reloj de turno continuo de **60 segundos**. Cada ronda sigue una secuencia estricta de 5 fases ejecutadas de forma automatizada:
+Las partidas se configuran con un límite cerrado de **20 a 30 rondas** (definible en la sala) y una etapa de planificación de **60 segundos**. Cada ronda sigue estas etapas conceptuales:
 
-1. **Fase 1 — Crecimiento, Recaudación y Producción:** Cálculo automático de crecimiento poblacional, asignación de Plata fiscal e ingreso de Materiales industriales.
-2. **Fase 2 — Planificación de Órdenes:** Emisión en paralelo de órdenes de construcción, movimientos de tropas, propuestas diplomáticas y ajuste impositivo.
-3. **Fase 3 — Resolución de Órdenes:** Validación final y ejecución de las acciones planificadas.
-4. **Fase 4 — Cierre de Acciones:** Cierre breve de las órdenes de la ronda. En las rondas múltiplos de cinco, la reunión extraordinaria de la OI ocurre a continuación, antes de avanzar de ronda.
-5. **Fase 5 — Actualización del Tablero:** Recálculo de soberanía, actualización visual de la grilla 2D y refresco del marcador global. Tras una reunión de la OI, esta fase incrementa la ronda antes de iniciar la siguiente.
+1. **Inicio de ronda:** el servidor aplica intereses, vencimientos, producción, recaudación y crecimiento poblacional. Esta etapa es visible y dura brevemente para que Plata, Materiales, Población, Influencia y GDI se actualicen con animaciones count-up.
+2. **Planificación:** es la única etapa normal en la que el jugador interactúa. Aquí se gestionan impuestos, mercado, transferencias, bonos, pagos, diplomacia y las órdenes territoriales. Los jugadores pueden confirmar que están listos; si todos lo hacen, la etapa termina antes de los 60 segundos.
+3. **Resolución:** el servidor valida y ejecuta automáticamente las órdenes planificadas. Normalmente no se muestra en pantalla; si tarda más de lo esperado, la interfaz informa que está resolviendo acciones.
+4. **Cierre:** se presenta el resultado de la resolución durante una ventana breve. Las tropas se animan sobre el mapa, se muestran combates y capturas, y los cambios restantes de recursos se presentan visualmente.
+5. **Reunión de la OI:** al cerrar las rondas 5, 10, 15, etc., se intercala una reunión extraordinaria visible e interactiva de hasta 60 segundos antes de iniciar la siguiente ronda. Durante ella no se planifican acciones normales.
 
-Las fases automáticas cambian inmediatamente; la planificación conserva sus 60 segundos. Al cerrar las rondas 5, 10, 15, etc., se intercala una **ronda extraordinaria de la OI de hasta 60 segundos** antes de comenzar la siguiente ronda normal. En esa ronda no se planifican ni ejecutan acciones normales: los jugadores votan las resoluciones seleccionadas para la sesión. La reunión termina antes cuando todos los jugadores humanos han votado; los bots registran su voto, incluida la abstención.
+Las etapas automáticas no aceptan interacciones del jugador. La planificación concentra todas las decisiones normales y la reunión de la OI es la única excepción interactiva. Las animaciones del inicio y del cierre son presentación visual: las reglas y valores definitivos se calculan y validan en el servidor.
 
 ---
 
@@ -199,13 +215,16 @@ Los Materiales son indispensables para construir defensas y entrenar fuerzas arm
 - **Mercado Global:** Cada jugador puede comprar materiales por **3 de Plata** o
   venderlos por **1 de Plata** cada uno. El sistema neutral no tiene límites de stock.
 - **Transferencias directas:** Enviar Plata o Materiales a otro país retiene el **20%**
-  como arancel del Banco Mundial, redondeado hacia abajo. El receptor obtiene el resto;
+  como arancel del Banco Mundial, redondeado hacia arriba. El receptor obtiene el resto;
   los TLC activos entre ambos países eliminan el arancel.
 - **Emisión de Bonos:** Un bono entrega **20 de Plata** y crea una deuda de **25 de Plata**
-  con vencimiento en la quinta ronda, contando la ronda de emisión. El saldo se cobra
+  con vencimiento cinco rondas después de la emisión. El saldo se cobra
   automáticamente al vencimiento si hay fondos suficientes. El impago resta
   **5 de Influencia** y añade **1 de Plata** de interés al comienzo de cada ronda
   posterior; se permiten pagos parciales y totales manuales en cualquier momento.
+- **Ingreso de Influencia:** al finalizar cada ronda, cada ciudad o capital controlada
+  otorga **1 Punto de Influencia Política**. Durante la planificación, el jugador también
+  puede donar **15 de Plata al Banco Mundial** para obtener **1 Punto de Influencia**.
 - **Tratado de Libre Comercio (TLC):** Acuerdo político de cinco rondas que exime del
   arancel de transferencias directas. Una acción militar contra el firmante rompe el TLC.
   No se permiten nuevos TLC durante una guerra: combate en las últimas tres rondas o
@@ -345,11 +364,11 @@ segundos y las rondas avanzan automáticamente. El inspector ofrece acciones de 
 fábrica, reclutamiento y traslado de capital; cada acción se habilita solo si coinciden
 la fase, la soberanía, el tipo de casilla y los recursos, y el servidor vuelve a validar
 esas condiciones antes de aplicarla. Cada jugador dispone de tres espacios de acción que
-puede reemplazar o vaciar libremente durante la fase 2; las órdenes guardadas (incluidas
+puede reemplazar o vaciar libremente durante la etapa de planificación; las órdenes guardadas (incluidas
 las decisiones de la IA) se ejecutan únicamente cuando expira el temporizador de esa fase,
-al entrar en la fase 3.
+al comenzar la resolución automática.
 Los jugadores humanos conectados también pueden usar «Forzar» para marcarse listos;
-la fase 2 termina inmediatamente cuando todos lo han hecho, o automáticamente al
+la etapa de planificación termina inmediatamente cuando todos lo han hecho, o automáticamente al
 expirar los 60 segundos. Los cambios entre las demás fases son inmediatos. El menú superior permite reanudar o terminar la partida y
 volver al menú principal.
 El log conserva y muestra el historial completo de la partida, incluidas

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_ROUNDS, OI_RESOLUTIONS, TERRAIN_TYPES } from '../../shared/Constants.js';
 import { GameState } from '../src/game/GameState.js';
+import { EconomyEngine } from '../src/game/EconomyEngine.js';
 import { InternationalOrganizationEngine as OI } from '../src/game/InternationalOrganizationEngine.js';
 import { PhaseManager } from '../src/game/PhaseManager.js';
 import { Room } from '../src/network/RoomManager.js';
@@ -261,6 +262,21 @@ test('GDI is the sum of a nation’s resources and territory population', () => 
   assert.equal(gameState.getState().players.find((entry) => entry.id === player.id).gdiPoints, 376);
 });
 
+test('players gain one influence for each controlled city or capital at end of turn', () => {
+  const { gameState, player } = createHumanGame();
+  const controlledUrbanTiles = gameState.grid.flat().filter((tile) => tile.ownerId === player.id);
+  assert.ok(controlledUrbanTiles.length >= 2);
+  for (const tile of controlledUrbanTiles) tile.type = 'TR';
+  controlledUrbanTiles[0].type = 'CAP';
+  controlledUrbanTiles[1].type = 'CIU';
+  player.resources.INFLUENCE = 20;
+
+  EconomyEngine.awardEndOfTurnInfluence(gameState);
+
+  assert.equal(player.resources.INFLUENCE, 22);
+  assert.match(gameState.eventHistory.at(-1).message, /obtuvo 2 de Influencia Política/);
+});
+
 test('players can propose and accept a five-round non-aggression pact', () => {
   const { gameState, player } = createHumanGame();
   const recipient = gameState.players.get('nation-1');
@@ -316,7 +332,7 @@ test('only the recipient may reject a pending treaty offer', () => {
   assert.equal(gameState.nonAggressionPacts.length, 0);
 });
 
-test('players can negotiate treaties in any phase and only the proposer can cancel an offer', () => {
+test('players can negotiate treaties during planning and only the proposer can cancel an offer', () => {
   const { gameState, player } = createHumanGame();
   const recipient = gameState.players.get('nation-1');
   const otherPlayer = gameState.players.get('nation-2');
@@ -324,7 +340,7 @@ test('players can negotiate treaties in any phase and only the proposer can canc
   recipient.isBot = false;
   otherPlayer.socketId = 'other-socket';
   otherPlayer.isBot = false;
-  gameState.currentPhase = 6;
+  gameState.currentPhase = 2;
 
   const proposal = gameState.proposeTreaty(player.socketId, {
     recipientId: recipient.id,
@@ -397,7 +413,7 @@ test('free-trade treaties are active for five rounds', () => {
 
 test('the global market buys and sells materials at the fixed prices', () => {
   const { gameState, player } = createHumanGame();
-  gameState.currentPhase = 6;
+  gameState.currentPhase = 2;
   player.resources.SILVER = 100;
   player.resources.MATERIALS = 10;
 
@@ -463,22 +479,77 @@ test('direct transfers charge the 20 percent tariff and TLC transfers are exempt
   assert.equal(gameState.freeTradeTreaties.length, 0);
 });
 
+test('direct transfers round the tariff upward and financial actions pause during the OI meeting', () => {
+  const { gameState, player } = createHumanGame();
+  const recipient = gameState.players.get('nation-1');
+  player.resources.SILVER = 10;
+  recipient.resources.SILVER = 0;
+
+  const transfer = gameState.performFinancialAction(player.socketId, {
+    type: 'TRANSFER_RESOURCE',
+    recipientId: recipient.id,
+    resource: 'SILVER',
+    amount: 1
+  });
+
+  assert.equal(transfer.ok, true);
+  assert.equal(player.resources.SILVER, 9);
+  assert.equal(recipient.resources.SILVER, 0);
+  assert.equal(gameState.worldBankFund.SILVER, 1);
+
+  gameState.currentPhase = 6;
+  const rejected = gameState.performFinancialAction(player.socketId, {
+    type: 'BUY_MATERIALS',
+    quantity: 1
+  });
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.message, /reunión de la OI/);
+});
+
+test('players can donate 15 silver to gain one influence from the World Bank', () => {
+  const { gameState, player } = createHumanGame();
+  player.resources.SILVER = 20;
+  player.resources.INFLUENCE = 4;
+
+  const result = gameState.performFinancialAction(player.socketId, {
+    type: 'DONATE_TO_WORLD_BANK'
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(player.resources.SILVER, 5);
+  assert.equal(player.resources.INFLUENCE, 5);
+  assert.equal(gameState.worldBankFund.SILVER, 15);
+});
+
+test('donation to the World Bank requires 15 silver', () => {
+  const { gameState, player } = createHumanGame();
+  player.resources.SILVER = 14;
+
+  const result = gameState.performFinancialAction(player.socketId, {
+    type: 'DONATE_TO_WORLD_BANK'
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(player.resources.INFLUENCE, 20);
+  assert.equal(gameState.worldBankFund.SILVER, 0);
+});
+
 test('bonds default at maturity, lose influence, accrue one interest per round, and accept partial payment', () => {
   const { gameState, player } = createHumanGame();
   player.resources.SILVER = 100;
   const issued = gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
   assert.equal(issued.ok, true);
   assert.equal(player.resources.SILVER, 120);
-  assert.equal(gameState.bonds[0].dueRound, 5);
+  assert.equal(gameState.bonds[0].dueRound, 6);
 
   player.resources.SILVER = 24;
-  gameState.processBondsAtRoundStart(5);
+  gameState.processBondsAtRoundStart(6);
   assert.equal(gameState.bonds[0].defaulted, true);
   assert.equal(gameState.bonds[0].balance, 25);
   assert.equal(player.resources.INFLUENCE, 15);
 
-  gameState.processBondsAtRoundStart(6);
-  gameState.processBondsAtRoundStart(6);
+  gameState.processBondsAtRoundStart(7);
+  gameState.processBondsAtRoundStart(7);
   assert.equal(gameState.bonds[0].balance, 26);
   const repayment = gameState.performFinancialAction(player.socketId, {
     type: 'REPAY_BOND',
@@ -489,7 +560,7 @@ test('bonds default at maturity, lose influence, accrue one interest per round, 
   assert.equal(player.resources.SILVER, 14);
   assert.equal(gameState.bonds[0].balance, 16);
   assert.equal(gameState.bankFund.SILVER, 10);
-  gameState.processBondsAtRoundStart(7);
+  gameState.processBondsAtRoundStart(8);
   assert.equal(gameState.bonds[0].balance, 17);
 });
 
@@ -498,13 +569,21 @@ test('a bond is automatically repaid when the player can cover its maturity bala
   gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
   player.resources.SILVER = 25;
 
-  gameState.processBondsAtRoundStart(5);
+  gameState.processBondsAtRoundStart(6);
 
   assert.equal(gameState.bonds[0].paid, true);
   assert.equal(gameState.bonds[0].balance, 0);
   assert.equal(player.resources.SILVER, 0);
   assert.equal(gameState.bankFund.SILVER, 25);
   assert.equal(player.resources.INFLUENCE, 20);
+});
+
+test('a player cannot issue a second bond while the first one is pending', () => {
+  const { gameState, player } = createHumanGame();
+  assert.equal(gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' }).ok, true);
+  const rejected = gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.message, /bono pendiente/);
 });
 
 test('a recent conflict disables new TLC proposals', () => {
@@ -609,7 +688,7 @@ test('a room with multiple human players cannot be paused from the menu', () => 
   room.phaseManager.stop();
 });
 
-test('a pause preserves an immediate automatic phase transition', () => {
+test('a pause preserves the closing animation transition', () => {
   const { gameState } = createHumanGame();
   const phaseManager = new PhaseManager(gameState, () => {});
   phaseManager.running = true;
@@ -619,7 +698,8 @@ test('a pause preserves an immediate automatic phase transition', () => {
   phaseManager.setPaused(true);
   assert.equal(phaseManager.transitionTimer, null);
   assert.equal(phaseManager.pausedTransition.phase, 5);
-  assert.equal(phaseManager.pausedTransition.remaining, 0);
+  assert.ok(phaseManager.pausedTransition.remaining <= 2600);
+  assert.ok(phaseManager.pausedTransition.remaining >= 2590);
   phaseManager.setPaused(false);
   assert.notEqual(phaseManager.transitionTimer, null);
   phaseManager.stop();
@@ -643,7 +723,7 @@ test('the international meeting runs before advancing round five and ends after 
   };
 
   phaseManager.transitionToPhase(4);
-  assert.deepEqual(scheduledPhase, { phase: 6, delay: 0 });
+  assert.deepEqual(scheduledPhase, { phase: 6, delay: 2600 });
   assert.equal(gameState.oiSession, null);
   assert.equal(gameState.currentRound, 5);
 
@@ -714,7 +794,7 @@ test('no international meeting is scheduled after a non-fifth round', () => {
 
   phaseManager.transitionToPhase(4);
 
-  assert.deepEqual(scheduledPhase, { phase: 5, delay: 0 });
+  assert.deepEqual(scheduledPhase, { phase: 5, delay: 2600 });
   assert.equal(gameState.currentRound, 4);
   assert.equal(gameState.oiSession, null);
   assert.equal(gameState.eventHistory.length, 0);
@@ -722,9 +802,14 @@ test('no international meeting is scheduled after a non-fifth round', () => {
   phaseManager.transitionToPhase(5);
   assert.deepEqual(scheduledPhase, { phase: 1, delay: 0 });
   assert.equal(gameState.currentRound, 5);
-  assert.deepEqual(gameState.eventHistory.map((event) => event.message), [
-    'Comienza la ronda 5.'
-  ]);
+  assert.equal(gameState.eventHistory.at(-1).message, 'Comienza la ronda 5.');
+  assert.equal(
+    gameState.eventHistory
+      .slice(0, -1)
+      .filter((event) => event.message.includes('obtuvo 2 de Influencia Política'))
+      .length,
+    4
+  );
   assert.equal(gameState.oiSession, null);
   phaseManager.stop();
 });

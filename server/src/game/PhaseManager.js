@@ -2,7 +2,13 @@
  * Controla el reloj y la transición automática de rondas.
  */
 
-import { GAME_PHASES, MAX_ROUNDS, TIMINGS } from '../../../shared/Constants.js';
+import {
+  GAME_PHASES,
+  GAME_STAGES,
+  MAX_ROUNDS,
+  STAGE_TIMINGS,
+  TIMINGS
+} from '../../../shared/Constants.js';
 import { EconomyEngine } from './EconomyEngine.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 
@@ -33,6 +39,7 @@ export class PhaseManager {
     this.stopTimer();
     this.stopTransitionTimer();
     this.gameState.currentPhase = nextPhase;
+    this.gameState.currentStage = this.getStageForPhase(nextPhase);
 
     switch (nextPhase) {
       case GAME_PHASES.PHASE_1_STATS:
@@ -42,7 +49,7 @@ export class PhaseManager {
         }
         this.gameState.timeRemaining = 0;
         this.notifyState();
-        this.schedulePhase(GAME_PHASES.PHASE_2_DECISIONS, 0);
+        this.schedulePhase(GAME_PHASES.PHASE_2_DECISIONS, STAGE_TIMINGS.ROUND_START_MS);
         break;
       case GAME_PHASES.PHASE_2_DECISIONS:
         this.secondsRemaining = TIMINGS.DECISION_PHASE_DURATION;
@@ -56,6 +63,8 @@ export class PhaseManager {
         this.startDecisionTimer();
         break;
       case GAME_PHASES.PHASE_3_RESOLUTION:
+        this.gameState.timeRemaining = 0;
+        this.notifyState();
         this.gameState.lastActionResolutions = this.gameState.resolvePlannedActions();
         this.gameState.actionResolutionId += 1;
         this.gameState.timeRemaining = 0;
@@ -69,11 +78,12 @@ export class PhaseManager {
           this.gameState.currentRound % 5 === 0
             ? GAME_PHASES.PHASE_6_OI_SESSION
             : GAME_PHASES.PHASE_5_SUMMARY,
-          0
+          STAGE_TIMINGS.CLOSING_MS
         );
         break;
       case GAME_PHASES.PHASE_5_SUMMARY: {
         this.gameState.timeRemaining = 0;
+        EconomyEngine.awardEndOfTurnInfluence(this.gameState);
         this.gameState.expireTreatiesAfterRound(this.gameState.currentRound);
         if (this.gameState.currentRound >= MAX_ROUNDS) {
           this.gameState.gameOver = true;
@@ -106,6 +116,16 @@ export class PhaseManager {
       [GAME_PHASES.PHASE_6_OI_SESSION]: 'Reunión de la OI'
     };
     return names[phase] || 'Fase desconocida';
+  }
+
+  getStageForPhase(phase) {
+    if (phase === GAME_PHASES.PHASE_1_STATS) return GAME_STAGES.ROUND_START;
+    if (phase === GAME_PHASES.PHASE_2_DECISIONS) return GAME_STAGES.PLANNING;
+    if (phase === GAME_PHASES.PHASE_3_RESOLUTION) return GAME_STAGES.RESOLVING;
+    if (phase === GAME_PHASES.PHASE_4_GLOBAL_OI || phase === GAME_PHASES.PHASE_5_SUMMARY) {
+      return GAME_STAGES.CLOSING;
+    }
+    return GAME_STAGES.INTERNATIONAL_MEETING;
   }
 
   schedulePhase(phase, delay) {

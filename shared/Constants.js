@@ -131,7 +131,7 @@ export const INITIAL_STATE = {
 
 export const TIMINGS = {
   // Duraciones de fase en segundos
-  DECISION_PHASE_DURATION: 60, // Fase 2: Planificación activa de jugadores
+  DECISION_PHASE_DURATION: 60, // Duración de la etapa de planificación
   AUTOMATIC_PHASE_DURATION: 5,  // Tiempo de procesamiento para fases automáticas
   TOTAL_PHASES: 5
 };
@@ -176,4 +176,18 @@ export const GAME_PHASES = {
   PHASE_4_GLOBAL_OI: 4,  // Cierre normal de acciones
   PHASE_5_SUMMARY: 5,    // Resumen de ronda e índice GDI
   PHASE_6_OI_SESSION: 6  // Ronda extraordinaria de votación de la OI
+};
+
+export const GAME_STAGES = {
+  ROUND_START: 'ROUND_START',
+  PLANNING: 'PLANNING',
+  RESOLVING: 'RESOLVING',
+  CLOSING: 'CLOSING',
+  INTERNATIONAL_MEETING: 'INTERNATIONAL_MEETING'
+};
+
+export const STAGE_TIMINGS = {
+  ROUND_START_MS: 1400,
+  CLOSING_MS: 2600,
+  RESOLUTION_LOADING_THRESHOLD_MS: 350
 };

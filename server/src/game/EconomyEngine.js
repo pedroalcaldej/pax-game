@@ -3,6 +3,20 @@
  */
 
 export class EconomyEngine {
+  static awardEndOfTurnInfluence(gameState) {
+    for (const player of gameState.players.values()) {
+      const controlledCities = gameState.grid.flat().filter((tile) => (
+        tile.ownerId === player.id
+        && (tile.type === 'CAP' || tile.type === 'CIU')
+      )).length;
+      if (controlledCities < 1) continue;
+      player.resources.INFLUENCE += controlledCities;
+      gameState.recordEvent(
+        `${player.name} obtuvo ${controlledCities} de Influencia Política por sus ciudades y capitales controladas.`
+      );
+    }
+  }
+
   static processRoundEconomy(gameState) {
     for (const player of gameState.players.values()) {
       const taxRate = player.taxRate;

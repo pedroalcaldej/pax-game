@@ -1,6 +1,6 @@
 /**
  * client/src/ui/components/TaxSlider.js
- * Componente UI para ajustar la Tasa Impositiva (Tau) durante la Fase 2.
+ * Componente UI para ajustar la Tasa Impositiva (Tau) durante la planificación.
  */
 
 import { ECONOMIC_POLICY } from '../../../../shared/Constants.js';
@@ -63,7 +63,7 @@ export class TaxSlider {
 
   /**
    * Habilita o deshabilita el slider según la fase actual.
-   * @param {boolean} enabled - True si es la Fase 2 de decisiones.
+   * @param {boolean} enabled - True si está abierta la etapa de planificación.
    */
   setEnabled(enabled) {
     const input = this.container.querySelector('#taxInput');

@@ -10,7 +10,9 @@ import {
   MAP_CONFIG,
   NATIONS,
   TREATY_TYPES,
-  TERRAIN_TYPES
+  TERRAIN_TYPES,
+  GAME_PHASES,
+  GAME_STAGES
 } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 
@@ -27,6 +29,7 @@ export class GameState {
     this.gameStarted = false;
     this.gameOver = false;
     this.currentPhase = 1;
+    this.currentStage = GAME_STAGES.ROUND_START;
     this.timeRemaining = 60;
     this.isPaused = false;
     this.currentRound = 1;
@@ -48,6 +51,7 @@ export class GameState {
     this.treatyOffers = [];
     this.nextTreatyOfferId = 1;
     this.bankFund = { SILVER: 0, MATERIALS: 0 };
+    this.worldBankFund = this.bankFund;
     this.bonds = [];
     this.nextBondId = 1;
     this.conflicts = [];
@@ -106,6 +110,9 @@ export class GameState {
     if (!proposer) return { ok: false, message: 'No tienes un país activo en esta partida.' };
     if (!this.gameStarted || this.gameOver) {
       return { ok: false, message: 'Solo puedes proponer tratados durante una partida activa.' };
+    }
+    if (this.currentPhase !== GAME_PHASES.PHASE_2_DECISIONS) {
+      return { ok: false, message: 'Los tratados solo pueden gestionarse durante la planificación.' };
     }
     if (!Object.values(TREATY_TYPES).includes(type)) {
       return { ok: false, message: 'El tipo de tratado seleccionado no es válido.' };
@@ -173,6 +180,9 @@ export class GameState {
     if (!this.gameStarted || this.gameOver) {
       return { ok: false, message: 'Solo puedes responder a tratados durante una partida activa.' };
     }
+    if (this.currentPhase !== GAME_PHASES.PHASE_2_DECISIONS) {
+      return { ok: false, message: 'Los tratados solo pueden gestionarse durante la planificación.' };
+    }
     const offerIndex = this.treatyOffers.findIndex((offer) => (
       offer.id === offerId && offer.recipientId === recipient.id
     ));
@@ -216,6 +226,9 @@ export class GameState {
     if (!proposer) return { ok: false, message: 'No tienes un país activo en esta partida.' };
     if (!this.gameStarted || this.gameOver) {
       return { ok: false, message: 'Solo puedes cancelar propuestas durante una partida activa.' };
+    }
+    if (this.currentPhase !== GAME_PHASES.PHASE_2_DECISIONS) {
+      return { ok: false, message: 'Los tratados solo pueden gestionarse durante la planificación.' };
     }
     const offerIndex = this.treatyOffers.findIndex((offer) => (
       offer.id === offerId && offer.proposerId === proposer.id
@@ -385,6 +398,14 @@ export class GameState {
     if (!this.gameStarted || this.gameOver) {
       return { ok: false, message: 'Las operaciones financieras requieren una partida activa.' };
     }
+    if (this.currentPhase !== GAME_PHASES.PHASE_2_DECISIONS) {
+      return {
+        ok: false,
+        message: this.currentPhase === GAME_PHASES.PHASE_6_OI_SESSION
+          ? 'Las operaciones financieras están suspendidas durante la reunión de la OI.'
+          : 'Las operaciones financieras solo están disponibles durante la planificación.'
+      };
+    }
     if (!action || typeof action.type !== 'string') {
       return { ok: false, message: 'La operación financiera no es válida.' };
     }
@@ -435,7 +456,7 @@ export class GameState {
         recipient.id,
         TREATY_TYPES.FREE_TRADE
       ) && !this.isPlayersAtWar(player.id, recipient.id);
-      const tariff = tariffExempt ? 0 : Math.floor(amount * BANK_TARIFF_RATE);
+      const tariff = tariffExempt ? 0 : Math.ceil(amount * BANK_TARIFF_RATE);
       const received = amount - tariff;
       player.resources[resource] -= amount;
       recipient.resources[resource] += received;
@@ -450,14 +471,34 @@ export class GameState {
       };
     }
 
+    if (action.type === 'DONATE_TO_WORLD_BANK') {
+      const donationCost = 15;
+      if (player.resources.SILVER < donationCost) {
+        return { ok: false, message: 'Necesitas 15 de plata para donar al Banco Mundial.' };
+      }
+      player.resources.SILVER -= donationCost;
+      player.resources.INFLUENCE += 1;
+      this.bankFund.SILVER += donationCost;
+      this.recordEvent(
+        `${player.name} donó ${donationCost} de plata al Banco Mundial y obtuvo 1 de Influencia Política.`
+      );
+      return {
+        ok: true,
+        message: 'Donación realizada: pagaste 15 de plata y obtuviste 1 de Influencia.'
+      };
+    }
+
     if (action.type === 'ISSUE_BOND') {
+      if (this.bonds.some((bond) => bond.playerId === player.id && !bond.paid)) {
+        return { ok: false, message: 'Ya tienes un bono pendiente. Debes saldarlo antes de emitir otro.' };
+      }
       const bond = {
         id: `bond-${this.nextBondId++}`,
         playerId: player.id,
         principal: 25,
         balance: 25,
         issueRound: this.currentRound,
-        dueRound: this.currentRound + TREATY_DURATION_ROUNDS - 1,
+        dueRound: this.currentRound + TREATY_DURATION_ROUNDS,
         defaulted: false,
         paid: false,
         lastInterestRound: null
@@ -861,6 +902,7 @@ export class GameState {
         results.push({
           playerId: player.id,
           slot: slot + 1,
+          action: { ...action },
           message: result.message || (result.ok ? 'Acción realizada.' : 'No se pudo realizar la acción.'),
           ...result
         });
@@ -891,6 +933,16 @@ export class GameState {
       || InternationalOrganizationEngine.isInActiveDmz(this, destination?.x, destination?.y)
     ) {
       return { ok: false, message: 'El movimiento ya no es válido o atraviesa una Zona Desmilitarizada.' };
+    }
+    const enteredRivalTerritory = (
+      (source.ownerId != null && source.ownerId !== player.id)
+      || (destination.ownerId != null && destination.ownerId !== player.id)
+    );
+    if (enteredRivalTerritory) {
+      this.registerMilitaryConflict(
+        player,
+        destination.ownerId !== player.id ? destination.ownerId : source.ownerId
+      );
     }
     const hostilePlayers = new Set(
       Object.entries(destination.visitingTroops || {})
@@ -1334,6 +1386,7 @@ export class GameState {
       lastActionResolutions: this.lastActionResolutions,
       eventHistory: this.eventHistory,
       currentPhase: this.currentPhase,
+      currentStage: this.currentStage,
       timeRemaining: this.timeRemaining,
       currentRound: this.currentRound,
       seed: this.seed,
@@ -1345,6 +1398,7 @@ export class GameState {
       freeTradeTreaties: this.freeTradeTreaties,
       treatyOffers: this.treatyOffers,
       bankFund: this.bankFund,
+      worldBankFund: this.worldBankFund,
       bonds: this.bonds,
       activeConflicts: this.getActiveConflicts(),
       aggressions: this.aggressions,

@@ -1,9 +1,17 @@
-import { TREATY_TYPES } from '../../../../shared/Constants.js';
+import { GAME_STAGES, TREATY_TYPES } from '../../../../shared/Constants.js';
 import { getPlayerRankings } from './PlayerRankings.js';
 
 const TREATY_NAMES = {
   [TREATY_TYPES.NON_AGGRESSION_PACT]: 'Pacto de No Agresión',
   [TREATY_TYPES.FREE_TRADE]: 'Tratado de Libre Comercio'
+};
+
+const STAGE_NAMES = {
+  [GAME_STAGES.ROUND_START]: 'Inicio de ronda',
+  [GAME_STAGES.PLANNING]: 'Planificación',
+  [GAME_STAGES.RESOLVING]: 'Resolviendo acciones…',
+  [GAME_STAGES.CLOSING]: 'Actualizando el mundo…',
+  [GAME_STAGES.INTERNATIONAL_MEETING]: 'Reunión de la OI'
 };
 
 function escapeHtml(value) {
@@ -58,7 +66,7 @@ export class GlobalPanel {
     this.container.innerHTML = `
       <section class="pax-global-panel">
         <div class="pax-scoreboard-status">
-          <div><span>Fase actual</span><strong id="global-phase">Fase 1</strong></div>
+          <div><span>Estado</span><strong id="global-phase">Inicio de ronda</strong></div>
           <div class="pax-scoreboard-clock"><span>Tiempo</span><strong id="global-timer">60s</strong></div>
         </div>
         <div class="pax-global-table-scroll">
@@ -112,7 +120,14 @@ export class GlobalPanel {
     const round = gameState?.currentRound || 1;
     const localPlayer = players.find((player) => player.id === localPlayerId);
     const phase = gameState?.currentPhase || 1;
-    this.container.querySelector('#global-phase').textContent = `Fase ${phase}`;
+    const stage = gameState?.currentStage || (
+      phase === 1 ? GAME_STAGES.ROUND_START
+        : phase === 2 ? GAME_STAGES.PLANNING
+          : phase === 3 ? GAME_STAGES.RESOLVING
+            : phase === 6 ? GAME_STAGES.INTERNATIONAL_MEETING
+              : GAME_STAGES.CLOSING
+    );
+    this.container.querySelector('#global-phase').textContent = STAGE_NAMES[stage] || 'En curso';
     this.container.querySelector('#global-timer').textContent = (
       `${gameState?.timeRemaining ?? 60}s${gameState?.isPaused ? ' · Pausado' : ''}`
     );
@@ -122,7 +137,7 @@ export class GlobalPanel {
     this.container.querySelector('#global-player-list').innerHTML = sortedPlayers.map((entry, index) => {
       const { player } = entry;
       const color = /^#[0-9a-f]{6}$/i.test(player.color || '') ? player.color : '#2563eb';
-      const control = player.isBot ? 'Bot' : player.phaseReady && phase === 2 ? 'Listo' : 'Humano';
+      const control = player.isBot ? 'Bot' : player.phaseReady && stage === GAME_STAGES.PLANNING ? 'Listo' : 'Humano';
       return `
         <tr style="--score-nation-color:${color}" class="${player.id === localPlayerId ? 'is-local-player' : ''}">
           <th><span class="pax-score-rank">${index + 1}</span>${escapeHtml(player.name || 'País')}</th>
@@ -171,7 +186,12 @@ export class GlobalPanel {
       : '<p class="pax-global-empty">No hay conflictos activos.</p>';
 
     const offers = gameState?.treatyOffers || [];
-    const canRespond = Boolean(localPlayer && gameState?.gameStarted && !gameState?.gameOver);
+    const canRespond = Boolean(
+      localPlayer
+      && gameState?.gameStarted
+      && !gameState?.gameOver
+      && stage === GAME_STAGES.PLANNING
+    );
     this.container.querySelector('#global-treaty-offers').innerHTML = offers.length
       ? offers.map((offer) => {
         const isIncoming = offer.recipientId === localPlayerId;
@@ -202,7 +222,12 @@ export class GlobalPanel {
       recipientSelect.value = previousRecipient;
     }
     const recipientIsAtWar = this.updateTLCOption();
-    const canPropose = Boolean(localPlayer && gameState?.gameStarted && !gameState?.gameOver);
+    const canPropose = Boolean(
+      localPlayer
+      && gameState?.gameStarted
+      && !gameState?.gameOver
+      && stage === GAME_STAGES.PLANNING
+    );
     for (const input of this.container.querySelectorAll('[data-treaty-form] select, #treaty-propose-button')) {
       input.disabled = !canPropose || recipientSelect.options.length === 0;
     }
@@ -210,7 +235,9 @@ export class GlobalPanel {
       ? recipientIsAtWar
         ? 'No se puede proponer un TLC durante un conflicto activo con ese país.'
         : ''
-      : 'La negociación está disponible durante una partida activa.';
+      : stage === GAME_STAGES.INTERNATIONAL_MEETING
+        ? 'La negociación se suspende durante la reunión de la OI.'
+        : 'La negociación está disponible durante la planificación.';
   }
 
   updateTLCOption() {

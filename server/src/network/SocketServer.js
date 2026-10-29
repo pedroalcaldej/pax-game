@@ -146,7 +146,7 @@ export class SocketServer {
         if (room) {
           const accepted = room.gameState.setPlayerTaxRate(socket.id, taxRate);
           if (!accepted) {
-            socket.emit(PROTOCOL.ACTION_ERROR, 'Los impuestos solo se pueden ajustar en fase 2 y dentro del rango permitido.');
+            socket.emit(PROTOCOL.ACTION_ERROR, 'Los impuestos solo se pueden ajustar durante la planificación y dentro del rango permitido.');
             return;
           }
           const player = Array.from(room.gameState.players.values())

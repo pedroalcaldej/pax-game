@@ -309,6 +309,7 @@ export class Map {
         const troops = tile?.troops ?? 0;
         this.drawTroopMarkers(troops, posX, posY);
       }
+
     }
 
     this.drawBorders(grid);
@@ -320,6 +321,56 @@ export class Map {
       this.onTileSelected(this.getTile(grid, this.selectedPosition.x, this.selectedPosition.y));
     }
   }
+
+    animateTroopMovements(resolutions = [], duration = 1800) {
+      const movements = resolutions
+        .filter((resolution) => (
+          resolution?.ok
+          && resolution.action?.type === 'MOVE_TROOPS'
+          && Number.isInteger(resolution.action.x)
+          && Number.isInteger(resolution.action.y)
+          && Number.isInteger(resolution.action.targetX)
+          && Number.isInteger(resolution.action.targetY)
+        ))
+        .map((resolution) => ({
+          action: resolution.action,
+          color: NATION_BORDER_COLORS[resolution.playerId?.split('-').pop()] || '#f8fafc'
+        }));
+      if (!movements.length) return;
+
+      const startedAt = performance.now();
+      const draw = (now) => {
+        const progress = Math.min(1, (now - startedAt) / duration);
+        this.render(this.grid, false);
+        const eased = 1 - ((1 - progress) ** 3);
+        for (const movement of movements) {
+          const { action } = movement;
+          const x = action.x + (action.targetX - action.x) * eased;
+          const y = action.y + (action.targetY - action.y) * eased;
+          const count = Math.min(8, Math.max(1, Math.floor(action.troops || 1)));
+          for (let index = 0; index < count; index += 1) {
+            const offsetX = (index % 4) * 2.5 - 3.75;
+            const offsetY = Math.floor(index / 4) * 2.5 - 1.25;
+            this.ctx.beginPath();
+            this.ctx.arc(
+              (x + 0.5) * this.tileSize + offsetX,
+              (y + 0.5) * this.tileSize + offsetY,
+              Math.max(2, this.tileSize / 12),
+              0,
+              Math.PI * 2
+            );
+            this.ctx.fillStyle = movement.color;
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#111827';
+            this.ctx.lineWidth = 1;
+            this.ctx.stroke();
+          }
+        }
+        if (progress < 1) requestAnimationFrame(draw);
+        else this.render(this.grid, false);
+      };
+      requestAnimationFrame(draw);
+    }
 
   drawTroopMarkers(troops, posX, posY) {
     const count = Math.min(16, Math.max(0, Math.floor(troops || 0)));
