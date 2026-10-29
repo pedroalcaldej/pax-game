@@ -912,6 +912,7 @@ export class GameScreen {
                   <p>Crea una sala o únete con un código de seis caracteres.</p>
                   <div class="pax-room-actions">
                     <button class="pax-start-button" id="create-room-button" type="button">Crear sala</button>
+                    <button class="pax-start-button" id="quick-match-button" type="button">Partida rápida</button>
                     <div class="pax-join-room">
                       <label for="room-code-input">Código de sala</label>
                       <div class="pax-join-room-row">
@@ -924,7 +925,7 @@ export class GameScreen {
               </div>
             </div>
             <div id="lobby-view" hidden>
-              <h1>Sala <strong id="lobby-code"></strong></h1>
+              <h1 id="lobby-title">Sala <strong id="lobby-code"></strong></h1>
               <div class="pax-lobby-code-row">
                 <button class="pax-lobby-copy" id="copy-room-code" type="button">Copiar código</button>
                 <span id="lobby-count">Jugadores conectados: 0 / 4</span>
@@ -1053,8 +1054,8 @@ export class GameScreen {
             <p class="pax-scoreboard-note">GDI: Plata + Materiales + Influencia + Población.</p>
           </div>
           <div class="pax-end-actions">
-            <button id="game-summary-replay" type="button">Volver a jugar</button>
-            <button id="game-summary-menu" type="button">Ir al menú principal</button>
+            <button id="game-summary-replay" type="button">🔄 Jugar de nuevo</button>
+            <button id="game-summary-menu" type="button">🏠 Menú principal</button>
           </div>
         </dialog>
       </div>
@@ -1270,6 +1271,9 @@ export class GameScreen {
     this.container.querySelector('#create-room-button').addEventListener('click', () => {
       this.createRoom();
     });
+    this.container.querySelector('#quick-match-button').addEventListener('click', () => {
+      this.quickMatch();
+    });
     this.container.querySelector('#single-player-button').addEventListener('click', () => {
       this.startSinglePlayer();
     });
@@ -1299,19 +1303,7 @@ export class GameScreen {
       this.container.querySelector('#global-panel-dialog').close();
     });
     this.container.querySelector('#game-summary-replay').addEventListener('click', () => {
-      if (!socket.connected || !this.gameState?.gameOver) return;
-      const button = this.container.querySelector('#game-summary-replay');
-      button.disabled = true;
-      socket.timeout(5000).emit(
-        PROTOCOL.RESTART_GAME,
-        { roomId: this.roomCode },
-        (error, result) => {
-          if (error || !result?.ok) {
-            button.disabled = false;
-            this.addEvent(`No se pudo iniciar otra partida: ${result?.message || 'el servidor no respondió.'}`);
-          }
-        }
-      );
+      this.replayGame();
     });
     this.container.querySelector('#game-summary-menu').addEventListener('click', () => {
       if (!socket.connected || !this.gameState?.gameOver) return;
@@ -1473,7 +1465,7 @@ export class GameScreen {
     for (const element of this.container.querySelectorAll('button:disabled, input:disabled, select:disabled')) {
       if (element.id === 'play-button') element.dataset.tooltip = 'Esperando conexión con la partida';
       else if (element.id === 'single-player-button') element.dataset.tooltip = 'Esperando conexión con la partida';
-      else if (element.matches('#create-room-button, #join-room-button')) element.dataset.tooltip = 'Firebase no está disponible';
+      else if (element.matches('#create-room-button, #quick-match-button, #join-room-button')) element.dataset.tooltip = 'Firebase no está disponible';
       else if (element.matches('[data-issue-bond]')) element.dataset.tooltip = planning
         ? 'Ya tienes un bono pendiente'
         : 'Acción bloqueada fuera de la planificación';
@@ -2174,7 +2166,7 @@ export class GameScreen {
         this.setStartStatus(error.message);
       }
     });
-    const buttons = this.container.querySelectorAll('#create-room-button, #join-room-button');
+    const buttons = this.container.querySelectorAll('#create-room-button, #quick-match-button, #join-room-button');
     buttons.forEach((button) => { button.disabled = !this.lobby.enabled; });
     this.container.querySelector('#single-player-button').disabled = !socket.connected;
     if (!this.lobby.enabled) {
@@ -2185,7 +2177,11 @@ export class GameScreen {
   }
 
   async createRoom() {
-    await this.enterLobby(() => this.lobby.createRoom());
+    await this.enterLobby(() => this.lobby.createRoom({ privada: true }));
+  }
+
+  async quickMatch() {
+    await this.enterLobby(() => this.lobby.quickMatch());
   }
 
   startSinglePlayer() {
@@ -2238,18 +2234,52 @@ export class GameScreen {
 
   setRoomControlsEnabled(enabled) {
     this.container
-      .querySelectorAll('#create-room-button, #join-room-button')
+      .querySelectorAll('#create-room-button, #quick-match-button, #join-room-button')
       .forEach((button) => { button.disabled = !enabled; });
+  }
+
+  async replayGame() {
+    if (!socket.connected || !this.gameState?.gameOver) return;
+    const button = this.container.querySelector('#game-summary-replay');
+    button.disabled = true;
+    const isPrivate = this.lobbyState?.privada !== false;
+    if (this.serverJoinedRoom === this.roomCode) {
+      socket.emit(PROTOCOL.END_GAME, { roomId: this.roomCode });
+      this.serverJoinedRoom = null;
+    }
+    try {
+      if (isPrivate) {
+        await this.lobby.returnToLobbyForReplay();
+        this.gameState = null;
+        this.container.querySelector('#game-summary-dialog')?.close();
+        this.container.querySelector('#start-menu').hidden = false;
+      } else {
+        await this.lobby.leaveRoom();
+        this.lobbyState = null;
+        this.gameState = null;
+        this.container.querySelector('#game-summary-dialog')?.close();
+        await this.lobby.quickMatch();
+      }
+    } catch (error) {
+      button.disabled = false;
+      this.addEvent(`No se pudo preparar otra partida: ${error.message}`);
+    }
   }
 
   handleLobbyChange(room) {
     if (this.roomCode !== room.code) this.chat.clear();
     this.lobbyState = room;
     this.roomCode = room.code;
+    const isPrivateRoom = room.privada !== false;
     const humanCount = room.slots.filter((player) => player?.tipo === 'humano').length;
     this.container.querySelector('#room-menu').hidden = true;
     this.container.querySelector('#lobby-view').hidden = false;
+    this.container.querySelector('#lobby-title').firstChild.textContent = isPrivateRoom
+      ? 'Sala '
+      : 'Partida rápida ';
     this.container.querySelector('#lobby-code').textContent = room.code;
+    this.container.querySelector('#lobby-code').hidden = !isPrivateRoom;
+    this.container.querySelector('#copy-room-code').hidden = !isPrivateRoom;
     this.container.querySelector('#lobby-count').textContent = `Jugadores conectados: ${humanCount} / 4`;
     const ownSlot = room.slots.find((player) => player?.id === this.playerId);
     const nameInput = this.container.querySelector('#lobby-player-name');
@@ -2284,7 +2314,9 @@ export class GameScreen {
     } else {
       this.setStartStatus(ownReady
         ? 'Esperando a que todos los jugadores pulsen Jugar…'
-        : 'Edita tu país y pulsa Jugar cuando estés listo.');
+        : isPrivateRoom
+          ? 'Comparte el código e inicia cuando todos estén listos.'
+          : 'Esperando jugadores aleatorios. Pulsa Jugar cuando estés listo.');
     }
   }
 
