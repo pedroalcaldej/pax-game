@@ -48,17 +48,19 @@ export class FirebaseLobby {
     this.chatUnsubscribe = null;
     this.disconnectHandle = null;
     this.authError = null;
-    this.ready = this.firebase.auth().signInAnonymously().catch((error) => {
+    this.ready = this.firebase
+      ? this.firebase.auth().signInAnonymously().catch((error) => {
       this.authError = error;
       return null;
-    });
+      })
+      : Promise.resolve(null);
   }
 
   get enabled() {
     return Boolean(this.firebase);
   }
 
-  async createRoom() {
+  async createRoom({ privada = true } = {}) {
     if (!this.firebase) throw new Error('Firebase no está configurado.');
     await this.ready;
     if (this.authError) throw new Error('Firebase no permite autenticación anónima.');
@@ -70,8 +72,10 @@ export class FirebaseLobby {
         if (room) return;
         return {
           creador: this.playerId,
+          privada,
           estado: 'esperando',
           rondaActual: 1,
+          creadaEn: this.firebase.database.ServerValue.TIMESTAMP,
           jugadores: {
             slot_1: { id: this.playerId, nombre: this.playerName, color: AVAILABLE_NATION_COLORS[0], tipo: 'humano', listo: false }
           }
@@ -83,6 +87,27 @@ export class FirebaseLobby {
       }
     }
     throw new Error('No se pudo generar un código de sala disponible.');
+  }
+
+  async quickMatch() {
+    if (!this.firebase) throw new Error('Firebase no está configurado.');
+    await this.ready;
+    if (this.authError) throw new Error('Firebase no permite autenticación anónima.');
+    const snapshot = await this.firebase.database().ref('salas')
+      .orderByChild('estado').equalTo('esperando').once('value');
+    const rooms = snapshot.val() || {};
+    const candidates = Object.entries(rooms)
+      .filter(([, room]) => room?.privada === false
+        && Object.values(room.jugadores || {}).filter(Boolean).length < SLOT_COUNT)
+      .sort(([, left], [, right]) => (left.creadaEn || 0) - (right.creadaEn || 0));
+    for (const [code] of candidates) {
+      try {
+        return await this.joinRoom(code);
+      } catch (error) {
+        if (!/no existe|llena|ya inició/i.test(error.message)) throw error;
+      }
+    }
+    return this.createRoom({ privada: false });
   }
 
   async joinRoom(rawCode) {
@@ -221,6 +246,22 @@ export class FirebaseLobby {
       return { ...room, jugadores: players, estado: 'en_juego', rondaActual: 1 };
     });
     if (!result.committed) throw new Error('Todos los jugadores humanos deben pulsar Jugar.');
+  }
+
+  async returnToLobbyForReplay() {
+    if (!this.roomRef) throw new Error('Primero debes entrar a una sala.');
+    await this.ready;
+    if (this.authError) throw new Error('Firebase no permite autenticación anónima.');
+    const result = await this.roomRef.transaction((room) => {
+      if (!room || room.estado !== 'en_juego') return;
+      const jugadores = Object.fromEntries(
+        Object.entries(room.jugadores || {})
+          .filter(([, player]) => player?.tipo === 'humano')
+          .map(([slot, player]) => [slot, { ...player, listo: false }])
+      );
+      return { ...room, estado: 'esperando', rondaActual: 1, jugadores };
+    });
+    if (!result.committed) throw new Error('La sala ya no está disponible para otra partida.');
   }
 
   stopWatching() {
