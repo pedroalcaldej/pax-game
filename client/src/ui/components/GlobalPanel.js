@@ -1,4 +1,4 @@
-import { GAME_STAGES, TREATY_TYPES } from '../../../../shared/Constants.js';
+import { GAME_STAGES, LEGACY_NATION_NAMES, NATIONS, TREATY_TYPES } from '../../../../shared/Constants.js';
 import { getPlayerRankings } from './PlayerRankings.js';
 
 const TREATY_NAMES = {
@@ -26,6 +26,13 @@ function escapeHtml(value) {
 
 function formatValue(value) {
   return Number.isFinite(value) ? Math.floor(value).toLocaleString('es-ES') : '0';
+}
+
+function displayNationName(player) {
+  return LEGACY_NATION_NAMES.get(player?.name)
+    || player?.name
+    || NATIONS[player?.nationId]?.name
+    || 'País';
 }
 
 export class GlobalPanel {
@@ -140,7 +147,7 @@ export class GlobalPanel {
       const control = player.isBot ? 'Bot' : player.phaseReady && stage === GAME_STAGES.PLANNING ? 'Listo' : 'Humano';
       return `
         <tr style="--score-nation-color:${color}" class="${player.id === localPlayerId ? 'is-local-player' : ''}">
-          <th><span class="pax-score-rank">${index + 1}</span>${escapeHtml(player.name || 'País')}</th>
+          <th><span class="pax-score-rank">${index + 1}</span>${escapeHtml(displayNationName(player))}</th>
           <td>${control}</td>
           <td>${formatValue(entry.ownedTiles.length)}</td>
           <td>${formatValue(entry.population)}</td>
@@ -156,7 +163,7 @@ export class GlobalPanel {
       `;
     }).join('') || '<tr><td colspan="12">Sin países en la sala.</td></tr>';
 
-    const playerNames = new Map(players.map((player) => [player.id, player.name]));
+    const playerNames = new Map(players.map((player) => [player.id, displayNationName(player)]));
     const activePacts = (gameState?.nonAggressionPacts || [])
       .filter((pact) => pact.expiresAfterRound >= round)
       .map((pact) => ({ ...pact, type: TREATY_TYPES.NON_AGGRESSION_PACT }));
@@ -179,7 +186,7 @@ export class GlobalPanel {
       ? conflicts.map((conflict) => `
         <div class="pax-global-treaty">
           <strong>En guerra</strong>
-          <span>${conflict.playerNames.map(escapeHtml).join(' · ')}</span>
+          <span>${conflict.playerNames.map((name) => escapeHtml(LEGACY_NATION_NAMES.get(name) || name)).join(' · ')}</span>
           <small>${conflict.occupied ? 'Tropas en territorio rival' : `Combate en las últimas tres rondas (ronda ${conflict.round})`}</small>
         </div>
       `).join('')
@@ -196,10 +203,11 @@ export class GlobalPanel {
       ? offers.map((offer) => {
         const isIncoming = offer.recipientId === localPlayerId;
         const otherParty = isIncoming ? offer.proposerName : offer.recipientName;
+        const displayOtherParty = LEGACY_NATION_NAMES.get(otherParty) || otherParty;
         return `
           <div class="pax-global-treaty">
             <strong>${TREATY_NAMES[offer.type]}</strong>
-            <span>${isIncoming ? `De ${escapeHtml(otherParty)}` : `Para ${escapeHtml(otherParty)}`}</span>
+            <span>${isIncoming ? `De ${escapeHtml(displayOtherParty)}` : `Para ${escapeHtml(displayOtherParty)}`}</span>
             ${isIncoming ? `
               <button type="button" data-treaty-response="accept" data-offer-id="${escapeHtml(offer.id)}" ${canRespond ? '' : 'disabled'}>Aceptar</button>
               <button type="button" data-treaty-response="reject" data-offer-id="${escapeHtml(offer.id)}" ${canRespond ? '' : 'disabled'}>Rechazar</button>
@@ -216,7 +224,7 @@ export class GlobalPanel {
     const previousRecipient = recipientSelect.value;
     recipientSelect.innerHTML = players
       .filter((player) => player.id !== localPlayerId)
-      .map((player) => `<option value="${escapeHtml(player.id)}">${escapeHtml(player.name)}</option>`)
+      .map((player) => `<option value="${escapeHtml(player.id)}">${escapeHtml(displayNationName(player))}</option>`)
       .join('');
     if (players.some((player) => player.id === previousRecipient)) {
       recipientSelect.value = previousRecipient;

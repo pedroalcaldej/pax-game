@@ -46,6 +46,7 @@ export class Map {
     this.dragStart = null;
     this.didDrag = false;
     this.targetSelectionMode = false;
+    this.nationColors = [...NATION_COLORS];
 
     this.tileSize = MAP_CONFIG?.TILE_SIZE || 40;
     this.cols = MAP_CONFIG?.GRID_WIDTH || 30;
@@ -254,7 +255,14 @@ export class Map {
 
   getNationColor(tile) {
     if (tile == null || tile.nationId == null) return null;
-    return NATION_COLORS[tile.nationId] || null;
+    return this.nationColors[tile.nationId] || null;
+  }
+
+  setNationColors(players = []) {
+    this.nationColors = NATION_COLORS.map((fallback, nationId) => (
+      players.find((player) => player.nationId === nationId)?.color || fallback
+    ));
+    if (this.grid) this.render(this.grid, false);
   }
 
   getTile(grid, x, y) {
@@ -334,7 +342,7 @@ export class Map {
         ))
         .map((resolution) => ({
           action: resolution.action,
-          color: NATION_BORDER_COLORS[resolution.playerId?.split('-').pop()] || '#f8fafc'
+          color: this.nationColors[resolution.playerId?.split('-').pop()] || '#f8fafc'
         }));
       if (!movements.length) return;
 
@@ -496,7 +504,7 @@ export class Map {
       for (let x = 0; x < this.cols; x++) {
         const tile = this.getTile(grid, x, y);
         if (!tile || tile.ownerId == null) continue;
-        const nationColor = NATION_BORDER_COLORS[tile.nationId] || this.getNationColor(tile) || '#f8fafc';
+        const nationColor = this.getNationColor(tile) || '#f8fafc';
         const posX = x * size;
         const posY = y * size;
 

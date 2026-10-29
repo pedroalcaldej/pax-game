@@ -23,7 +23,7 @@ export class SocketServer {
       socket.emit(PROTOCOL.GAME_STATE_UPDATE, defaultRoom.gameState.getState());
 
       // Recibir datos de unión incluyendo playerId
-      socket.on(PROTOCOL.JOIN_GAME, ({ playerName, roomId, playerId }) => {
+      socket.on(PROTOCOL.JOIN_GAME, ({ playerName, playerColor, roomId, playerId }) => {
         const targetRoomId = roomId || 'room-1';
         const room = this.roomManager.getOrCreateRoom(targetRoomId);
 
@@ -32,7 +32,7 @@ export class SocketServer {
           (entry) => entry.boundPlayerId === playerId
         );
         const wasBot = existingPlayer?.isBot;
-        const player = room.gameState.addPlayer(socket.id, playerName || 'Nación Alpha', playerId);
+        const player = room.gameState.addPlayer(socket.id, playerName || 'alpha', playerId, playerColor);
         if (!player) {
           socket.emit(PROTOCOL.ACTION_ERROR, 'La sala ya tiene cuatro jugadores humanos.');
           return;

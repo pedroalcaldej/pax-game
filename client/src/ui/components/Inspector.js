@@ -46,6 +46,7 @@ function escapeHtml(value) {
 export class Inspector {
   constructor(container) {
     this.container = container;
+    this.nationColors = [];
     this.player = null;
     this.phase = 1;
     this.onAction = () => {};
@@ -55,6 +56,10 @@ export class Inspector {
     this.actionQuantities = new Map();
     this.grid = null;
     this.render();
+  }
+
+  setNationColors(players = []) {
+    this.nationColors = players.map((player) => player.color);
   }
 
   setContext(player, phase, onAction = this.onAction, activeSlot = this.activeSlot, grid = this.grid) {
@@ -174,7 +179,10 @@ export class Inspector {
       activeSlot: this.activeSlot,
       tile
     });
-    const nation = tile?.nationId == null ? null : NATIONS[tile.nationId];
+    const nation = tile?.nationId == null ? null : {
+      ...NATIONS[tile.nationId],
+      color: this.nationColors[tile.nationId] || NATIONS[tile.nationId]?.color
+    };
     const status = tile?.status || TILE_STATUS.NORMAL;
     const statusColor = TILE_STATUS_COLORS[status] || '#64748b';
 

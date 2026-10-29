@@ -5,6 +5,8 @@
 import { generateInitialGrid } from '../../../shared/MapGenerator.js';
 import {
   ECONOMIC_POLICY,
+  AVAILABLE_NATION_COLORS,
+  LEGACY_NATION_NAMES,
   ACTION_SLOT_COUNT,
   LAND_TERRAIN,
   MAP_CONFIG,
@@ -90,9 +92,25 @@ export class GameState {
     });
   }
 
+  refreshBotColors() {
+    const usedColors = new Set(
+      Array.from(this.players.values())
+        .filter((player) => !player.isBot)
+        .map((player) => player.color)
+    );
+    const availableColors = AVAILABLE_NATION_COLORS.filter((color) => !usedColors.has(color));
+    let nextColor = 0;
+    for (const player of this.players.values()) {
+      if (!player.isBot) continue;
+      player.color = availableColors[nextColor % availableColors.length] || NATIONS[player.nationId].color;
+      nextColor += 1;
+    }
+  }
+
   recordEvent(message) {
     const event = {
       id: this.nextEventId,
+      timestamp: Date.now(),
       round: this.currentRound,
       phase: this.currentPhase,
       message
@@ -590,7 +608,7 @@ export class GameState {
       : 'Tratado de Libre Comercio';
   }
 
-  addPlayer(socketId, playerName, playerId) {
+  addPlayer(socketId, playerName, playerId, playerColor) {
     const id = playerId || socketId;
 
     for (const player of this.players.values()) {
@@ -598,6 +616,16 @@ export class GameState {
         player.socketId = socketId;
         player.isBot = false;
         player.phaseReady = false;
+        if (playerName && playerName !== 'alpha') {
+          player.name = LEGACY_NATION_NAMES.get(playerName) || playerName;
+        }
+        if (AVAILABLE_NATION_COLORS.includes(playerColor)) {
+          if (Array.from(this.players.values()).some((other) => (
+            other !== player && !other.isBot && other.color === playerColor
+          ))) return null;
+          player.color = playerColor;
+        }
+        this.refreshBotColors();
         return player;
       }
     }
@@ -608,9 +636,16 @@ export class GameState {
         player.socketId = socketId;
         player.isBot = false;
         player.phaseReady = false;
-        if (playerName && playerName !== 'Nación Alpha') {
-          player.name = playerName;
+        if (playerName && playerName !== 'alpha') {
+          player.name = LEGACY_NATION_NAMES.get(playerName) || playerName;
         }
+        if (AVAILABLE_NATION_COLORS.includes(playerColor)) {
+          if (Array.from(this.players.values()).some((other) => (
+            other !== player && !other.isBot && other.color === playerColor
+          ))) return null;
+          player.color = playerColor;
+        }
+        this.refreshBotColors();
         return player;
       }
     }

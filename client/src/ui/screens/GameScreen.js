@@ -15,11 +15,14 @@ import {
   MAX_ROUNDS,
   MAP_CONFIG,
   NATIONS,
+  AVAILABLE_NATION_COLORS,
+  LEGACY_NATION_NAMES,
   OI_RESOLUTIONS,
   PROTOCOL,
   STAGE_TIMINGS
 } from '../../../../shared/Constants.js';
 import { getPlayerRankings } from '../components/PlayerRankings.js';
+import { Chat } from '../components/Chat.js';
 
 const STAGE_LABELS = {
   [GAME_STAGES.ROUND_START]: 'Inicio de ronda',
@@ -60,7 +63,7 @@ const STYLES = `
   }
   .pax-start-menu[hidden] { display: none; }
   .pax-start-card {
-    width: min(440px, 100%);
+    width: min(760px, 100%);
     padding: 36px;
     border: 1px solid #34435d;
     border-radius: 16px;
@@ -71,6 +74,17 @@ const STYLES = `
   .pax-start-brand { color: #f5a900; font-size: 42px; font-weight: 950; letter-spacing: .12em; }
   .pax-start-card h1 { margin: 10px 0; font-size: 23px; }
   .pax-start-card p { margin: 0; color: #9ba9bf; line-height: 1.6; }
+  .pax-start-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 24px; text-align: left; }
+  .pax-start-option { min-width: 0; padding: 18px; border: 1px solid #34435d; border-radius: 10px; background: rgba(15, 23, 42, .65); }
+  .pax-start-option h2 { margin: 0 0 8px; color: #e2e8f0; font-size: 15px; }
+  .pax-start-option > p { font-size: 11px; }
+  .pax-profile-fields { display: grid; gap: 8px; margin-top: 14px; }
+  .pax-profile-fields label { display: grid; gap: 5px; color: #a7b3c7; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+  .pax-profile-fields input { width: 100%; min-height: 32px; padding: 6px 8px; border: 1px solid #34435d; border-radius: 6px; color: #f1f5f9; background: #0f172a; font: inherit; }
+  .pax-color-picker { display: flex; flex-wrap: wrap; gap: 7px; padding: 5px; border: 1px solid #34435d; border-radius: 6px; background: #0f172a; }
+  .pax-color-choice { width: 24px; height: 24px; padding: 0; border: 2px solid transparent; border-radius: 50%; cursor: pointer; }
+  .pax-color-choice:disabled { cursor: not-allowed; filter: grayscale(1); opacity: .3; }
+  .pax-color-choice.is-selected { border-color: #f8fafc; box-shadow: 0 0 0 2px #0f172a, 0 0 0 4px currentColor; }
   .pax-start-button {
     width: 100%;
     margin-top: 24px;
@@ -105,6 +119,9 @@ const STYLES = `
   .pax-join-room-row .pax-start-button { width: auto; margin-top: 0; }
   .pax-lobby-code-row { justify-content: space-between; margin: 14px 0; color: #a7b3c7; font-size: 11px; }
   .pax-lobby-code-row span { font-variant-numeric: tabular-nums; }
+  .pax-lobby-profile { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, .7fr) auto; gap: 8px; align-items: end; margin: 14px 0; text-align: left; }
+  .pax-lobby-profile label { display: grid; gap: 5px; color: #a7b3c7; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+  .pax-lobby-profile input { width: 100%; min-height: 32px; padding: 6px 8px; border: 1px solid #34435d; border-radius: 6px; color: #f1f5f9; background: #0f172a; font: inherit; }
   .pax-lobby-copy {
     padding: 7px 10px;
     border: 1px solid #53627d;
@@ -122,6 +139,9 @@ const STYLES = `
     color: #cbd5e1;
     background: rgba(15, 23, 42, .65);
     font-size: 12px;
+  }
+  @media (max-width: 620px) {
+    .pax-start-options { grid-template-columns: 1fr; }
   }
   .pax-stage-overlay {
     position: fixed; inset: 0; z-index: 8; display: grid; place-items: center;
@@ -246,7 +266,9 @@ const STYLES = `
   .pax-tab-panel[hidden] { display: none; }
   .pax-tab-panel.log-tab-panel { overflow: hidden; }
   .pax-tab-panel.log-tab-panel .pax-panel-section {
-    min-height: 100%;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
   }
@@ -285,9 +307,10 @@ const STYLES = `
   .pax-oi-vote > strong { display: block; margin-bottom: 6px; color: #e4eaf3; font-size: 10px; line-height: 1.4; }
   .pax-oi-vote-fields { display: grid; grid-template-columns: 1fr 80px; gap: 6px; }
   .pax-oi-note { color: #8f9cb2; font-size: 10px; line-height: 1.45; }
-  .pax-event-log { min-height: 0; flex: 1; overflow: auto; padding: 8px 9px; border: 1px solid #202c41; border-radius: 6px; background: #070d1c; color: #a9b5c8; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .pax-event-log { min-height: 0; height: 0; flex: 1 1 auto; overflow-y: scroll; overscroll-behavior: contain; padding: 8px 9px; border: 1px solid #202c41; border-radius: 6px; background: #070d1c; color: #a9b5c8; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
   .pax-event-entry + .pax-event-entry { margin-top: 6px; }
-  .pax-center { min-width: 0; min-height: 0; display: grid; grid-template-rows: 46px minmax(0, 1fr) auto 37px; padding: 0 14px; background: #050a19; }
+  .pax-event-entry time, .pax-chat-message time { margin-right: 5px; color: #718096; font-size: 9px; }
+  .pax-center { position: relative; min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto 37px; gap: 8px; padding: 0 14px; background: #050a19; }
   .pax-map-viewport { position: relative; min-width: 0; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; border: 1px solid #26334a; border-radius: 12px; background: #0d1527; box-shadow: 0 8px 24px #0005; }
   .pax-action-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 9px 0; }
   .pax-action-slots-heading { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 8px; color: #aab6c9; font-size: 10px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
@@ -304,6 +327,17 @@ const STYLES = `
   .pax-action-slot-clear { flex: 0 0 auto; width: 25px; height: 25px; border: 1px solid #43516a; border-radius: 5px; color: #cbd5e1; background: #1b2639; cursor: pointer; }
   .pax-action-slot-clear:disabled { opacity: .35; cursor: not-allowed; }
   .pax-map-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #8491a7; font-size: 10px; }
+  #chat-container { position: absolute; z-index: 4; right: 14px; bottom: 0; left: 14px; min-width: 0; min-height: 0; overflow: hidden; pointer-events: none; }
+  .pax-chat { height: min(50vh, 420px); min-height: 0; display: grid; grid-template-rows: 30px minmax(0, 1fr) 34px; border: 1px solid #26334a; border-radius: 8px; background: #0d1527; overflow: hidden; }
+  .pax-chat.is-collapsed { height: 30px; grid-template-rows: 30px 0 0; }
+  .pax-chat { pointer-events: auto; }
+  .pax-chat-header { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 6px 9px; border: 0; color: #aab6c9; background: transparent; font: inherit; font-size: 10px; font-weight: 900; letter-spacing: .07em; text-align: left; text-transform: uppercase; cursor: pointer; }
+  .pax-chat-messages { min-height: 0; overflow-y: auto; padding: 4px 9px; font-size: 11px; line-height: 1.45; }
+  .pax-chat-message { padding: 2px 0; overflow-wrap: anywhere; }
+  .pax-chat-message strong { margin-right: 5px; }
+  .pax-chat-form { display: flex; gap: 6px; min-height: 34px; padding: 5px 7px; border-top: 1px solid #26334a; background: #0d1527; }
+  .pax-chat-form input { min-width: 0; flex: 1; padding: 5px 7px; border: 1px solid #39455d; border-radius: 5px; color: #e2e8f0; background: #10192b; font: inherit; font-size: 11px; }
+  .pax-chat-form button { padding: 4px 10px; border: 1px solid #53627d; border-radius: 5px; color: #e2e8f0; background: #1a263b; font: inherit; font-size: 10px; cursor: pointer; }
   .pax-map-hint { color: #f2b938; }
   .pax-map-size { color: #68758d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
   .pax-inspector { overflow: auto; border-left: 1px solid var(--pax-border); }
@@ -810,6 +844,11 @@ function escapeHTML(value) {
   })[character]);
 }
 
+function formatEventTime(timestamp) {
+  const date = new Date(Number(timestamp) || Date.now());
+  return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+}
+
 export class GameScreen {
   constructor(container) {
     this.container = container;
@@ -858,16 +897,30 @@ export class GameScreen {
             <div class="pax-start-brand">PAX</div>
             <div id="room-menu">
               <h1>El mundo espera tus órdenes</h1>
-              <p>Crea una sala o únete con un código de seis caracteres.</p>
-              <div class="pax-room-actions">
-                <button class="pax-start-button" id="create-room-button" type="button">Crear sala</button>
-                <div class="pax-join-room">
-                  <label for="room-code-input">Código de sala</label>
-                  <div class="pax-join-room-row">
-                    <input id="room-code-input" maxlength="6" autocomplete="off" placeholder="PAX123" />
-                    <button class="pax-start-button" id="join-room-button" type="button">Unirse</button>
+              <div class="pax-start-options">
+                <section class="pax-start-option">
+                  <h2>Un jugador</h2>
+                  <p>Juega una partida contra países controlados por la IA.</p>
+                  <div class="pax-profile-fields">
+                    <label>Nombre <input id="single-player-name" maxlength="24" value="alpha" autocomplete="off" /></label>
+                    <label>Color <div class="pax-color-picker" id="single-player-color" role="radiogroup" aria-label="Color del país"></div></label>
                   </div>
-                </div>
+                  <button class="pax-start-button" id="single-player-button" type="button">Nueva partida</button>
+                </section>
+                <section class="pax-start-option">
+                  <h2>Multijugador</h2>
+                  <p>Crea una sala o únete con un código de seis caracteres.</p>
+                  <div class="pax-room-actions">
+                    <button class="pax-start-button" id="create-room-button" type="button">Crear sala</button>
+                    <div class="pax-join-room">
+                      <label for="room-code-input">Código de sala</label>
+                      <div class="pax-join-room-row">
+                        <input id="room-code-input" maxlength="6" autocomplete="off" placeholder="PAX123" />
+                        <button class="pax-start-button" id="join-room-button" type="button">Unirse</button>
+                      </div>
+                    </div>
+                  </div>
+                </section>
               </div>
             </div>
             <div id="lobby-view" hidden>
@@ -876,8 +929,13 @@ export class GameScreen {
                 <button class="pax-lobby-copy" id="copy-room-code" type="button">Copiar código</button>
                 <span id="lobby-count">Jugadores conectados: 0 / 4</span>
               </div>
+              <div class="pax-lobby-profile">
+                <label>Nombre <input id="lobby-player-name" maxlength="24" autocomplete="off" /></label>
+                <label>Color <div class="pax-color-picker" id="lobby-player-color" role="radiogroup" aria-label="Color del país"></div></label>
+                <button class="pax-lobby-copy" id="save-lobby-profile" type="button">Guardar</button>
+              </div>
               <div class="pax-lobby-slots" id="lobby-slots"></div>
-              <button class="pax-start-button" id="start-room-button" type="button" hidden>Iniciar partida</button>
+              <button class="pax-start-button" id="start-room-button" type="button" hidden>Jugar</button>
               <button class="pax-lobby-copy" id="leave-lobby-button" type="button">Volver al menú principal</button>
             </div>
             <p class="pax-start-status" id="start-status" role="status">Configura Firebase para crear o unirte a salas.</p>
@@ -917,7 +975,7 @@ export class GameScreen {
           <aside class="pax-sidebar">
             <section class="pax-nation">
               <span class="pax-nation-dot" id="nation-dot"></span>
-              <strong class="pax-nation-name" id="nation-name">Nación Amarilla</strong>
+              <strong class="pax-nation-name" id="nation-name">alpha</strong>
               <span class="pax-human-tag" id="player-kind">Humano</span>
             </section>
             <nav class="pax-tabs" role="tablist" aria-label="Panel de nación">
@@ -931,7 +989,7 @@ export class GameScreen {
               <div id="tax-container"></div>
               <div class="pax-tax-card">
                 <div class="pax-formula-line"><span>Crecimiento</span><strong id="growth-value">+5.00%</strong></div>
-                <div class="pax-formula-line"><span>Recaudación esperada</span><strong id="forecast-revenue">—</strong></div>
+                <div class="pax-formula-line"><span>Recaudación esperada</span><strong id="forecast-revenue"><span class="pax-resource-icon" aria-hidden="true">◉</span><span id="forecast-revenue-value">—</span></strong></div>
                 <p class="pax-tax-note">A menor impuesto, mayor crecimiento demográfico. A mayor impuesto, más recaudación inmediata.</p>
               </div>
             </section>
@@ -962,13 +1020,13 @@ export class GameScreen {
             </div>
           </aside>
           <section class="pax-center">
-            <div class="pax-map-legend" aria-hidden="true"></div>
             <div class="pax-map-viewport" id="map-container"><div class="pax-toasts" id="toast-container" aria-live="polite" aria-atomic="true"></div></div>
             <section class="pax-action-slots" id="action-slots" aria-label="Acciones de este turno"></section>
             <footer class="pax-map-footer">
               <span class="pax-map-hint">ⓘ Haz clic en una casilla para inspeccionarla; arrastra para desplazarte.</span>
               <span class="pax-map-size">Matriz ${MAP_CONFIG.GRID_WIDTH}×${MAP_CONFIG.GRID_HEIGHT} (${MAP_CONFIG.TOTAL_TILES} casillas)</span>
             </footer>
+            <div id="chat-container"></div>
           </section>
           <aside class="pax-inspector" id="inspector-container"></aside>
         </main>
@@ -1005,6 +1063,14 @@ export class GameScreen {
     const taxEl = this.container.querySelector('#tax-container');
     this.inspector = new Inspector(this.container.querySelector('#inspector-container'));
     this.map = new Map(this.container.querySelector('#map-container'), (tile) => this.handleTileSelection(tile));
+    requestAnimationFrame(() => this.map.fitToPanel());
+    this.chat = new Chat(this.container.querySelector('#chat-container'), {
+      onSend: (message) => this.lobby?.sendChatMessage(message)
+    });
+    this.chat.setEnabled(false);
+    this.container.querySelector('#chat-container').addEventListener('chaterror', (event) => {
+      this.showToast(event.detail?.message || 'No se pudo enviar el mensaje.', 'error');
+    });
     this.toastContainer = document.createElement('div');
     this.toastContainer.className = 'pax-toasts';
     this.toastContainer.id = 'toast-container';
@@ -1061,6 +1127,7 @@ export class GameScreen {
     this.updateTaxMetrics(this.taxSlider.currentValue);
     this.bindEvents();
     this.addEvent('Esperando actividad de la partida.');
+    this.populateColorSelectors();
     this.setupLobby();
   }
 
@@ -1116,6 +1183,7 @@ export class GameScreen {
       this.startPending = false;
       this.startError = '';
       this.connectionError = '';
+      this.container.querySelector('#single-player-button').disabled = false;
       if (!this.lobby?.enabled) this.joinGame();
       this.updateStartMenu();
     };
@@ -1123,6 +1191,7 @@ export class GameScreen {
       this.startPending = false;
       this.startError = 'Se perdió la conexión con el servidor. Reconectando…';
       this.connectionError = '';
+      this.container.querySelector('#single-player-button').disabled = true;
       this.updateStartMenu();
     };
     this.onConnectError = () => {
@@ -1201,6 +1270,9 @@ export class GameScreen {
     this.container.querySelector('#create-room-button').addEventListener('click', () => {
       this.createRoom();
     });
+    this.container.querySelector('#single-player-button').addEventListener('click', () => {
+      this.startSinglePlayer();
+    });
     this.container.querySelector('#join-room-button').addEventListener('click', () => {
       this.joinRoom(this.container.querySelector('#room-code-input').value);
     });
@@ -1212,6 +1284,9 @@ export class GameScreen {
     });
     this.container.querySelector('#start-room-button').addEventListener('click', () => {
       this.startRoom();
+    });
+    this.container.querySelector('#save-lobby-profile').addEventListener('click', () => {
+      this.saveLobbyProfile();
     });
     this.container.querySelector('#leave-lobby-button').addEventListener('click', () => {
       this.returnToMainMenu();
@@ -1387,7 +1462,9 @@ export class GameScreen {
         forecastPopulation += Math.floor(50 * (1 + growth));
       }
     }
-    this.container.querySelector('#forecast-revenue').textContent = `${formatValue(Math.floor(forecastPopulation * taxRate))}¤`;
+    this.container.querySelector('#forecast-revenue-value').textContent = formatValue(
+      Math.floor(forecastPopulation * taxRate)
+    );
   }
 
   updateDisabledTooltips(stage) {
@@ -1395,6 +1472,8 @@ export class GameScreen {
     const reason = planning ? 'Requisito de recursos no cumplido' : 'Acción bloqueada fuera de la planificación';
     for (const element of this.container.querySelectorAll('button:disabled, input:disabled, select:disabled')) {
       if (element.id === 'play-button') element.dataset.tooltip = 'Esperando conexión con la partida';
+      else if (element.id === 'single-player-button') element.dataset.tooltip = 'Esperando conexión con la partida';
+      else if (element.matches('#create-room-button, #join-room-button')) element.dataset.tooltip = 'Firebase no está disponible';
       else if (element.matches('[data-issue-bond]')) element.dataset.tooltip = planning
         ? 'Ya tienes un bono pendiente'
         : 'Acción bloqueada fuera de la planificación';
@@ -1423,12 +1502,15 @@ export class GameScreen {
     const stage = gameState.currentStage || this.getStageFromLegacyPhase(phase);
     if (stage !== GAME_STAGES.PLANNING) this.pendingMoveSource = null;
     this.map.setDemilitarizedZones(gameState.activeDmzZones || [], false);
-    this.map.render(gameState.grid);
 
     const players = Array.isArray(gameState.players) ? gameState.players : [];
+    this.map.setNationColors(players);
+    this.inspector.setNationColors(players);
+    this.map.render(gameState.grid);
     this.player = players.find((player) => (
       player.boundPlayerId === this.playerId || player.socketId === socket.id
     )) || null;
+    this.chat.setIdentity(this.player);
     if (this.player) {
       this.player.plannedActions = Array.from(
         { length: ACTION_SLOT_COUNT },
@@ -1998,14 +2080,18 @@ export class GameScreen {
     const savedScrollTop = this.container.querySelector('#event-log')?.scrollTop || 0;
     this.events = [
       ...this.localEvents,
-      ...history.slice().reverse().map((event) => event.message)
+      ...history.slice().reverse().map((event) => ({
+        message: event.message,
+        timestamp: event.timestamp
+      }))
     ];
     this.renderEventHistory(savedScrollTop);
   }
 
   addEvent(message) {
-    this.localEvents.unshift(message);
-    this.events.unshift(message);
+    const event = { message, timestamp: Date.now() };
+    this.localEvents.unshift(event);
+    this.events.unshift(event);
     this.renderEventHistory(0);
   }
 
@@ -2013,10 +2099,62 @@ export class GameScreen {
     const log = this.container.querySelector('#event-log');
     if (log) {
       log.innerHTML = this.events
-        .map((entry) => `<div class="pax-event-entry">› ${escapeHTML(entry)}</div>`)
+        .map((entry) => {
+          const event = typeof entry === 'string' ? { message: entry } : entry;
+          return `<div class="pax-event-entry"><time>${formatEventTime(event.timestamp)}</time> › ${escapeHTML(event.message)}</div>`;
+        })
         .join('');
       log.scrollTop = scrollTop;
     }
+  }
+
+  populateColorSelectors() {
+    const options = AVAILABLE_NATION_COLORS.map((color) => (
+      `<button class="pax-color-choice" type="button" data-color="${color}" style="background:${color}" aria-label="Seleccionar color ${color}" aria-checked="false" role="radio"></button>`
+    )).join('');
+    for (const picker of this.container.querySelectorAll('.pax-color-picker')) {
+      picker.innerHTML = options;
+      picker.addEventListener('click', (event) => {
+        const choice = event.target.closest('[data-color]');
+        if (!choice) return;
+        this.selectNationColor(picker, choice.dataset.color);
+        if (picker.id === 'lobby-player-color') {
+          this.updateColorAvailability(this.lobbyState?.slots
+            ?.filter((player) => player?.id !== this.playerId)
+            .map((player) => player?.color) || []);
+        }
+      });
+    }
+    this.selectNationColor(this.container.querySelector('#single-player-color'), AVAILABLE_NATION_COLORS[0]);
+    this.selectNationColor(this.container.querySelector('#lobby-player-color'), AVAILABLE_NATION_COLORS[0]);
+  }
+
+  selectNationColor(picker, color) {
+    if (!picker || !AVAILABLE_NATION_COLORS.includes(color)) return;
+    for (const choice of picker.querySelectorAll('[data-color]')) {
+      const selected = choice.dataset.color === color;
+      choice.classList.toggle('is-selected', selected);
+      choice.setAttribute('aria-checked', String(selected));
+    }
+  }
+
+  getSelectedNationColor(id) {
+    return this.container.querySelector(`#${id} .is-selected`)?.dataset.color;
+  }
+
+  updateColorAvailability(usedColors = []) {
+    const used = new Set(usedColors.filter(Boolean));
+    const ownColor = this.getSelectedNationColor('lobby-player-color');
+    for (const choice of this.container.querySelectorAll('#lobby-player-color [data-color]')) {
+      const occupied = used.has(choice.dataset.color) && choice.dataset.color !== ownColor;
+      choice.disabled = occupied;
+      choice.setAttribute('aria-disabled', String(occupied));
+      choice.title = occupied ? 'Este color ya está siendo usado' : 'Seleccionar color';
+    }
+  }
+
+  normalizeNationName(name) {
+    return LEGACY_NATION_NAMES.get(name) || name;
   }
 
   setupLobby() {
@@ -2025,10 +2163,12 @@ export class GameScreen {
       this.playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
       localStorage.setItem('pax_player_id', this.playerId);
     }
+
     this.lobby = new FirebaseLobby({
       playerId: this.playerId,
-      playerName: 'Nación Alpha',
+      playerName: 'alpha',
       onChange: (room) => this.handleLobbyChange(room),
+      onChatMessage: (message) => this.chat.addMessage(message),
       onError: (error) => {
         this.lobbyError = error.message;
         this.setStartStatus(error.message);
@@ -2036,6 +2176,7 @@ export class GameScreen {
     });
     const buttons = this.container.querySelectorAll('#create-room-button, #join-room-button');
     buttons.forEach((button) => { button.disabled = !this.lobby.enabled; });
+    this.container.querySelector('#single-player-button').disabled = !socket.connected;
     if (!this.lobby.enabled) {
       this.setStartStatus('Completa PAX_FIREBASE_CONFIG en client/index.html para usar salas.');
       return;
@@ -2047,12 +2188,44 @@ export class GameScreen {
     await this.enterLobby(() => this.lobby.createRoom());
   }
 
+  startSinglePlayer() {
+    if (!socket.connected) return;
+    this.chat.setEnabled(false);
+    const name = this.container.querySelector('#single-player-name').value.trim();
+    const color = this.getSelectedNationColor('single-player-color');
+    if (!name) {
+      this.setStartStatus('El nombre del país no puede estar vacío.');
+      return;
+    }
+    this.roomCode = 'room-1';
+    this.startPending = true;
+    this.setStartStatus('Iniciando la partida…');
+    socket.emit(PROTOCOL.JOIN_GAME, {
+      playerId: this.playerId,
+      playerName: name,
+      playerColor: color,
+      roomId: this.roomCode
+    });
+    socket.timeout(5000).emit(
+      PROTOCOL.START_GAME,
+      { roomId: this.roomCode },
+      (error, result) => {
+        if (error || !result?.ok) {
+          this.startPending = false;
+          this.startError = result?.message || 'No se pudo iniciar la partida.';
+          this.updateStartMenu();
+        }
+      }
+    );
+  }
+
   async joinRoom(code) {
     await this.enterLobby(() => this.lobby.joinRoom(code));
   }
 
   async enterLobby(operation) {
     if (!this.lobby?.enabled) return;
+    this.chat.setEnabled(true);
     this.setStartStatus('Conectando con la sala…');
     this.setRoomControlsEnabled(false);
     try {
@@ -2070,6 +2243,7 @@ export class GameScreen {
   }
 
   handleLobbyChange(room) {
+    if (this.roomCode !== room.code) this.chat.clear();
     this.lobbyState = room;
     this.roomCode = room.code;
     const humanCount = room.slots.filter((player) => player?.tipo === 'humano').length;
@@ -2077,23 +2251,29 @@ export class GameScreen {
     this.container.querySelector('#lobby-view').hidden = false;
     this.container.querySelector('#lobby-code').textContent = room.code;
     this.container.querySelector('#lobby-count').textContent = `Jugadores conectados: ${humanCount} / 4`;
+    const ownSlot = room.slots.find((player) => player?.id === this.playerId);
+    const nameInput = this.container.querySelector('#lobby-player-name');
+    const colorInput = this.container.querySelector('#lobby-player-color');
+    if (ownSlot) {
+      nameInput.value = this.normalizeNationName(ownSlot.nombre || 'alpha');
+      this.selectNationColor(colorInput, ownSlot.color || AVAILABLE_NATION_COLORS[0]);
+    }
+    this.updateColorAvailability(room.slots
+      .filter((player) => player?.id !== this.playerId)
+      .map((player) => player?.color));
     this.container.querySelector('#lobby-slots').innerHTML = room.slots.map((player, index) => `
       <div class="pax-lobby-slot">
         <strong>Ranura ${index + 1}:</strong>
         ${player
-          ? `${escapeHTML(player.nombre)} <span>(${player.tipo === 'bot' ? 'Bot' : 'Humano'})</span>`
+          ? `<span style="color:${/^#[0-9A-Fa-f]{6}$/.test(player.color || '') ? player.color : '#cbd5e1'}">●</span> ${escapeHTML(this.normalizeNationName(player.nombre || NATIONS[index]?.name || 'alpha'))} <span>(${player.tipo === 'bot' ? 'Bot' : player.listo ? 'Listo' : 'Preparado'})</span>`
           : 'Esperando jugador…'}
       </div>
     `).join('');
     const startButton = this.container.querySelector('#start-room-button');
-    startButton.hidden = !room.isHost || room.estado !== 'esperando';
-    startButton.disabled = humanCount < 1;
-    if (room.isHost && room.estado === 'esperando' && humanCount === 4 && !this.autoStartPending) {
-      this.autoStartPending = true;
-      this.lobby.startGame()
-        .catch((error) => this.setStartStatus(error.message))
-        .finally(() => { this.autoStartPending = false; });
-    }
+    const ownReady = Boolean(ownSlot?.listo);
+    startButton.hidden = room.estado !== 'esperando' || !ownSlot;
+    startButton.disabled = ownReady;
+    startButton.textContent = ownReady ? 'Esperando jugadores…' : 'Jugar';
     if (room.estado === 'en_juego') {
       this.setStartStatus('Partida iniciada. Cargando el mapa…');
       if (socket.connected && this.serverJoinedRoom !== room.code) {
@@ -2102,9 +2282,9 @@ export class GameScreen {
         socket.timeout(5000).emit(PROTOCOL.START_GAME, { roomId: this.roomCode });
       }
     } else {
-      this.setStartStatus(room.isHost
-        ? 'Eres el creador. Puedes iniciar y completar las ranuras con bots.'
-        : 'Esperando al creador de la sala…');
+      this.setStartStatus(ownReady
+        ? 'Esperando a que todos los jugadores pulsen Jugar…'
+        : 'Edita tu país y pulsa Jugar cuando estés listo.');
     }
   }
 
@@ -2115,6 +2295,22 @@ export class GameScreen {
       this.setStartStatus(error.message);
     }
   }
+
+  async saveLobbyProfile() {
+      const name = this.normalizeNationName(this.container.querySelector('#lobby-player-name').value.trim());
+      const color = this.getSelectedNationColor('lobby-player-color');
+      if (!name) {
+        this.setStartStatus('El nombre del país no puede estar vacío.');
+        return;
+      }
+      try {
+        await this.lobby.updateProfile({ name, color });
+        this.joinGame();
+        this.setStartStatus('Perfil actualizado. Pulsa Jugar cuando estés listo.');
+      } catch (error) {
+        this.setStartStatus(error.message);
+      }
+    }
 
   async copyRoomCode() {
     if (!this.roomCode) {
@@ -2157,6 +2353,7 @@ export class GameScreen {
       return;
     }
 
+    this.chat.setEnabled(false);
     this.container.querySelector('#game-summary-dialog')?.close();
     this.setGameMenuOpen(false);
     this.lobbyState = null;
@@ -2187,9 +2384,13 @@ export class GameScreen {
       this.playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
       localStorage.setItem('pax_player_id', this.playerId);
     }
+    const profileName = this.container.querySelector('#lobby-player-name')?.value.trim();
+    const profileColor = this.getSelectedNationColor('lobby-player-color');
+    const lobbyPlayer = this.lobbyState?.slots.find((player) => player?.id === this.playerId);
     socket.emit(PROTOCOL.JOIN_GAME, {
       playerId: this.playerId,
-      playerName: 'Nación Alpha',
+      playerName: this.normalizeNationName(profileName || lobbyPlayer?.nombre || 'alpha'),
+      playerColor: profileColor || lobbyPlayer?.color,
       roomId: this.roomCode
     });
   }

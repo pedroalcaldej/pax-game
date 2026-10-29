@@ -69,13 +69,30 @@ export const SPAWN_POSITIONS = [
 ];
 
 export const NATIONS = [
-  { id: 'nation-0', nationId: 0, name: 'Nación Amarilla', color: '#EAB308' },
-  { id: 'nation-1', nationId: 1, name: 'Nación Roja', color: '#EF4444' },
-  { id: 'nation-2', nationId: 2, name: 'Nación Verde', color: '#22C55E' },
-  { id: 'nation-3', nationId: 3, name: 'Nación Morada', color: '#A855F7' }
+  { id: 'nation-0', nationId: 0, name: 'alpha', color: '#FDE047' },
+  { id: 'nation-1', nationId: 1, name: 'beta', color: '#FB7185' },
+  { id: 'nation-2', nationId: 2, name: 'gamma', color: '#34D399' },
+  { id: 'nation-3', nationId: 3, name: 'delta', color: '#A78BFA' }
 ];
 
 export const NATION_COLORS = NATIONS.map((nation) => nation.color);
+export const AVAILABLE_NATION_COLORS = [
+  '#FDE047',
+  '#FB7185',
+  '#34D399',
+  '#A78BFA',
+  '#22D3EE',
+  '#FB923C',
+  '#F472B6',
+  '#A3E635'
+];
+
+export const LEGACY_NATION_NAMES = new Map([
+  ['Nación Amarilla', 'alpha'],
+  ['Nación Azul', 'beta'],
+  ['Nación Roja', 'gamma'],
+  ['Nación Verde', 'delta']
+]);
 
 export const GAME_CONFIG = {
   DEFAULT_TAX_RATE: 0.15,

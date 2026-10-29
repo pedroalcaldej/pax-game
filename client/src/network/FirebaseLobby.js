@@ -1,10 +1,6 @@
+import { AVAILABLE_NATION_COLORS, NATIONS } from '../../../shared/Constants.js';
+
 const SLOT_COUNT = 4;
-const NATIONS = [
-  'Nación Amarilla',
-  'Nación Azul',
-  'Nación Roja',
-  'Nación Verde'
-];
 
 function getFirebase() {
   if (!globalThis.firebase || !globalThis.PAX_FIREBASE_CONFIG?.apiKey) {
@@ -29,16 +25,27 @@ function emptySlots(players = {}) {
   return Array.from({ length: SLOT_COUNT }, (_, index) => players[`slot_${index + 1}`] || null);
 }
 
+function getAvailableColor(players = {}, preferredColor) {
+  const usedColors = new Set(Object.values(players).map((player) => player?.color).filter(Boolean));
+  if (preferredColor && AVAILABLE_NATION_COLORS.includes(preferredColor) && !usedColors.has(preferredColor)) {
+    return preferredColor;
+  }
+  return AVAILABLE_NATION_COLORS.find((color) => !usedColors.has(color)) || AVAILABLE_NATION_COLORS[0];
+}
+
 export class FirebaseLobby {
-  constructor({ playerId, playerName = 'Nación Alpha', onChange, onError }) {
+  constructor({ playerId, playerName = 'alpha', onChange, onChatMessage, onError }) {
     this.firebase = getFirebase();
     this.playerId = playerId;
     this.playerName = playerName;
     this.onChange = onChange;
+    this.onChatMessage = onChatMessage;
     this.onError = onError;
     this.roomCode = null;
     this.roomRef = null;
     this.unsubscribe = null;
+    this.chatRef = null;
+    this.chatUnsubscribe = null;
     this.disconnectHandle = null;
     this.authError = null;
     this.ready = this.firebase.auth().signInAnonymously().catch((error) => {
@@ -66,7 +73,7 @@ export class FirebaseLobby {
           estado: 'esperando',
           rondaActual: 1,
           jugadores: {
-            slot_1: { id: this.playerId, nombre: this.playerName, tipo: 'humano' }
+            slot_1: { id: this.playerId, nombre: this.playerName, color: AVAILABLE_NATION_COLORS[0], tipo: 'humano', listo: false }
           }
         };
       });
@@ -96,7 +103,13 @@ export class FirebaseLobby {
         ...room,
         jugadores: {
           ...players,
-          [slot]: { id: this.playerId, nombre: this.playerName, tipo: 'humano' }
+          [slot]: {
+            id: this.playerId,
+            nombre: this.playerName,
+            color: getAvailableColor(players),
+            tipo: 'humano',
+            listo: false
+          }
         }
       };
     });
@@ -113,6 +126,7 @@ export class FirebaseLobby {
     this.stopWatching();
     this.roomCode = normalizeCode(code);
     this.roomRef = this.firebase.database().ref(`salas/${this.roomCode}`);
+    this.watchChat();
     this.unsubscribe = this.roomRef.on('value', (snapshot) => {
       const room = snapshot.val();
       if (!room) {
@@ -137,32 +151,86 @@ export class FirebaseLobby {
     });
   }
 
+  watchChat() {
+    if (!this.roomRef) return;
+    this.chatRef = this.roomRef.child('mensajes');
+    this.chatQuery = this.chatRef.limitToLast(100);
+    this.chatUnsubscribe = (snapshot) => {
+      const message = snapshot.val();
+      if (message) this.onChatMessage?.({ id: snapshot.key, ...message });
+    };
+    this.chatQuery.on('child_added', this.chatUnsubscribe);
+  }
+
+  async sendChatMessage(message) {
+    if (!this.chatRef) throw new Error('Primero debes entrar a una sala.');
+    await this.ready;
+    if (this.authError) throw new Error('Firebase no permite autenticación anónima.');
+    await this.chatRef.push({
+      playerId: this.playerId,
+      nationName: message.nationName,
+      nationColor: message.nationColor,
+      text: message.text,
+      createdAt: this.firebase.database.ServerValue.TIMESTAMP
+    });
+  }
+
+  async updateProfile({ name, color }) {
+    if (!this.roomRef) throw new Error('Primero debes entrar a una sala.');
+    await this.ready;
+    const result = await this.roomRef.transaction((room) => {
+      if (!room || room.estado !== 'esperando') return;
+      const players = { ...(room.jugadores || {}) };
+      const slot = Object.keys(players).find((key) => players[key]?.id === this.playerId);
+      if (!slot) return;
+      if (!AVAILABLE_NATION_COLORS.includes(color)) return;
+      if (Object.entries(players).some(([playerSlot, player]) => (
+        playerSlot !== slot && player?.color === color
+      ))) return;
+      players[slot] = { ...players[slot], nombre: name, color, listo: false };
+      return { ...room, jugadores: players };
+    });
+    if (!result.committed) throw new Error('No se pudo actualizar tu país.');
+  }
+
   async startGame() {
     if (!this.roomRef) throw new Error('Primero debes entrar a una sala.');
     await this.ready;
     if (this.authError) throw new Error('Firebase no permite autenticación anónima.');
     const result = await this.roomRef.transaction((room) => {
-      if (!room || room.creador !== this.playerId || room.estado !== 'esperando') return;
+      if (!room || room.estado !== 'esperando') return;
       const players = { ...(room.jugadores || {}) };
+      const ownSlot = Object.keys(players).find((key) => players[key]?.id === this.playerId);
+      if (!ownSlot) return;
+      players[ownSlot] = { ...players[ownSlot], listo: true };
+      const humans = Object.values(players).filter((player) => player?.tipo === 'humano');
+      if (!humans.length || humans.some((player) => !player.listo)) return;
       for (let index = 0; index < SLOT_COUNT; index += 1) {
         const slot = `slot_${index + 1}`;
         if (!players[slot]) {
+          const color = getAvailableColor(players, NATIONS[index].color);
           players[slot] = {
             id: `BOT_${index + 1}`,
-            nombre: `${NATIONS[index]} (Bot)`,
-            tipo: 'bot'
+            nombre: NATIONS[index].name,
+            color,
+            tipo: 'bot',
+            listo: true
           };
         }
       }
       return { ...room, jugadores: players, estado: 'en_juego', rondaActual: 1 };
     });
-    if (!result.committed) throw new Error('Solo el creador puede iniciar esta sala.');
+    if (!result.committed) throw new Error('Todos los jugadores humanos deben pulsar Jugar.');
   }
 
   stopWatching() {
     if (this.roomRef && this.unsubscribe) this.roomRef.off('value', this.unsubscribe);
+    if (this.chatQuery && this.chatUnsubscribe) this.chatQuery.off('child_added', this.chatUnsubscribe);
     this.roomRef = null;
     this.unsubscribe = null;
+    this.chatRef = null;
+    this.chatQuery = null;
+    this.chatUnsubscribe = null;
     this.disconnectHandle = null;
   }
 
