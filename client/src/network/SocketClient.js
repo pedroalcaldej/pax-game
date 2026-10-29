@@ -6,9 +6,11 @@
 import { io } from 'socket.io-client';
 import { CLIENT_EVENTS, SERVER_EVENTS } from '../../../shared/Protocol.js';
 
-const DEFAULT_SERVER_URL = typeof window === 'undefined'
-  ? 'http://localhost:3000'
-  : `${window.location.protocol}//${window.location.hostname}:3000`;
+const DEFAULT_SERVER_URL = import.meta.env.PROD
+  ? 'https://pax-game.onrender.com'
+  : typeof window === 'undefined'
+    ? 'http://localhost:3000'
+    : `${window.location.protocol}//${window.location.hostname}:3000`;
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
 
 export const socket = io(SERVER_URL, {

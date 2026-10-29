@@ -34,6 +34,15 @@ app.get('/health', (_request, response) => {
   response.json({ ok: true, service: 'pax-game-server' });
 });
 
+app.get('/', (_request, response) => {
+  response.json({
+    service: 'pax-game-server',
+    status: 'ok',
+    health: '/health',
+    message: 'Backend activo. Abre el cliente web de PAX para jugar.'
+  });
+});
+
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`[Server] Servidor ejecutándose en http://0.0.0.0:${PORT}`);
 });

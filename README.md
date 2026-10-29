@@ -66,6 +66,21 @@ Para comprobar la conectividad desde otro equipo, visita
 `http://IP_LOCAL_DEL_SERVIDOR:3000/health`; debe devolver
 `{"ok":true,"service":"pax-game-server"}`.
 
+### Servidor publicado en Render
+
+El backend publicado en Render está disponible en
+`https://pax-game.onrender.com`. La URL raíz muestra el estado del servicio;
+el cliente web debe publicarse por separado. En una compilación de producción,
+el cliente usa esta URL automáticamente. También puedes sobrescribirla con:
+
+```sh
+VITE_SERVER_URL=https://pax-game.onrender.com npm --prefix client run build
+```
+
+Para jugar online, publica `client/dist` en Firebase Hosting, Vercel, Netlify
+o Render Static Site y abre la URL pública del cliente. No abras la URL del
+backend como si fuera la página del juego.
+
 Si `localhost` funciona pero la IP `192.168.x.x` no responde, permite Node.js
 en el firewall de macOS. El modo «Bloquear todas las conexiones entrantes»
 impide el acceso LAN aunque Vite y el servidor estén escuchando correctamente:
