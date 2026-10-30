@@ -8,7 +8,7 @@ Juego de estrategia geopolítica para cuatro países. Combina economía, expansi
 - [Instalación y ejecución](#instalación-y-ejecución)
 - [Cómo jugar](#cómo-jugar)
 - [Multijugador en red local](#multijugador-en-red-local)
-- [Salas online con Firebase](#salas-online-con-firebase)
+- [Salas online con Redis](#salas-online-con-redis)
 - [Publicación](#publicación)
 - [Estructura del proyecto](#estructura-del-proyecto)
 - [Reglas y diseño](#reglas-y-diseño)
@@ -16,7 +16,7 @@ Juego de estrategia geopolítica para cuatro países. Combina economía, expansi
 ## Requisitos
 
 - Node.js y npm instalados.
-- Para crear o unirse a salas online: un proyecto de Firebase con Realtime Database y autenticación anónima habilitada.
+- Para crear o unirse a salas online: Redis disponible para el servidor.
 
 ## Instalación y ejecución
 
@@ -26,6 +26,15 @@ Desde la raíz del repositorio, instala las dependencias e inicia el cliente y e
 npm install
 npm run dev
 ```
+
+El servidor carga la configuración local desde `server/.env`. Copia el ejemplo y edita la URL si es necesario:
+
+```sh
+cp server/.env.example server/.env
+npm run dev
+```
+
+El valor inicial conecta a Redis en `127.0.0.1:6379`; Redis debe estar iniciado antes de arrancar el servidor. El archivo `server/.env` está ignorado por Git. En Render, define `REDIS_URL` en el entorno del servicio del servidor.
 
 Abre [http://localhost:5173](http://localhost:5173). El cliente Vite usa el puerto `5173` y el servidor Socket.IO el `3000`. Ambos procesos aparecen identificados por color en la terminal. Deténlos con `Ctrl + C`.
 
@@ -60,17 +69,11 @@ Comprueba la conexión desde otro dispositivo en `http://IP_LOCAL_DEL_SERVIDOR:3
 
 Si la dirección local no responde, comprueba que los dispositivos estén en la misma red y que el firewall permita conexiones entrantes para Node.js.
 
-## Salas online con Firebase
+## Salas online con Redis
 
-Firebase coordina la creación y el lobby de salas. El servidor Node.js debe seguir ejecutándose durante la partida; es quien administra el estado del juego.
+El servidor administra creación, búsqueda, reservas de países, perfiles, disponibilidad y chat de las salas con Redis. Los cambios de lobby se validan en el servidor. Las salas caducan siete días después de su última actualización. El estado de la partida sigue en el proceso del servidor Node.js.
 
-1. Crea un proyecto Firebase y una aplicación web.
-2. Habilita **Authentication → Sign-in method → Anonymous**.
-3. Crea una base **Realtime Database**.
-4. Copia la configuración de la aplicación en `window.PAX_FIREBASE_CONFIG`, dentro de [`client/index.html`](./client/index.html).
-5. Publica las reglas de [`firebase.database.rules.json`](./firebase.database.rules.json) en Realtime Database.
-
-Las reglas permiten leer la lista de salas —necesaria para «Partida rápida»— y requieren autenticación para acceder. No uses reglas públicas en producción.
+Configura `REDIS_URL` en el entorno del servidor. Acepta URLs `redis://` y `rediss://`; para proveedores administrados, copia la URL privada que entrega el proveedor. No la publiques en el cliente ni en el repositorio.
 
 ## Publicación
 
@@ -80,7 +83,7 @@ El backend de referencia está en `https://pax-game.onrender.com`. La URL raíz 
 VITE_SERVER_URL=https://tu-servidor.example npm run build --workspace=client
 ```
 
-Publica el contenido de `client/dist` en un servicio de hosting estático. Mantén accesible el backend por HTTPS y configura Firebase para permitir los dominios del cliente publicado.
+Publica el contenido de `client/dist` en un servicio de hosting estático. Mantén accesible el backend por HTTPS y configura `REDIS_URL` en el servicio del servidor.
 
 ## Estructura del proyecto
 

@@ -8,7 +8,7 @@ import { TaxSlider } from '../components/TaxSlider.js';
 import { GlobalPanel } from '../components/GlobalPanel.js';
 import { FinancePanel } from '../components/FinancePanel.js';
 import { socket } from '../../network/SocketClient.js';
-import { FirebaseLobby } from '../../network/FirebaseLobby.js';
+import { SocketLobby } from '../../network/SocketLobby.js';
 import {
   ACTION_SLOT_COUNT,
   GAME_STAGES,
@@ -253,6 +253,7 @@ export class GameScreen {
       this.startError = '';
       this.connectionError = '';
       this.lobbyScreen.setSinglePlayerEnabled(true);
+      this.setRoomControlsEnabled(true);
       this.rejoinStoredSession();
       this.updateStartMenu();
     };
@@ -261,6 +262,7 @@ export class GameScreen {
       this.startError = 'Se perdió la conexión con el servidor. Reconectando…';
       this.connectionError = '';
       this.lobbyScreen.setSinglePlayerEnabled(false);
+      this.setRoomControlsEnabled(false);
       this.updateStartMenu();
     };
     this.onConnectError = () => {
@@ -498,7 +500,7 @@ export class GameScreen {
     for (const element of this.container.querySelectorAll('button:disabled, input:disabled, select:disabled')) {
       if (element.id === 'play-button') element.dataset.tooltip = 'Esperando conexión con la partida';
       else if (element.id === 'single-player-button') element.dataset.tooltip = 'Esperando conexión con la partida';
-      else if (element.matches('#create-room-button, #quick-match-button, #join-room-button')) element.dataset.tooltip = 'Firebase no está disponible';
+      else if (element.matches('#create-room-button, #quick-match-button, #join-room-button')) element.dataset.tooltip = 'El servidor no está disponible';
       else if (element.matches('[data-issue-bond]')) element.dataset.tooltip = planning
         ? 'Ya tienes un bono pendiente'
         : 'Acción bloqueada fuera de la planificación';
@@ -1181,7 +1183,7 @@ export class GameScreen {
     this.playerId = session?.userId || sessionStorage.getItem(SESSION_USER_KEY) || createPlayerId();
     sessionStorage.setItem(SESSION_USER_KEY, this.playerId);
 
-    this.lobby = new FirebaseLobby({
+    this.lobby = new SocketLobby({
       playerId: this.playerId,
       playerName: 'alpha',
       onChange: (room) => this.handleLobbyChange(room),
@@ -1193,8 +1195,8 @@ export class GameScreen {
     });
     this.lobbyScreen.setRoomControlsEnabled(this.lobby.enabled);
     this.lobbyScreen.setSinglePlayerEnabled(socket.connected);
-    if (!this.lobby.enabled) {
-      this.setStartStatus('Completa PAX_FIREBASE_CONFIG en client/index.html para usar salas.');
+    if (!socket.connected) {
+      this.setStartStatus('Conéctate al servidor para crear o unirte a salas.');
       return;
     }
     if (socket.connected) this.updateStartMenu();
@@ -1261,7 +1263,7 @@ export class GameScreen {
   }
 
   setRoomControlsEnabled(enabled) {
-    this.lobbyScreen.setRoomControlsEnabled(enabled);
+    this.lobbyScreen.setRoomControlsEnabled(Boolean(enabled && socket.connected));
   }
 
   async replayGame() {
@@ -1299,7 +1301,7 @@ export class GameScreen {
     this.lobbyState = room;
     this.roomCode = room.code;
     this.saveGameSession(room.code, this.playerId);
-    const { ownSlot, humanCount, privateRoom } = this.lobbyScreen.updateRoom(
+    const { ownSlot, privateRoom } = this.lobbyScreen.updateRoom(
       room,
       this.playerId,
       (name) => this.normalizeNationName(name)
@@ -1312,7 +1314,7 @@ export class GameScreen {
         socket.timeout(5000).emit(PROTOCOL.START_GAME, { roomId: this.roomCode });
       }
     } else {
-      this.setStartStatus(ownReady
+      this.setStartStatus(ownSlot?.listo
         ? 'Estás listo. Pulsa «Listo» de nuevo para retirar tu confirmación.'
         : privateRoom
           ? 'Comparte el código. La partida empieza cuando todos estén listos.'
@@ -1427,6 +1429,7 @@ export class GameScreen {
 
   destroy() {
     this.map?.destroy();
+    this.lobby?.destroy();
     socket.off(PROTOCOL.GAME_STATE_UPDATE, this.onGameState);
     socket.off('connect', this.onConnect);
     socket.off('disconnect', this.onDisconnect);

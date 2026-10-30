@@ -61,7 +61,7 @@ export class LobbyScreen {
             <button class="pax-start-button" id="start-room-button" type="button" hidden>Listo (0/0)</button>
             <button class="pax-lobby-copy" id="leave-lobby-button" type="button">Volver al menú principal</button>
           </div>
-          <p class="pax-start-status" id="start-status" role="status">Configura Firebase para crear o unirte a salas.</p>
+          <p class="pax-start-status" id="start-status" role="status">Conéctate al servidor para crear o unirte a salas.</p>
         </div>
       </section>`;
     this.root = this.mount.querySelector('#start-menu');

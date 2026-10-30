@@ -6,9 +6,10 @@ import { PROTOCOL } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from '../game/InternationalOrganizationEngine.js';
 
 export class SocketServer {
-  constructor(io, roomManager) {
+  constructor(io, roomManager, lobbyStore) {
     this.io = io;
     this.roomManager = roomManager;
+    this.lobbyStore = lobbyStore;
     this.roomManager.setStatePublisher((room, state) => {
       this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, state);
     });
@@ -18,6 +19,86 @@ export class SocketServer {
   init() {
     this.io.on('connection', (socket) => {
       console.log(`[Network] Cliente conectado: ${socket.id}`);
+
+      const ackError = (acknowledge, error) => acknowledge?.({ ok: false, message: error.message || String(error) });
+      const publishLobby = (room) => {
+        if (room) this.io.to(`lobby:${room.code}`).emit(PROTOCOL.LOBBY_STATE_UPDATE, room);
+      };
+      const joinLobbySocket = async (room, userId) => {
+        await socket.join(`lobby:${room.code}`);
+        socket.data.lobbyRoomCode = room.code;
+        socket.data.lobbyUserId = userId;
+        socket.emit(PROTOCOL.LOBBY_STATE_UPDATE, room);
+        const messages = await this.lobbyStore.getChat(room.code);
+        for (const message of messages) socket.emit(PROTOCOL.LOBBY_CHAT_MESSAGE, message);
+      };
+
+      socket.on(PROTOCOL.LOBBY_CREATE, async ({ userId, playerName, privada = true } = {}, acknowledge) => {
+        try {
+          const room = await this.lobbyStore.create(userId, playerName || 'alpha', Boolean(privada));
+          await joinLobbySocket(room, userId); publishLobby(room); acknowledge?.({ ok: true, roomId: room.code });
+        } catch (error) { ackError(acknowledge, error); }
+      });
+      socket.on(PROTOCOL.LOBBY_JOIN, async ({ roomId, userId, playerName } = {}, acknowledge) => {
+        try {
+          const code = String(roomId || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+          if (code.length !== 6 || !userId) throw new Error('El código de sala o la sesión no son válidos.');
+          const room = await this.lobbyStore.join(code, userId, playerName || 'alpha');
+          await joinLobbySocket(room, userId); publishLobby(room); acknowledge?.({ ok: true, roomId: code });
+        } catch (error) { ackError(acknowledge, error); }
+      });
+      socket.on(PROTOCOL.LOBBY_QUICK_MATCH, async ({ userId, playerName } = {}, acknowledge) => {
+        try {
+          if (!userId) throw new Error('No se encontró la sesión del jugador.');
+          const room = await this.lobbyStore.quickMatch(userId, playerName || 'alpha');
+          await joinLobbySocket(room, userId); publishLobby(room); acknowledge?.({ ok: true, roomId: room.code });
+        } catch (error) { ackError(acknowledge, error); }
+      });
+      socket.on(PROTOCOL.LOBBY_WATCH, async ({ roomId, userId } = {}, acknowledge) => {
+        try {
+          const room = await this.lobbyStore.get(roomId);
+          if (!room || !room.slots.some((player) => player?.id === userId)) throw new Error('La sala o el país reservado ya no existen.');
+          const result = await this.lobbyStore.mutate(roomId, 'join', {
+            userId, playerName: room.slots.find((player) => player?.id === userId)?.nombre || 'alpha',
+            defaultColor: '#FDE047', colors: ['#FDE047', '#FB7185', '#34D399', '#A78BFA', '#22D3EE', '#FB923C', '#F472B6', '#A3E635']
+          });
+          if (!result.ok) throw new Error(result.error);
+          const updated = await this.lobbyStore.get(roomId);
+          await joinLobbySocket(updated, userId); publishLobby(updated); acknowledge?.({ ok: true });
+        } catch (error) { ackError(acknowledge, error); }
+      });
+      socket.on(PROTOCOL.LOBBY_UPDATE_PROFILE, async ({ roomId, userId, name, color } = {}, acknowledge) => {
+        try { const room = await this.lobbyStore.updateProfile(roomId,userId,name,color); publishLobby(room); acknowledge?.({ok:true}); }
+        catch(error) { ackError(acknowledge,error); }
+      });
+      socket.on(PROTOCOL.LOBBY_TOGGLE_READY, async ({ roomId, userId } = {}, acknowledge) => {
+        try { const room=await this.lobbyStore.toggleReady(roomId,userId); publishLobby(room); acknowledge?.({ok:true}); }
+        catch(error) { ackError(acknowledge,error); }
+      });
+      socket.on(PROTOCOL.LOBBY_REPLAY, async ({ roomId } = {}, acknowledge) => {
+        try { const room=await this.lobbyStore.replay(roomId); publishLobby(room); acknowledge?.({ok:true}); }
+        catch(error) { ackError(acknowledge,error); }
+      });
+      socket.on(PROTOCOL.LOBBY_LEAVE, async ({ roomId, userId } = {}, acknowledge) => {
+        try {
+          const result=await this.lobbyStore.leave(roomId,userId);
+          socket.leave(`lobby:${roomId}`); socket.data.lobbyRoomCode=null; socket.data.lobbyUserId=null;
+          if(result.deleted) this.io.to(`lobby:${roomId}`).emit(PROTOCOL.LOBBY_STATE_UPDATE,{code:roomId,deleted:true});
+          else publishLobby(await this.lobbyStore.get(roomId));
+          acknowledge?.({ok:true});
+        } catch(error) { ackError(acknowledge,error); }
+      });
+      socket.on(PROTOCOL.LOBBY_SEND_CHAT, async ({ roomId, userId, message } = {}, acknowledge) => {
+        try {
+          const room=await this.lobbyStore.get(roomId);
+          const player=room?.slots.find((entry)=>entry?.id===userId);
+          if(!player || socket.data.lobbyRoomCode!==roomId || socket.data.lobbyUserId!==userId) throw new Error('Debes estar en la sala para enviar mensajes.');
+          const text=String(message?.text || '').trim().slice(0,240);
+          if(!text) throw new Error('El mensaje está vacío.');
+          const entry={id:`${Date.now()}-${socket.id}`,playerId:userId,nationName:player.nombre,nationColor:player.color,text,createdAt:Date.now()};
+          await this.lobbyStore.addChat(roomId,entry); this.io.to(`lobby:${roomId}`).emit(PROTOCOL.LOBBY_CHAT_MESSAGE,entry); acknowledge?.({ok:true});
+        } catch(error) { ackError(acknowledge,error); }
+      });
 
       // Recibir datos de unión incluyendo playerId
       socket.on(PROTOCOL.JOIN_GAME, ({ playerName, playerColor, roomId, playerId }) => {
@@ -322,7 +403,16 @@ export class SocketServer {
         if (result.ok) this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });
 
-      socket.on('disconnect', () => {
+      socket.on('disconnect', async () => {
+        if (socket.data.lobbyRoomCode && socket.data.lobbyUserId) {
+          try {
+            const roomCode = socket.data.lobbyRoomCode;
+            const result = await this.lobbyStore.disconnect(roomCode, socket.data.lobbyUserId);
+            if (result.room) publishLobby(await this.lobbyStore.get(roomCode));
+          } catch (error) {
+            console.error('[Lobby] No se pudo guardar la desconexión:', error.message);
+          }
+        }
         for (const room of this.roomManager.rooms.values()) {
           const disconnectedPlayer = Array.from(room.gameState.players.values())
             .find((player) => player.socketId === socket.id);

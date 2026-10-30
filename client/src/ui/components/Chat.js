@@ -1,5 +1,5 @@
 /**
- * Chat de texto de la partida sincronizado mediante Firebase.
+ * Chat de texto de la sala sincronizado mediante el servidor.
  */
 
 import { NATIONS } from '../../../../shared/Constants.js';

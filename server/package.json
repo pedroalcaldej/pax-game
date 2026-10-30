@@ -9,7 +9,9 @@
     "test": "node --test"
   },
   "dependencies": {
+    "dotenv": "^16.6.1",
     "express": "^4.19.2",
+    "redis": "^4.7.1",
     "socket.io": "^4.7.5"
   }
 }

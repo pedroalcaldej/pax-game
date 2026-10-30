@@ -125,6 +125,20 @@ export const PROTOCOL = {
   ACTION_ERROR: 'action_error'
 };
 
+Object.assign(PROTOCOL, {
+  LOBBY_CREATE: 'lobby_create',
+  LOBBY_JOIN: 'lobby_join',
+  LOBBY_QUICK_MATCH: 'lobby_quick_match',
+  LOBBY_WATCH: 'lobby_watch',
+  LOBBY_UPDATE_PROFILE: 'lobby_update_profile',
+  LOBBY_TOGGLE_READY: 'lobby_toggle_ready',
+  LOBBY_REPLAY: 'lobby_replay',
+  LOBBY_LEAVE: 'lobby_leave',
+  LOBBY_SEND_CHAT: 'lobby_send_chat',
+  LOBBY_STATE_UPDATE: 'lobby_state_update',
+  LOBBY_CHAT_MESSAGE: 'lobby_chat_message'
+});
+
 export const TREATY_TYPES = {
   NON_AGGRESSION_PACT: 'NON_AGGRESSION_PACT',
   FREE_TRADE: 'FREE_TRADE'
