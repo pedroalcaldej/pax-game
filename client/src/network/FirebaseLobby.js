@@ -6,10 +6,29 @@ function getFirebase() {
   if (!globalThis.firebase || !globalThis.PAX_FIREBASE_CONFIG?.apiKey) {
     return null;
   }
-  if (!globalThis.firebase.apps.length) {
-    globalThis.firebase.initializeApp(globalThis.PAX_FIREBASE_CONFIG);
+  const firebase = globalThis.firebase;
+  const config = globalThis.PAX_FIREBASE_CONFIG;
+  const matchesConfig = (app) => app.options.projectId === config.projectId
+    && app.options.databaseURL === config.databaseURL;
+  let app = firebase.apps.find(matchesConfig);
+
+  if (!app) {
+    const appName = 'pax-game';
+    app = firebase.apps.find((candidate) => candidate.name === appName);
+    if (app) {
+      throw new Error(
+        `La app Firebase "${appName}" ya está inicializada para otro proyecto. `
+        + `Se esperaba ${config.projectId} (${config.databaseURL}).`
+      );
+    }
+    app = firebase.initializeApp(config, appName);
   }
-  return globalThis.firebase;
+
+  return {
+    app,
+    auth: () => firebase.auth(app),
+    database: () => firebase.database(app)
+  };
 }
 
 function normalizeCode(value) {
@@ -46,7 +65,6 @@ export class FirebaseLobby {
     this.unsubscribe = null;
     this.chatRef = null;
     this.chatUnsubscribe = null;
-    this.disconnectHandle = null;
     this.authError = null;
     this.ready = this.firebase
       ? this.firebase.auth().signInAnonymously().catch((error) => {
@@ -75,7 +93,7 @@ export class FirebaseLobby {
           privada,
           estado: 'esperando',
           rondaActual: 1,
-          creadaEn: this.firebase.database.ServerValue.TIMESTAMP,
+          creadaEn: globalThis.firebase.database.ServerValue.TIMESTAMP,
           jugadores: {
             slot_1: { id: this.playerId, nombre: this.playerName, color: AVAILABLE_NATION_COLORS[0], tipo: 'humano', listo: false }
           }
@@ -116,14 +134,48 @@ export class FirebaseLobby {
     if (this.authError) throw new Error('Firebase no permite autenticación anónima.');
     const code = normalizeCode(rawCode);
     if (code.length !== 6) throw new Error('El código debe tener 6 caracteres.');
+    const { projectId, databaseURL: databaseUrl } = this.firebase.app.options;
     const ref = this.firebase.database().ref(`salas/${code}`);
-    const result = await ref.transaction((room) => {
-      if (!room || room.estado !== 'esperando') return;
+    const initialSnapshot = await ref.get();
+    if (!initialSnapshot.exists()) {
+      throw new Error(
+        `No se encontró /salas/${code}. El cliente consultó el proyecto "${projectId}" `
+        + `en ${databaseUrl}. Comprueba que la sala esté guardada en esa ruta exacta.`
+      );
+    }
+    let usedInitialSnapshot = false;
+    let rejectionReason = '';
+    const result = await ref.transaction((currentRoom) => {
+      rejectionReason = '';
+      let room = currentRoom;
+      // A server-confirmed get() is not necessarily in the Realtime Database
+      // client's transaction cache. Seed the first null callback with that
+      // snapshot; the transaction hash check will retry against newer server data.
+      if (!room) {
+        if (!usedInitialSnapshot) {
+          room = initialSnapshot.val();
+          usedInitialSnapshot = true;
+        }
+        if (!room) {
+          rejectionReason = 'La sala fue eliminada mientras intentabas entrar.';
+          return;
+        }
+      }
+      if (!['esperando', 'en_juego'].includes(room.estado)) {
+        rejectionReason = 'La sala no está abierta para nuevos jugadores.';
+        return;
+      }
       const players = room.jugadores || {};
       if (Object.values(players).some((player) => player?.id === this.playerId)) return room;
-      const slot = Array.from({ length: SLOT_COUNT }, (_, index) => `slot_${index + 1}`)
-        .find((slotName) => !players[slotName]);
-      if (!slot) return;
+      const slots = Array.from({ length: SLOT_COUNT }, (_, index) => `slot_${index + 1}`);
+      const slot = room.estado === 'en_juego'
+        ? slots.find((slotName) => players[slotName]?.tipo === 'bot')
+          || slots.find((slotName) => !players[slotName])
+        : slots.find((slotName) => !players[slotName]);
+      if (!slot) {
+        rejectionReason = 'La sala está llena; no quedan países disponibles.';
+        return;
+      }
       return {
         ...room,
         jugadores: {
@@ -138,8 +190,18 @@ export class FirebaseLobby {
         }
       };
     });
+    const committedRoom = result.snapshot.val();
+    const alreadyJoined = Object.values(committedRoom?.jugadores || {})
+      .some((player) => player?.id === this.playerId);
+    if (!result.committed && result.snapshot.exists() && alreadyJoined) {
+      await this.watchRoom(code);
+      return code;
+    }
     if (!result.committed || !result.snapshot.exists()) {
-      throw new Error('La sala no existe, está llena o ya inició.');
+      throw new Error(
+        `La sala /salas/${code} sí fue encontrada en "${projectId}" (${databaseUrl}), `
+        + `pero no se pudo reservar un país: ${rejectionReason || 'inténtalo de nuevo.'}`
+      );
     }
     await this.watchRoom(code);
     return code;
@@ -164,15 +226,6 @@ export class FirebaseLobby {
         slots: emptySlots(room.jugadores),
         isHost: room.creador === this.playerId
       });
-      if (!this.disconnectHandle) {
-        const ownSlot = Object.entries(room.jugadores || {})
-          .find(([, player]) => player?.id === this.playerId)?.[0];
-        this.disconnectHandle = room.creador === this.playerId
-          ? this.roomRef.onDisconnect().remove()
-          : ownSlot
-            ? this.roomRef.child(`jugadores/${ownSlot}`).onDisconnect().remove()
-            : null;
-      }
     });
   }
 
@@ -196,7 +249,7 @@ export class FirebaseLobby {
       nationName: message.nationName,
       nationColor: message.nationColor,
       text: message.text,
-      createdAt: this.firebase.database.ServerValue.TIMESTAMP
+      createdAt: globalThis.firebase.database.ServerValue.TIMESTAMP
     });
   }
 
@@ -212,7 +265,14 @@ export class FirebaseLobby {
       if (Object.entries(players).some(([playerSlot, player]) => (
         playerSlot !== slot && player?.color === color
       ))) return;
-      players[slot] = { ...players[slot], nombre: name, color, listo: false };
+      const currentPlayer = players[slot];
+      const profileChanged = currentPlayer.nombre !== name || currentPlayer.color !== color;
+      players[slot] = {
+        ...currentPlayer,
+        nombre: name,
+        color,
+        listo: profileChanged ? false : Boolean(currentPlayer.listo)
+      };
       return { ...room, jugadores: players };
     });
     if (!result.committed) throw new Error('No se pudo actualizar tu país.');
@@ -227,9 +287,13 @@ export class FirebaseLobby {
       const players = { ...(room.jugadores || {}) };
       const ownSlot = Object.keys(players).find((key) => players[key]?.id === this.playerId);
       if (!ownSlot) return;
-      players[ownSlot] = { ...players[ownSlot], listo: true };
+      const ready = !players[ownSlot].listo;
+      players[ownSlot] = { ...players[ownSlot], listo: ready };
+      if (!ready) return { ...room, jugadores: players };
       const humans = Object.values(players).filter((player) => player?.tipo === 'humano');
-      if (!humans.length || humans.some((player) => !player.listo)) return;
+      if (!humans.length || humans.some((player) => !player.listo)) {
+        return { ...room, jugadores: players };
+      }
       for (let index = 0; index < SLOT_COUNT; index += 1) {
         const slot = `slot_${index + 1}`;
         if (!players[slot]) {
@@ -245,7 +309,7 @@ export class FirebaseLobby {
       }
       return { ...room, jugadores: players, estado: 'en_juego', rondaActual: 1 };
     });
-    if (!result.committed) throw new Error('Todos los jugadores humanos deben pulsar Jugar.');
+    if (!result.committed) throw new Error('Todos los jugadores humanos deben estar listos.');
   }
 
   async returnToLobbyForReplay() {
@@ -272,27 +336,27 @@ export class FirebaseLobby {
     this.chatRef = null;
     this.chatQuery = null;
     this.chatUnsubscribe = null;
-    this.disconnectHandle = null;
   }
 
   async leaveRoom() {
     if (!this.roomRef) return;
+    const ref = this.roomRef;
+    const playerId = this.playerId;
+    this.stopWatching();
     await this.ready;
     if (this.authError) throw new Error('Firebase no permite autenticación anónima.');
 
-    const ref = this.roomRef;
     const snapshot = await ref.once('value');
     const room = snapshot.val();
     if (room) {
-      if (room.creador === this.playerId) {
+      if (room.creador === playerId) {
         await ref.remove();
       } else {
         const ownSlot = Object.entries(room.jugadores || {})
-          .find(([, player]) => player?.id === this.playerId)?.[0];
+          .find(([, player]) => player?.id === playerId)?.[0];
         if (ownSlot) await ref.child(`jugadores/${ownSlot}`).remove();
       }
     }
-    this.stopWatching();
   }
 
   destroy() {

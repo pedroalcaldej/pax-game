@@ -24,6 +24,19 @@ import {
 import { getPlayerRankings } from '../components/PlayerRankings.js';
 import { Chat } from '../components/Chat.js';
 
+const SESSION_ROOM_KEY = 'pax_room_id';
+const SESSION_USER_KEY = 'pax_user_id';
+const createPlayerId = () => {
+  const id = globalThis.crypto?.randomUUID?.()
+    || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `player_${id}`;
+};
+const createSoloRoomId = () => {
+  const id = globalThis.crypto?.randomUUID?.()
+    || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `solo-${id}`;
+};
+
 const STAGE_LABELS = {
   [GAME_STAGES.ROUND_START]: 'Inicio de ronda',
   [GAME_STAGES.PLANNING]: 'Planificación',
@@ -177,14 +190,14 @@ const STYLES = `
   .pax-label { display: block; color: var(--pax-muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
   .pax-round-value { font-size: 13px; font-weight: 800; }
   .pax-timer { margin-left: auto; color: var(--pax-gold); font-size: 15px; font-weight: 900; font-variant-numeric: tabular-nums; }
-  .pax-force-button, .pax-global-panel-button, .pax-action-button, .pax-development button {
+  .pax-ready-button, .pax-global-panel-button, .pax-action-button, .pax-development button {
     border: 1px solid #39455d;
     border-radius: 6px;
     color: var(--pax-text);
     background: #1a263b;
     font: inherit;
   }
-  .pax-force-button { margin-left: 8px; padding: 5px 8px; color: #f4bd4d; font-size: 10px; font-weight: 800; }
+  .pax-ready-button { margin-left: 8px; padding: 5px 8px; color: #f4bd4d; font-size: 10px; font-weight: 800; }
   .pax-menu-button { width: 34px; height: 34px; border: 1px solid #39455d; border-radius: 6px; color: #e2e8f0; background: #10192b; font-size: 18px; cursor: pointer; }
   .pax-menu-overlay { position: fixed; z-index: 12; inset: 0; display: grid; place-items: center; padding: 20px; background: #030712cc; backdrop-filter: blur(6px); }
   .pax-menu-overlay[hidden] { display: none; }
@@ -291,7 +304,7 @@ const STYLES = `
   .pax-action-name { display: block; font-size: 11px; font-weight: 800; }
   .pax-action-caption { display: block; margin-top: 3px; color: var(--pax-muted); font-size: 10px; }
   .pax-action-cost { padding: 4px 5px; border-radius: 4px; color: #f4c253; background: #1a1b27; font-size: 9px; font-weight: 800; white-space: nowrap; }
-  .pax-action-button:disabled, .pax-force-button:disabled { opacity: .38; cursor: not-allowed; }
+  .pax-action-button:disabled, .pax-ready-button:disabled { opacity: .38; cursor: not-allowed; }
   .pax-oi-tag { margin-left: auto; padding: 5px 7px; border: 1px solid #493361; border-radius: 5px; color: #c8a6ed; background: #1b1528; font-size: 9px; letter-spacing: 0; text-transform: none; }
   .pax-oi-card { padding: 10px; border: 1px solid #202c41; border-radius: 8px; background: #070d1c; }
   .pax-oi-row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 10px; color: var(--pax-muted); font-size: 10px; }
@@ -579,7 +592,7 @@ const STYLES = `
   .pax-nation, .pax-panel-section, .pax-section-heading { border-color: var(--pax-border); }
   .pax-nation { background: rgba(30, 41, 59, .42); }
   .pax-nation-name { color: #f8fafc; }
-  .pax-human-tag, .pax-force-button { color: var(--pax-gold); border-color: rgba(251, 191, 36, .35); background: rgba(120, 83, 10, .2); }
+  .pax-human-tag, .pax-ready-button { color: var(--pax-gold); border-color: rgba(251, 191, 36, .35); background: rgba(120, 83, 10, .2); }
   .pax-tabs { background: #0d1729; border-color: var(--pax-border); }
   .pax-tab { color: #a5b4fc; background: var(--pax-panel-raised); border-color: var(--pax-border); }
   .pax-tab[data-panel-tab="finance"] { color: var(--pax-purple); }
@@ -875,12 +888,13 @@ export class GameScreen {
     this.resourceAnimationFrame = null;
     this.lastAnimatedResolutionId = 0;
     this.stageOverlayTimer = null;
-    this.roomCode = 'room-1';
+    this.roomCode = null;
     this.lobby = null;
     this.lobbyState = null;
     this.lobbyError = '';
     this.serverJoinedRoom = null;
     this.autoStartPending = false;
+    this.isLeaving = false;
 
     this.init();
   }
@@ -933,10 +947,9 @@ export class GameScreen {
               <div class="pax-lobby-profile">
                 <label>Nombre <input id="lobby-player-name" maxlength="24" autocomplete="off" /></label>
                 <label>Color <div class="pax-color-picker" id="lobby-player-color" role="radiogroup" aria-label="Color del país"></div></label>
-                <button class="pax-lobby-copy" id="save-lobby-profile" type="button">Guardar</button>
               </div>
               <div class="pax-lobby-slots" id="lobby-slots"></div>
-              <button class="pax-start-button" id="start-room-button" type="button" hidden>Jugar</button>
+              <button class="pax-start-button" id="start-room-button" type="button" hidden>Listo (0/0)</button>
               <button class="pax-lobby-copy" id="leave-lobby-button" type="button">Volver al menú principal</button>
             </div>
             <p class="pax-start-status" id="start-status" role="status">Configura Firebase para crear o unirte a salas.</p>
@@ -947,7 +960,7 @@ export class GameScreen {
             <h2>Menú de partida</h2>
             <div class="pax-menu-actions">
               <button type="button" id="menu-resume">Reanudar</button>
-              <button type="button" class="pax-menu-end" id="menu-end-game">Terminar partida y volver al menú principal</button>
+              <button type="button" class="pax-menu-end" id="menu-end-game">Salir de la partida y volver al menú</button>
             </div>
           </div>
         </section>
@@ -961,7 +974,7 @@ export class GameScreen {
             <span class="pax-round-icon" aria-hidden="true">◷</span>
             <div><span class="pax-label">Ronda</span><span class="pax-round-value" id="round-value">1/${MAX_ROUNDS}</span></div>
             <span class="pax-timer" id="timer-value">60s</span>
-            <button class="pax-force-button" id="force-phase-button" type="button" disabled title="La fase termina cuando todos los jugadores humanos confirman que están listos">⏩ Forzar</button>
+            <button class="pax-ready-button" id="phase-ready-button" type="button" disabled title="Pulsa para marcarte listo; puedes pulsar de nuevo para retirar tu confirmación">Listo (0/0)</button>
           </div>
           <div class="pax-phase"><span class="pax-label">Estado:</span><strong id="phase-value">Inicio de ronda</strong></div>
           <div class="pax-resources" aria-label="Recursos nacionales">
@@ -1130,6 +1143,7 @@ export class GameScreen {
     this.addEvent('Esperando actividad de la partida.');
     this.populateColorSelectors();
     this.setupLobby();
+    if (socket.connected) this.onConnect();
   }
 
   bindEvents() {
@@ -1185,7 +1199,7 @@ export class GameScreen {
       this.startError = '';
       this.connectionError = '';
       this.container.querySelector('#single-player-button').disabled = false;
-      if (!this.lobby?.enabled) this.joinGame();
+      this.rejoinStoredSession();
       this.updateStartMenu();
     };
     this.onDisconnect = () => {
@@ -1199,7 +1213,9 @@ export class GameScreen {
       this.connectionError = 'No se pudo conectar con el servidor. Comprueba que esté iniciado en la Terminal 1.';
       this.updateStartMenu();
     };
-    this.onGameState = (gameState) => this.updateGameState(gameState);
+    this.onGameState = (gameState) => {
+      if (!this.isLeaving) this.updateGameState(gameState);
+    };
     socket.on('connect', this.onConnect);
     socket.on('disconnect', this.onDisconnect);
     socket.on('connect_error', this.onConnectError);
@@ -1227,10 +1243,9 @@ export class GameScreen {
       this.setGameMenuOpen(false);
     });
     this.container.querySelector('#menu-end-game').addEventListener('click', () => {
-      if (!socket.connected || !this.gameState?.gameStarted) return;
       this.returnToMainMenu();
     });
-    this.container.querySelector('#force-phase-button').addEventListener('click', () => {
+    this.container.querySelector('#phase-ready-button').addEventListener('click', () => {
       if (!socket.connected || this.gameState?.currentStage !== GAME_STAGES.PLANNING) return;
       socket.emit(PROTOCOL.READY_PHASE_END, {
         roomId: this.roomCode,
@@ -1289,9 +1304,14 @@ export class GameScreen {
     this.container.querySelector('#start-room-button').addEventListener('click', () => {
       this.startRoom();
     });
-    this.container.querySelector('#save-lobby-profile').addEventListener('click', () => {
-      this.saveLobbyProfile();
+    const lobbyNameInput = this.container.querySelector('#lobby-player-name');
+    lobbyNameInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        lobbyNameInput.blur();
+      }
     });
+    lobbyNameInput.addEventListener('blur', () => this.saveLobbyProfile());
     this.container.querySelector('#leave-lobby-button').addEventListener('click', () => {
       this.returnToMainMenu();
     });
@@ -1306,7 +1326,7 @@ export class GameScreen {
       this.replayGame();
     });
     this.container.querySelector('#game-summary-menu').addEventListener('click', () => {
-      if (!socket.connected || !this.gameState?.gameOver) return;
+      if (!this.gameState?.gameOver) return;
       this.returnToMainMenu();
     });
     this.container.querySelector('#taxInput').addEventListener('input', (event) => {
@@ -1482,7 +1502,7 @@ export class GameScreen {
         ? 'Requiere 2 de Influencia'
         : 'Propuesta bloqueada fuera de la reunión de la OI';
       else if (element.matches('#oi-submit-vote')) element.dataset.tooltip = 'Solo puedes votar durante una sesión activa de la OI';
-      else if (element.matches('#force-phase-button')) element.dataset.tooltip = 'La planificación termina cuando todos los jugadores están listos';
+      else if (element.matches('#phase-ready-button')) element.dataset.tooltip = 'Pulsa para marcarte listo; puedes volver a pulsar para retirar tu confirmación';
       else element.dataset.tooltip ||= 'Acción no disponible en este momento';
     }
   }
@@ -1527,7 +1547,7 @@ export class GameScreen {
     );
     this.updateActionSlots();
     this.updateActionHighlights();
-    this.updateForcePhaseButton(players, phase, gameState.gameStarted);
+    this.updatePhaseReadyButton(players, phase, gameState.gameStarted);
     this.globalPanel.update(gameState, this.player?.id);
     this.financePanel.update({ ...gameState, currentStage: stage }, this.player?.id);
     this.updateDisabledTooltips(stage);
@@ -1769,8 +1789,8 @@ export class GameScreen {
     socket.emit(PROTOCOL.SUBMIT_OI_VOTE, { roomId: this.roomCode, ballot });
   }
 
-  updateForcePhaseButton(players, phase, gameStarted) {
-    const button = this.container.querySelector('#force-phase-button');
+  updatePhaseReadyButton(players, phase, gameStarted) {
+    const button = this.container.querySelector('#phase-ready-button');
     if (!button) return;
     const participants = players;
     const readyCount = participants.filter((player) => player.phaseReady).length;
@@ -1783,14 +1803,10 @@ export class GameScreen {
     );
     const isReady = Boolean(this.player?.phaseReady);
     button.disabled = !canForce;
-    button.textContent = isReady
-      ? `↩ Quitar listo (${readyCount}/${requiredCount})`
-      : requiredCount > 0
-        ? `⏩ Forzar (${readyCount}/${requiredCount})`
-        : '⏩ Forzar';
+    button.textContent = `${isReady ? 'Listo ✓' : 'Listo'} (${readyCount}/${requiredCount})`;
     button.title = isReady
-      ? 'Retirar tu confirmación para que continúe la planificación'
-      : 'Los bots ya están listos; la fase termina cuando todos los jugadores humanos confirman que están listos.';
+      ? 'Estás listo. Pulsa de nuevo para retirar tu confirmación'
+      : 'Pulsa para marcarte listo; la fase termina cuando todos los jugadores humanos lo estén';
   }
 
   updateActionSlots() {
@@ -2114,6 +2130,7 @@ export class GameScreen {
           this.updateColorAvailability(this.lobbyState?.slots
             ?.filter((player) => player?.id !== this.playerId)
             .map((player) => player?.color) || []);
+          this.saveLobbyProfile();
         }
       });
     }
@@ -2145,16 +2162,68 @@ export class GameScreen {
     }
   }
 
+  readStoredSession() {
+    const roomId = sessionStorage.getItem(SESSION_ROOM_KEY);
+    const userId = sessionStorage.getItem(SESSION_USER_KEY);
+    return roomId && userId ? { roomId, userId } : null;
+  }
+
+  saveGameSession(roomId = this.roomCode, userId = this.playerId) {
+    if (!roomId || !userId) return;
+    sessionStorage.setItem(SESSION_ROOM_KEY, roomId);
+    sessionStorage.setItem(SESSION_USER_KEY, userId);
+  }
+
+  clearGameSession() {
+    sessionStorage.removeItem(SESSION_ROOM_KEY);
+    sessionStorage.removeItem(SESSION_USER_KEY);
+  }
+
+  rejoinStoredSession() {
+    const session = this.readStoredSession();
+    if (!session || !socket.connected) return;
+    const { roomId, userId } = session;
+    this.roomCode = roomId;
+    this.playerId = userId;
+    this.serverJoinedRoom = roomId;
+    sessionStorage.setItem(SESSION_USER_KEY, userId);
+
+    socket.emit(PROTOCOL.REJOIN_ROOM, { roomId, userId }, (result) => {
+      if (this.isLeaving) return;
+      if (result?.ok) {
+        this.serverJoinedRoom = roomId;
+        if (result.state) this.updateGameState(result.state);
+        return;
+      }
+      this.serverJoinedRoom = null;
+      if (this.lobbyState?.code === roomId && this.lobbyState.estado === 'en_juego') {
+        socket.emit(PROTOCOL.JOIN_GAME, {
+          playerId: userId,
+          playerName: this.lobbyState.slots.find((player) => player?.id === userId)?.nombre || 'alpha',
+          playerColor: this.lobbyState.slots.find((player) => player?.id === userId)?.color,
+          roomId
+        });
+        socket.emit(PROTOCOL.START_GAME, { roomId });
+      }
+    });
+
+    if (roomId.startsWith('PAX') && this.lobby?.enabled) {
+      this.chat.setEnabled(true);
+      this.lobby.watchRoom(roomId).catch((error) => {
+        this.lobbyError = error.message;
+        this.setStartStatus(error.message);
+      });
+    }
+  }
+
   normalizeNationName(name) {
     return LEGACY_NATION_NAMES.get(name) || name;
   }
 
   setupLobby() {
-    this.playerId = localStorage.getItem('pax_player_id');
-    if (!this.playerId) {
-      this.playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
-      localStorage.setItem('pax_player_id', this.playerId);
-    }
+    const session = this.readStoredSession();
+    this.playerId = session?.userId || sessionStorage.getItem(SESSION_USER_KEY) || createPlayerId();
+    sessionStorage.setItem(SESSION_USER_KEY, this.playerId);
 
     this.lobby = new FirebaseLobby({
       playerId: this.playerId,
@@ -2186,6 +2255,7 @@ export class GameScreen {
 
   startSinglePlayer() {
     if (!socket.connected) return;
+    this.isLeaving = false;
     this.chat.setEnabled(false);
     const name = this.container.querySelector('#single-player-name').value.trim();
     const color = this.getSelectedNationColor('single-player-color');
@@ -2193,7 +2263,8 @@ export class GameScreen {
       this.setStartStatus('El nombre del país no puede estar vacío.');
       return;
     }
-    this.roomCode = 'room-1';
+    this.roomCode = createSoloRoomId();
+    this.saveGameSession(this.roomCode, this.playerId);
     this.startPending = true;
     this.setStartStatus('Iniciando la partida…');
     socket.emit(PROTOCOL.JOIN_GAME, {
@@ -2221,11 +2292,13 @@ export class GameScreen {
 
   async enterLobby(operation) {
     if (!this.lobby?.enabled) return;
+    this.isLeaving = false;
     this.chat.setEnabled(true);
     this.setStartStatus('Conectando con la sala…');
     this.setRoomControlsEnabled(false);
     try {
-      await operation();
+      const roomId = await operation();
+      this.saveGameSession(roomId || this.lobby.roomCode, this.playerId);
     } catch (error) {
       this.setStartStatus(error.message);
       this.setRoomControlsEnabled(true);
@@ -2242,6 +2315,7 @@ export class GameScreen {
     if (!socket.connected || !this.gameState?.gameOver) return;
     const button = this.container.querySelector('#game-summary-replay');
     button.disabled = true;
+    const previousRoomId = this.roomCode;
     const isPrivate = this.lobbyState?.privada !== false;
     if (this.serverJoinedRoom === this.roomCode) {
       socket.emit(PROTOCOL.END_GAME, { roomId: this.roomCode });
@@ -2255,6 +2329,7 @@ export class GameScreen {
         this.container.querySelector('#start-menu').hidden = false;
       } else {
         await this.lobby.leaveRoom();
+        socket.emit(PROTOCOL.LEAVE_ROOM, { roomId: previousRoomId, userId: this.playerId });
         this.lobbyState = null;
         this.gameState = null;
         this.container.querySelector('#game-summary-dialog')?.close();
@@ -2270,6 +2345,7 @@ export class GameScreen {
     if (this.roomCode !== room.code) this.chat.clear();
     this.lobbyState = room;
     this.roomCode = room.code;
+    this.saveGameSession(room.code, this.playerId);
     const isPrivateRoom = room.privada !== false;
     const humanCount = room.slots.filter((player) => player?.tipo === 'humano').length;
     this.container.querySelector('#room-menu').hidden = true;
@@ -2280,12 +2356,14 @@ export class GameScreen {
     this.container.querySelector('#lobby-code').textContent = room.code;
     this.container.querySelector('#lobby-code').hidden = !isPrivateRoom;
     this.container.querySelector('#copy-room-code').hidden = !isPrivateRoom;
-    this.container.querySelector('#lobby-count').textContent = `Jugadores conectados: ${humanCount} / 4`;
+    this.container.querySelector('#lobby-count').textContent = `Jugadores en la sala: ${humanCount} / 4`;
     const ownSlot = room.slots.find((player) => player?.id === this.playerId);
     const nameInput = this.container.querySelector('#lobby-player-name');
     const colorInput = this.container.querySelector('#lobby-player-color');
     if (ownSlot) {
-      nameInput.value = this.normalizeNationName(ownSlot.nombre || 'alpha');
+      if (document.activeElement !== nameInput) {
+        nameInput.value = this.normalizeNationName(ownSlot.nombre || 'alpha');
+      }
       this.selectNationColor(colorInput, ownSlot.color || AVAILABLE_NATION_COLORS[0]);
     }
     this.updateColorAvailability(room.slots
@@ -2301,9 +2379,13 @@ export class GameScreen {
     `).join('');
     const startButton = this.container.querySelector('#start-room-button');
     const ownReady = Boolean(ownSlot?.listo);
+    const readyCount = room.slots.filter((player) => player?.tipo === 'humano' && player.listo).length;
     startButton.hidden = room.estado !== 'esperando' || !ownSlot;
-    startButton.disabled = ownReady;
-    startButton.textContent = ownReady ? 'Esperando jugadores…' : 'Jugar';
+    startButton.disabled = false;
+    startButton.textContent = `${ownReady ? 'Listo ✓' : 'Listo'} (${readyCount}/${humanCount})`;
+    startButton.title = ownReady
+      ? 'Pulsa de nuevo para dejar de estar listo'
+      : 'Pulsa para confirmar que estás listo';
     if (room.estado === 'en_juego') {
       this.setStartStatus('Partida iniciada. Cargando el mapa…');
       if (socket.connected && this.serverJoinedRoom !== room.code) {
@@ -2313,15 +2395,16 @@ export class GameScreen {
       }
     } else {
       this.setStartStatus(ownReady
-        ? 'Esperando a que todos los jugadores pulsen Jugar…'
+        ? 'Estás listo. Pulsa «Listo» de nuevo para retirar tu confirmación.'
         : isPrivateRoom
-          ? 'Comparte el código e inicia cuando todos estén listos.'
-          : 'Esperando jugadores aleatorios. Pulsa Jugar cuando estés listo.');
+          ? 'Comparte el código. La partida empieza cuando todos estén listos.'
+          : 'Esperando jugadores aleatorios. Pulsa Listo cuando quieras comenzar.');
     }
   }
 
   async startRoom() {
     try {
+      if (!await this.saveLobbyProfile()) return;
       await this.lobby.startGame();
     } catch (error) {
       this.setStartStatus(error.message);
@@ -2329,20 +2412,21 @@ export class GameScreen {
   }
 
   async saveLobbyProfile() {
-      const name = this.normalizeNationName(this.container.querySelector('#lobby-player-name').value.trim());
-      const color = this.getSelectedNationColor('lobby-player-color');
-      if (!name) {
-        this.setStartStatus('El nombre del país no puede estar vacío.');
-        return;
-      }
-      try {
-        await this.lobby.updateProfile({ name, color });
-        this.joinGame();
-        this.setStartStatus('Perfil actualizado. Pulsa Jugar cuando estés listo.');
-      } catch (error) {
-        this.setStartStatus(error.message);
-      }
+    const name = this.normalizeNationName(this.container.querySelector('#lobby-player-name').value.trim());
+    const color = this.getSelectedNationColor('lobby-player-color');
+    if (!name) {
+      this.setStartStatus('El nombre del país no puede estar vacío.');
+      return false;
     }
+    try {
+      await this.lobby.updateProfile({ name, color });
+      this.joinGame();
+      return true;
+    } catch (error) {
+      this.setStartStatus(error.message);
+      return false;
+    }
+  }
 
   async copyRoomCode() {
     if (!this.roomCode) {
@@ -2373,21 +2457,22 @@ export class GameScreen {
   }
 
   async returnToMainMenu() {
+    if (this.isLeaving) return;
+    this.isLeaving = true;
     const roomCode = this.roomCode;
-    if (this.serverJoinedRoom === roomCode && socket.connected) {
-      socket.emit(PROTOCOL.END_GAME, { roomId: roomCode });
-    }
+    const userId = this.playerId;
+    this.lobby?.leaveRoom().catch((error) => {
+      this.showToast(`No se pudo limpiar la sala: ${error.message}`, 'error');
+    });
 
-    try {
-      await this.lobby?.leaveRoom();
-    } catch (error) {
-      this.setStartStatus(`No se pudo salir de la sala: ${error.message}`);
-      return;
+    this.setGameMenuOpen(false);
+    if (roomCode && userId) {
+      socket.emit(PROTOCOL.LEAVE_ROOM, { roomId: roomCode, userId });
     }
+    this.clearGameSession();
 
     this.chat.setEnabled(false);
     this.container.querySelector('#game-summary-dialog')?.close();
-    this.setGameMenuOpen(false);
     this.lobbyState = null;
     this.lobbyError = '';
     this.gameState = null;
@@ -2411,11 +2496,9 @@ export class GameScreen {
 
   joinGame() {
     if (!socket.connected || !this.roomCode) return;
-    this.playerId = localStorage.getItem('pax_player_id');
-    if (!this.playerId) {
-      this.playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
-      localStorage.setItem('pax_player_id', this.playerId);
-    }
+    this.playerId ||= sessionStorage.getItem(SESSION_USER_KEY) || createPlayerId();
+    sessionStorage.setItem(SESSION_USER_KEY, this.playerId);
+    this.saveGameSession(this.roomCode, this.playerId);
     const profileName = this.container.querySelector('#lobby-player-name')?.value.trim();
     const profileColor = this.getSelectedNationColor('lobby-player-color');
     const lobbyPlayer = this.lobbyState?.slots.find((player) => player?.id === this.playerId);

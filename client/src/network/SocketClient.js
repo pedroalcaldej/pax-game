@@ -55,7 +55,7 @@ export class SocketClient {
    * @param {string} playerName - Nombre de usuario.
    * @param {string} roomId - Identificador de la sala.
    */
-  joinGame(playerName, roomId = 'room-1') {
+  joinGame(playerName, roomId) {
     this.socket.emit(CLIENT_EVENTS.JOIN_GAME, { playerName, roomId });
   }
 

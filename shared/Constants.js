@@ -104,6 +104,8 @@ export const PROTOCOL = {
   CONNECT: 'connect',
   DISCONNECT: 'disconnect',
   JOIN_GAME: 'join_game',
+  REJOIN_ROOM: 'rejoin_room',
+  LEAVE_ROOM: 'leave_room',
   START_GAME: 'start_game',
   RESTART_GAME: 'restart_game',
   READY_PHASE_END: 'ready_phase_end',

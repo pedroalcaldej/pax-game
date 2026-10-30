@@ -25,8 +25,16 @@ export class Room {
     return this.gameState.addPlayer(socketId, playerName);
   }
 
-  removePlayer(socketId) {
-    return this.gameState.removePlayer(socketId);
+  markPlayerDisconnected(socketId) {
+    return this.gameState.markPlayerDisconnected(socketId);
+  }
+
+  rejoinPlayer(socketId, userId) {
+    return this.gameState.rejoinPlayer(socketId, userId);
+  }
+
+  leavePlayer(socketId, userId) {
+    return this.gameState.leavePlayer(socketId, userId);
   }
 
   markPlayerReady(socketId, ready) {
@@ -102,7 +110,8 @@ export class RoomManager {
     }
   }
 
-  getOrCreateRoom(roomId = 'room-1') {
+  getOrCreateRoom(roomId) {
+    if (!roomId) throw new Error('Se requiere un identificador de sala.');
     if (!this.rooms.has(roomId)) {
       const room = new Room(roomId, (state) => {
         if (this.publishState) this.publishState(room, state);

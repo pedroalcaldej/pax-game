@@ -26,8 +26,6 @@ const io = new Server(httpServer, {
 const roomManager = new RoomManager();
 new SocketServer(io, roomManager);
 
-roomManager.getOrCreateRoom('room-1');
-
 const PORT = process.env.PORT || 3000;
 
 app.get('/health', (_request, response) => {

@@ -71,6 +71,7 @@ export class GameState {
         nationId: nation.nationId,
         socketId: null,
         boundPlayerId: null,
+        isDisconnected: false,
         isBot: true,
         name: nation.name,
         color: nation.color,
@@ -614,6 +615,7 @@ export class GameState {
     for (const player of this.players.values()) {
       if (player.boundPlayerId === id) {
         player.socketId = socketId;
+        player.isDisconnected = false;
         player.isBot = false;
         player.phaseReady = false;
         if (playerName && playerName !== 'alpha') {
@@ -634,8 +636,10 @@ export class GameState {
       if (player.isBot) {
         player.boundPlayerId = id;
         player.socketId = socketId;
+        player.isDisconnected = false;
         player.isBot = false;
         player.phaseReady = false;
+        player.plannedActions = createEmptyActionSlots();
         if (playerName && playerName !== 'alpha') {
           player.name = LEGACY_NATION_NAMES.get(playerName) || playerName;
         }
@@ -653,19 +657,44 @@ export class GameState {
     return null;
   }
 
-  removePlayer(socketId) {
-    let removed = false;
+  markPlayerDisconnected(socketId) {
+    let disconnected = false;
     for (const player of this.players.values()) {
       if (player.socketId === socketId) {
         player.socketId = null;
-        player.boundPlayerId = null;
-        player.isBot = true;
+        player.isDisconnected = true;
         player.phaseReady = false;
-        player.name = NATIONS[player.nationId].name;
-        removed = true;
+        disconnected = true;
       }
     }
-    return removed;
+    return disconnected;
+  }
+
+  rejoinPlayer(socketId, userId) {
+    const player = Array.from(this.players.values())
+      .find((entry) => entry.boundPlayerId === userId);
+    if (!player) return null;
+    player.socketId = socketId;
+    player.isDisconnected = false;
+    player.isBot = false;
+    player.phaseReady = false;
+    this.refreshBotColors();
+    return player;
+  }
+
+  leavePlayer(socketId, userId) {
+    const player = Array.from(this.players.values()).find((entry) => (
+      entry.boundPlayerId === userId && entry.socketId === socketId && !entry.isBot
+    ));
+    if (!player) return null;
+    player.socketId = null;
+    player.boundPlayerId = null;
+    player.isDisconnected = false;
+    player.isBot = true;
+    player.phaseReady = false;
+    player.name = NATIONS[player.nationId].name;
+    this.refreshBotColors();
+    return player;
   }
 
   setPlayerTaxRate(socketId, taxRate) {
@@ -690,7 +719,7 @@ export class GameState {
 
   markPlayerReady(socketId, ready = true) {
     if (!this.gameStarted || this.currentPhase !== 2) {
-      return { ok: false, message: 'Solo puedes forzar el fin durante la fase de planificación.' };
+      return { ok: false, message: 'Solo puedes marcarte listo durante la fase de planificación.' };
     }
     const player = Array.from(this.players.values()).find((entry) => entry.socketId === socketId);
     if (!player || player.isBot) {

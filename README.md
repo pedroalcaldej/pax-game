@@ -4,34 +4,28 @@
 
 ### Iniciar en desarrollo
 
-Se recomienda arrancar el servidor y el cliente en terminales separadas para evitar
-mezclar logs y poder detener cada proceso por separado.
-
-#### Terminal 1: servidor
-
-Abre una terminal nueva y ejecuta:
+Desde la raíz del proyecto, instala las dependencias una vez e inicia ambos
+entornos juntos:
 
 ```sh
-cd /Users/pedroalcalde/repos/pax-game
-npm install --prefix server
-npm start --prefix server
+npm install
+npm run dev
 ```
 
-Esto levanta el backend en el puerto `3000`.
+El comando inicia el servidor Node.js en el puerto `3000` y el cliente Vite en
+el `5173`. `concurrently` muestra cada salida con su etiqueta y color. Abre
+`http://localhost:5173` en el navegador. Para detener ambos procesos, presiona
+`Ctrl + C`.
 
-#### Terminal 2: cliente
-
-Abre otra terminal distinta y ejecuta:
+Para depurar un servicio por separado, abre una terminal para cada comando. Si
+inicias solo el cliente, el servidor debe estar ejecutándose también:
 
 ```sh
-cd /Users/pedroalcalde/repos/pax-game
-npm install --prefix client
-npm --prefix client run dev
+npm run dev --workspace=server
+npm run dev --workspace=client
 ```
 
-Luego abre la URL que muestra Vite en el navegador. Para jugar en la misma
-computadora puedes usar `http://localhost:5173`; para otros equipos usa la URL
-`Network` que muestra Vite, por ejemplo `http://192.168.1.7:5173`.
+Para iniciar el servidor en modo normal, ejecuta `npm start --workspace=server`.
 
 ### Cómo jugar
 
@@ -45,10 +39,6 @@ permite ajustar la cantidad (por defecto, todas las tropas disponibles) antes de
 seleccionar una casilla terrestre adyacente como destino. Al ocupar un espacio de
 acción, se selecciona automáticamente el otro si está vacío.
 
-### Detener los procesos
-
-En cada terminal, presiona `Ctrl + C` para detener el servidor o el cliente.
-
 ### Jugar desde otra máquina en la misma red
 
 Para jugar desde otros dispositivos en la misma red, abre en todos los equipos la
@@ -57,10 +47,9 @@ interfaces de red. El cliente se conecta automáticamente al puerto `3000` del
 mismo host desde el que se abrió la web, por lo que normalmente no hace falta
 configurar `VITE_SERVER_URL`.
 
-```sh
-cd /Users/pedroalcalde/repos/pax-game
-npm --prefix client run dev
-```
+Inicia los dos entornos desde la raíz con `npm run dev`, como se indica arriba.
+Abre en cada dispositivo la dirección de red que muestra Vite, por ejemplo
+`http://192.168.1.7:5173`.
 
 Para comprobar la conectividad desde otro equipo, visita
 `http://IP_LOCAL_DEL_SERVIDOR:3000/health`; debe devolver
@@ -74,7 +63,7 @@ el cliente web debe publicarse por separado. En una compilación de producción,
 el cliente usa esta URL automáticamente. También puedes sobrescribirla con:
 
 ```sh
-VITE_SERVER_URL=https://pax-game.onrender.com npm --prefix client run build
+VITE_SERVER_URL=https://pax-game.onrender.com npm run build --workspace=client
 ```
 
 Para jugar online, publica `client/dist` en Firebase Hosting, Vercel, Netlify
@@ -118,14 +107,19 @@ Para activarlo:
 {
   "rules": {
     "salas": {
+      ".read": "auth != null",
       "$codigo": {
-        ".read": "auth != null",
         ".write": "auth != null"
       }
     }
   }
 }
 ```
+
+La regla de lectura debe estar en `salas`, no solo dentro de `$codigo`,
+porque «Partida rápida» consulta la colección completa para encontrar una sala
+pública disponible. Si se usa la regla anterior con la lectura únicamente en
+`$codigo`, Firebase responde `permission_denied at /salas`.
 
 La pantalla inicial permitirá crear una sala o unirse con un código de seis
 caracteres. El creador puede iniciar con menos de cuatro personas y las ranuras
