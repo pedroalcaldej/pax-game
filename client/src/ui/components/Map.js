@@ -41,7 +41,7 @@ export class Map {
     this.proposalPreview = null;
     this.hoveredPosition = null;
     this.zoom = 1;
-    this.minZoom = 0.2;
+    this.minZoom = 0.05;
     this.maxZoom = 2;
     this.dragStart = null;
     this.didDrag = false;
@@ -71,6 +71,7 @@ export class Map {
     this.viewport.innerHTML = '';
     this.viewport.appendChild(this.container);
     this.container.appendChild(this.canvas);
+    this.observeViewportSize();
 
     this.canvas.addEventListener('click', (event) => this.handleClick(event));
     this.canvas.addEventListener('pointerdown', (event) => this.startPan(event));
@@ -151,8 +152,8 @@ export class Map {
   }
 
   getFitZoom() {
-    const availableWidth = Math.max(1, this.container.clientWidth - 32);
-    const availableHeight = Math.max(1, this.container.clientHeight - 32);
+    const availableWidth = Math.max(1, this.container.clientWidth - 24);
+    const availableHeight = Math.max(1, this.container.clientHeight - 24);
     const fit = Math.min(
       availableWidth / this.canvas.width,
       availableHeight / this.canvas.height
@@ -196,6 +197,21 @@ export class Map {
     this.zoomAt(this.getFitZoom());
     this.container.scrollLeft = 0;
     this.container.scrollTop = 0;
+  }
+
+  observeViewportSize() {
+    if (globalThis.ResizeObserver) {
+      this.resizeObserver = new ResizeObserver(() => this.fitToPanel());
+      this.resizeObserver.observe(this.viewport);
+      return;
+    }
+    this.resizeFallback = () => this.fitToPanel();
+    window.addEventListener('resize', this.resizeFallback);
+  }
+
+  destroy() {
+    this.resizeObserver?.disconnect();
+    if (this.resizeFallback) window.removeEventListener('resize', this.resizeFallback);
   }
 
   handleWheel(event) {

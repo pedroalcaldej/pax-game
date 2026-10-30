@@ -86,8 +86,13 @@ Publica el contenido de `client/dist` en un servicio de hosting estático. Mant�
 
 | Ruta | Contenido |
 | --- | --- |
-| `client/` | Cliente web, interfaz y conexión a salas Firebase. |
-| `server/` | Servidor Node.js, salas Socket.IO y lógica autoritativa del juego. |
+| `client/src/ui/screens/GameScreen.js` | Coordina la partida y sincroniza la interfaz con el estado recibido. |
+| `client/src/ui/screens/LobbyScreen.js` | Menú inicial, sala, perfil y confirmación de disponibilidad. |
+| `client/src/ui/components/` | Piezas reutilizables como historial de eventos y botón «Listo». |
+| `client/src/ui/styles/GameScreen.css` | Estilos de la interfaz de juego y el lobby. |
+| `server/src/game/GameState.js` | Estado autoritativo de la partida y delegación a motores de dominio. |
+| `server/src/game/` | Motores de acciones, economía, diplomacia, finanzas, jugadores y bots. |
+| `server/src/network/` | Servidor Socket.IO y administración de salas. |
 | `shared/` | Constantes y definiciones compartidas entre cliente y servidor. |
 | `docs/GAME_DESIGN.md` | Documento detallado de reglas y diseño del juego. |
 
