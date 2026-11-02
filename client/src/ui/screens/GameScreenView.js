@@ -28,10 +28,10 @@ export function renderGameScreen(container) {
           </div>
           <div class="pax-phase"><span class="pax-label">Estado:</span><strong id="phase-value">Inicio de ronda</strong></div>
           <div class="pax-resources" aria-label="Recursos nacionales">
-            <span class="pax-resource" title="Plata"><i class="pax-resource-icon" data-tooltip="Plata" tabindex="0" aria-label="Plata">◉</i><span id="silver-value">—</span></span>
-            <span class="pax-resource" title="Materiales"><i class="pax-resource-icon" data-tooltip="Desde la ronda 2, al inicio: +${ECONOMY.ROUND_PRODUCTION.MATERIALS_PER_FACTORY} por fábrica" tabindex="0" aria-label="Materiales; desde la ronda 2 se producen al inicio de cada ronda">▣</i><span id="materials-value">—</span></span>
-            <span class="pax-resource" title="Influencia"><i class="pax-resource-icon" data-tooltip="Desde la ronda 2, al inicio: +${ECONOMY.ROUND_PRODUCTION.INFLUENCE_PER_CITY} por ciudad o capital" tabindex="0" aria-label="Influencia; desde la ronda 2 se produce al inicio de cada ronda">♧</i><span id="influence-value">—</span></span>
-            <span class="pax-resource" title="Población"><i class="pax-resource-icon" data-tooltip="Población" tabindex="0" aria-label="Población">♟</i><span id="population-value">0</span></span>
+            <span class="pax-resource"><i class="pax-resource-icon" data-tooltip="Plata" tabindex="0" aria-label="Plata">◉</i><span id="silver-value">—</span></span>
+            <span class="pax-resource"><i class="pax-resource-icon" data-tooltip="Desde la ronda 2, al inicio: +${ECONOMY.ROUND_PRODUCTION.MATERIALS_PER_FACTORY} por fábrica" tabindex="0" aria-label="Materiales; desde la ronda 2 se producen al inicio de cada ronda">▣</i><span id="materials-value">—</span></span>
+            <span class="pax-resource"><i class="pax-resource-icon" data-tooltip="Desde la ronda 2, al inicio: +${ECONOMY.ROUND_PRODUCTION.INFLUENCE_PER_CITY} por ciudad o capital" tabindex="0" aria-label="Influencia; desde la ronda 2 se produce al inicio de cada ronda">♧</i><span id="influence-value">—</span></span>
+            <span class="pax-resource"><i class="pax-resource-icon" data-tooltip="Población" tabindex="0" aria-label="Población">♟</i><span id="population-value">0</span></span>
           </div>
           <button class="pax-global-panel-button" id="global-panel-open" type="button" title="Ver información de todos los países y tratados"><span aria-hidden="true">◎</span><span>Panel<br>Global</span></button>
         </header>

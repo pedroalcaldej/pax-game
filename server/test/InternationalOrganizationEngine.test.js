@@ -559,7 +559,7 @@ test('bonds default at maturity, lose influence, accrue one interest per round, 
   assert.equal(repayment.ok, true);
   assert.equal(player.resources.SILVER, 14);
   assert.equal(gameState.bonds[0].balance, 16);
-  assert.equal(gameState.bankFund.SILVER, 10);
+  assert.equal(gameState.bankFund.SILVER, -10);
   gameState.processBondsAtRoundStart(8);
   assert.equal(gameState.bonds[0].balance, 17);
 });
@@ -574,7 +574,7 @@ test('a bond is automatically repaid when the player can cover its maturity bala
   assert.equal(gameState.bonds[0].paid, true);
   assert.equal(gameState.bonds[0].balance, 0);
   assert.equal(player.resources.SILVER, 0);
-  assert.equal(gameState.bankFund.SILVER, 25);
+  assert.equal(gameState.bankFund.SILVER, 5);
   assert.equal(player.resources.INFLUENCE, 20);
 });
 

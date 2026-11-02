@@ -50,39 +50,130 @@ export const FinanceEngine = {
       return { ok: true, message: `Vendiste ${quantity} materiales por ${proceeds} de plata.` };
     }
 
-    if (action.type === 'TRANSFER_RESOURCE') {
-      const { recipientId, resource, amount } = action;
-      const recipient = this.players.get(recipientId);
-      if (!recipient || recipient.id === player.id) {
-        return { ok: false, message: 'Selecciona otro país como destinatario.' };
+    if (action.type === 'PROPOSE_TRADE') {
+      const recipient = this.players.get(action.recipientId);
+      const { offerResource, offerAmount, requestResource, requestAmount } = action;
+      if (!recipient || recipient.id === player.id || recipient.isBot) {
+        return { ok: false, message: 'Selecciona otro jugador humano de la partida.' };
       }
-      if (!VALID_TRADE_RESOURCES.has(resource)) {
-        return { ok: false, message: 'Solo puedes transferir plata o materiales.' };
+      if (
+        !VALID_TRADE_RESOURCES.has(offerResource)
+        || !VALID_TRADE_RESOURCES.has(requestResource)
+        || offerResource === requestResource
+      ) {
+        return { ok: false, message: 'El intercambio debe combinar Plata y Materiales.' };
       }
-      if (!Number.isSafeInteger(amount) || amount < 1) {
-        return { ok: false, message: 'Indica una cantidad entera mayor que cero.' };
+      if (
+        !Number.isSafeInteger(offerAmount) || offerAmount < 1
+        || !Number.isSafeInteger(requestAmount) || requestAmount < 1
+      ) {
+        return { ok: false, message: 'Indica cantidades enteras mayores que cero.' };
       }
-      if (player.resources[resource] < amount) {
-        return { ok: false, message: `No tienes suficientes ${resource === 'SILVER' ? 'plata' : 'materiales'}.` };
+      if (
+        player.resources[offerResource] < offerAmount
+        || recipient.resources[requestResource] < requestAmount
+      ) {
+        return { ok: false, message: 'Uno de los países no tiene los recursos ofrecidos.' };
       }
+
       const tariffExempt = this.areTreatyPartners(
         player.id,
         recipient.id,
         TREATY_TYPES.FREE_TRADE
       ) && !this.isPlayersAtWar(player.id, recipient.id);
-      const tariff = tariffExempt ? 0 : Math.ceil(amount * BANK_TARIFF_RATE);
-      const received = amount - tariff;
-      player.resources[resource] -= amount;
-      recipient.resources[resource] += received;
-      this.bankFund[resource] += tariff;
-      const resourceName = resource === 'SILVER' ? 'de plata' : 'materiales';
+      if (tariffExempt && offerAmount !== requestAmount) {
+        return { ok: false, message: 'Con un TLC activo, el intercambio debe ser 1:1.' };
+      }
+      if (!tariffExempt && (
+        offerAmount - Math.ceil(offerAmount * BANK_TARIFF_RATE) < 1
+        || requestAmount - Math.ceil(requestAmount * BANK_TARIFF_RATE) < 1
+      )) {
+        return { ok: false, message: 'Sin TLC, cada cantidad debe ser suficiente para que el arancel no consuma todo el recurso.' };
+      }
+
+      const offer = {
+        id: `trade-offer-${this.nextTradeOfferId++}`,
+        proposerId: player.id,
+        recipientId: recipient.id,
+        proposerName: player.name,
+        recipientName: recipient.name,
+        offerResource,
+        offerAmount,
+        requestResource,
+        requestAmount,
+        createdRound: this.currentRound
+      };
+      this.tradeOffers.push(offer);
       this.recordEvent(
-        `${player.name} transfirió ${amount} ${resourceName} a ${recipient.name}; ${tariff} ${resourceName} ingresaron al Banco Mundial y el destinatario recibió ${received}.`
+        `${player.name} propuso a ${recipient.name} intercambiar ${offerAmount} ${offerResource === 'SILVER' ? 'de Plata' : 'Materiales'} por ${requestAmount} ${requestResource === 'SILVER' ? 'de Plata' : 'Materiales'}.`
+      );
+      return { ok: true, message: `Propuesta de intercambio enviada a ${recipient.name}.` };
+    }
+
+    if (action.type === 'RESPOND_TO_TRADE') {
+      const offerIndex = this.tradeOffers.findIndex((entry) => entry.id === action.offerId);
+      const offer = this.tradeOffers[offerIndex];
+      if (!offer || offer.recipientId !== player.id) {
+        return { ok: false, message: 'No tienes una propuesta de intercambio con ese identificador.' };
+      }
+      if (typeof action.accepted !== 'boolean') {
+        return { ok: false, message: 'La respuesta a la propuesta no es válida.' };
+      }
+      if (!action.accepted) {
+        this.tradeOffers.splice(offerIndex, 1);
+        this.recordEvent(`${player.name} rechazó la propuesta de intercambio de ${offer.proposerName}.`);
+        return { ok: true, message: 'Rechazaste la propuesta de intercambio.' };
+      }
+
+      const proposer = this.players.get(offer.proposerId);
+      if (!proposer) return { ok: false, message: 'El país que propuso el intercambio ya no está disponible.' };
+      if (
+        proposer.resources[offer.offerResource] < offer.offerAmount
+        || player.resources[offer.requestResource] < offer.requestAmount
+      ) {
+        return { ok: false, message: 'Uno de los países ya no tiene los recursos necesarios; la propuesta sigue pendiente.' };
+      }
+
+      const tariffExempt = this.areTreatyPartners(
+        proposer.id,
+        player.id,
+        TREATY_TYPES.FREE_TRADE
+      ) && !this.isPlayersAtWar(proposer.id, player.id);
+      const proposerTariff = tariffExempt ? 0 : Math.ceil(offer.offerAmount * BANK_TARIFF_RATE);
+      const recipientTariff = tariffExempt ? 0 : Math.ceil(offer.requestAmount * BANK_TARIFF_RATE);
+      const receivedByRecipient = offer.offerAmount - proposerTariff;
+      const receivedByProposer = offer.requestAmount - recipientTariff;
+      if (receivedByRecipient < 1 || receivedByProposer < 1) {
+        return { ok: false, message: 'Las cantidades son demasiado pequeñas para cubrir el arancel; la propuesta sigue pendiente.' };
+      }
+
+      proposer.resources[offer.offerResource] -= offer.offerAmount;
+      player.resources[offer.requestResource] -= offer.requestAmount;
+      player.resources[offer.offerResource] += receivedByRecipient;
+      proposer.resources[offer.requestResource] += receivedByProposer;
+      this.bankFund[offer.offerResource] += proposerTariff;
+      this.bankFund[offer.requestResource] += recipientTariff;
+      this.tradeOffers.splice(offerIndex, 1);
+      this.recordEvent(
+        `${player.name} aceptó el intercambio de ${proposer.name}; ${tariffExempt ? 'el TLC permitió el cambio 1:1 sin aranceles' : `el Banco Mundial recaudó ${proposerTariff} ${offer.offerResource} y ${recipientTariff} ${offer.requestResource} de arancel`}.`
       );
       return {
         ok: true,
-        message: `Transferiste ${amount} ${resourceName}; ${recipient.name} recibió ${received}${tariff ? ` tras el arancel de ${tariff}` : ' sin arancel por el TLC'}.`
+        message: tariffExempt
+          ? `Intercambio completado 1:1 con ${proposer.name}; no se cobraron aranceles.`
+          : `Intercambio completado con ${proposer.name}; se aplicaron los aranceles de importación.`
       };
+    }
+
+    if (action.type === 'CANCEL_TRADE') {
+      const offerIndex = this.tradeOffers.findIndex((entry) => entry.id === action.offerId);
+      const offer = this.tradeOffers[offerIndex];
+      if (!offer || offer.proposerId !== player.id) {
+        return { ok: false, message: 'No puedes cancelar esa propuesta de intercambio.' };
+      }
+      this.tradeOffers.splice(offerIndex, 1);
+      this.recordEvent(`${player.name} canceló su propuesta de intercambio a ${offer.recipientName}.`);
+      return { ok: true, message: 'Cancelaste la propuesta de intercambio.' };
     }
 
     if (action.type === 'DONATE_TO_WORLD_BANK') {
@@ -119,6 +210,7 @@ export const FinanceEngine = {
       };
       this.bonds.push(bond);
       player.resources.SILVER += ECONOMY.COSTS.BOND_PROCEEDS;
+      this.bankFund.SILVER -= ECONOMY.COSTS.BOND_PROCEEDS;
       this.recordEvent(
         `${player.name} emitió el bono ${bond.id}: recibió ${ECONOMY.COSTS.BOND_PROCEEDS} de plata y debe pagar ${bond.principal} en la ronda ${bond.dueRound}.`
       );

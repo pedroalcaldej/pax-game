@@ -38,6 +38,8 @@ export class GameState {
     this.freeTradeTreaties = [];
     this.treatyOffers = [];
     this.nextTreatyOfferId = 1;
+    this.tradeOffers = [];
+    this.nextTradeOfferId = 1;
     this.bankFund = { SILVER: 0, MATERIALS: 0 };
     this.worldBankFund = this.bankFund;
     this.bonds = [];
@@ -195,12 +197,36 @@ export class GameState {
     return ActionEngine.resolveTroopMovement.apply(this, args);
   }
 
+  resolveShipMovement(...args) {
+    return ActionEngine.resolveShipMovement.apply(this, args);
+  }
+
+  resolveEmbarkTroops(...args) {
+    return ActionEngine.resolveEmbarkTroops.apply(this, args);
+  }
+
+  resolveDisembarkTroops(...args) {
+    return ActionEngine.resolveDisembarkTroops.apply(this, args);
+  }
+
   removeTroopsFromPlayerOnTile(...args) {
     return ActionEngine.removeTroopsFromPlayerOnTile.apply(this, args);
   }
 
   getTroopsForPlayerOnTile(...args) {
     return ActionEngine.getTroopsForPlayerOnTile.apply(this, args);
+  }
+
+  getShipsForPlayerOnTile(...args) {
+    return ActionEngine.getShipsForPlayerOnTile.apply(this, args);
+  }
+
+  normalizeWaterTroops(...args) {
+    return ActionEngine.normalizeWaterTroops.apply(this, args);
+  }
+
+  getShipyardWaterTile(...args) {
+    return ActionEngine.getShipyardWaterTile.apply(this, args);
   }
 
   applyPlayerAction(...args) {
@@ -248,6 +274,7 @@ export class GameState {
   }
 
   getState() {
+    this.normalizeWaterTroops();
     const publicOISession = this.oiSession
       ? ({
         id: this.oiSession.id,
@@ -283,6 +310,7 @@ export class GameState {
       nonAggressionPacts: this.nonAggressionPacts,
       freeTradeTreaties: this.freeTradeTreaties,
       treatyOffers: this.treatyOffers,
+      tradeOffers: this.tradeOffers,
       bankFund: this.bankFund,
       worldBankFund: this.worldBankFund,
       bonds: this.bonds,

@@ -90,6 +90,7 @@ export class Inspector {
     const planningPhase = this.phase === 2;
     const landCanBuild = ['TR', 'MPT'].includes(tile?.type) && !tile?.building;
     const waterCanBuild = ['AG', 'MPA'].includes(tile?.type) && !tile?.building;
+    const landCanRecruit = ['CAP', 'CIU', 'TR', 'MPT', 'FT'].includes(tile?.type);
     const otherActions = (this.player?.plannedActions || [])
       .filter((action, index) => action && index !== this.activeSlot);
     const silverReserved = otherActions.reduce((sum, action) => {
@@ -101,16 +102,36 @@ export class Inspector {
           : ECONOMY.COSTS.BUILD_FACTORY_SILVER);
       }
       if (action.type === 'RECRUIT_TROOP') return sum + ECONOMY.COSTS.RECRUIT_TROOP_SILVER * (action.count || 1);
+      if (action.type === 'BUILD_SHIP') return sum + ECONOMY.COSTS.BUILD_SHIP_SILVER * (action.count || 1);
       if (action.type === 'MOVE_CAPITAL') return sum + ECONOMY.COSTS.MOVE_CAPITAL_SILVER;
       return sum;
     }, 0);
     const materialsReserved = otherActions.reduce((sum, action) => {
       if (action.type === 'RECRUIT_TROOP') return sum + ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * (action.count || 1);
+      if (action.type === 'BUILD_SHIP') return sum + ECONOMY.COSTS.BUILD_SHIP_MATERIALS * (action.count || 1);
       if (action.type === 'MOVE_CAPITAL') return sum + ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS;
       return sum;
     }, 0);
     const availableSilver = Math.max(0, (resources.SILVER || 0) - silverReserved);
     const availableMaterials = Math.max(0, (resources.MATERIALS || 0) - materialsReserved);
+    const buildShipLimit = Math.floor(Math.min(
+      availableSilver / ECONOMY.COSTS.BUILD_SHIP_SILVER,
+      availableMaterials / ECONOMY.COSTS.BUILD_SHIP_MATERIALS
+    ));
+    const hasShipyardWater = tile?.type === 'FA' || Boolean(
+      this.grid?.[tile?.y - 1]?.[tile?.x]?.type === 'AG'
+      || this.grid?.[tile?.y - 1]?.[tile?.x]?.type === 'MPA'
+      || this.grid?.[tile?.y - 1]?.[tile?.x]?.type === 'FA'
+      || this.grid?.[tile?.y + 1]?.[tile?.x]?.type === 'AG'
+      || this.grid?.[tile?.y + 1]?.[tile?.x]?.type === 'MPA'
+      || this.grid?.[tile?.y + 1]?.[tile?.x]?.type === 'FA'
+      || this.grid?.[tile?.y]?.[tile?.x - 1]?.type === 'AG'
+      || this.grid?.[tile?.y]?.[tile?.x - 1]?.type === 'MPA'
+      || this.grid?.[tile?.y]?.[tile?.x - 1]?.type === 'FA'
+      || this.grid?.[tile?.y]?.[tile?.x + 1]?.type === 'AG'
+      || this.grid?.[tile?.y]?.[tile?.x + 1]?.type === 'MPA'
+      || this.grid?.[tile?.y]?.[tile?.x + 1]?.type === 'FA'
+    );
     const recruitLimit = Math.floor(Math.min(
       availableSilver / ECONOMY.COSTS.RECRUIT_TROOP_SILVER,
       availableMaterials / ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS
@@ -118,6 +139,12 @@ export class Inspector {
     const movementReserved = otherActions
       .filter((action) => action.type === 'MOVE_TROOPS' && action.x === tile?.x && action.y === tile?.y)
       .reduce((sum, action) => sum + action.troops, 0);
+    const ships = tile?.shipsByPlayer?.[this.player?.id] || 0;
+    const shipsReserved = otherActions
+      .filter((action) => action.type === 'MOVE_SHIPS' && action.x === tile?.x && action.y === tile?.y)
+      .reduce((sum, action) => sum + action.ships, 0);
+    const transportedTroops = tile?.transportedTroopsByPlayer?.[this.player?.id] || 0;
+    const movableShips = Math.max(0, Math.min(ships - shipsReserved, transportedTroops));
     const visitorTroops = tile?.visitingTroops?.[this.player?.id] || 0;
     const tileTroops = tile?.ownerId === this.player?.id
       ? (tile.troops || 0) - Object.entries(tile.visitingTroops || {})
@@ -156,8 +183,8 @@ export class Inspector {
         title: 'Reclutar tropa',
         cost: `${ECONOMY.COSTS.RECRUIT_TROOP_SILVER} plata · ${ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS} materiales por tropa`,
         quantity: quantity('RECRUIT_TROOP', recruitLimit, 'tropas', 'count'),
-        enabled: planningPhase && isOwned && recruitLimit > 0,
-        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : 'Recursos insuficientes o reservados'
+        enabled: planningPhase && isOwned && landCanRecruit && recruitLimit > 0,
+        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : !landCanRecruit ? 'Solo se puede reclutar en tierra' : 'Recursos insuficientes o reservados'
       },
       {
         type: 'MOVE_TROOPS',
@@ -166,6 +193,24 @@ export class Inspector {
         quantity: quantity('MOVE_TROOPS', movableTroops, 'tropas', 'troops'),
         enabled: planningPhase && (isOwned || visitorTroops > 0) && movableTroops > 0,
         reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned && visitorTroops === 0 ? 'No hay tropas propias en esta casilla' : 'No hay tropas disponibles para otro movimiento'
+      },
+      {
+        type: 'BUILD_SHIP',
+        title: 'Construir barco',
+        cost: `${ECONOMY.COSTS.BUILD_SHIP_SILVER} plata · ${ECONOMY.COSTS.BUILD_SHIP_MATERIALS} materiales`,
+        quantity: quantity('BUILD_SHIP', buildShipLimit, 'barcos', 'count'),
+        enabled: planningPhase && isOwned && ['FT', 'FA'].includes(tile?.type)
+          && hasShipyardWater
+          && buildShipLimit > 0,
+        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere una fábrica propia' : !['FT', 'FA'].includes(tile?.type) ? 'Selecciona una fábrica' : !hasShipyardWater ? 'La fábrica debe estar junto al agua' : 'Recursos insuficientes o reservados'
+      },
+      {
+        type: 'MOVE_SHIPS',
+        title: 'Mover barcos',
+        cost: `${movableShips} barcos disponibles`,
+        quantity: quantity('MOVE_SHIPS', movableShips, 'barcos', 'ships'),
+        enabled: planningPhase && movableShips > 0,
+        reason: !planningPhase ? 'Disponible en fase de planificación' : ships <= 0 ? 'No hay barcos propios en esta casilla' : transportedTroops <= 0 ? 'Cada barco debe llevar al menos una tropa embarcada' : 'Todos los barcos ya están reservados para otro movimiento'
       },
       {
         type: 'MOVE_CAPITAL',
@@ -214,14 +259,12 @@ export class Inspector {
       ? escapeHtml(owner?.name || nation.name)
       : 'Territorio neutral';
     const building = tile.building ? escapeHtml(tile.building) : 'Sin edificio';
-    const feature = tile.waterFeature === 'RIVER'
-      ? 'Río'
-      : tile.waterFeature === 'SEA'
-        ? 'Mar'
-        : null;
+    const isWater = [TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA, TERRAIN_TYPES.FA].includes(tile.type);
     const details = [
       ['Población', tile.population ?? 0, '♟'],
       ['Tropas', tile.troops ?? 0, '⚔'],
+      ['Barcos', Object.values(tile.shipsByPlayer || {}).reduce((sum, count) => sum + count, 0), '⚓'],
+      ['Tropas embarcadas', Object.values(tile.transportedTroopsByPlayer || {}).reduce((sum, count) => sum + count, 0), '◉'],
       ['Defensa', tile.defense ?? 0, '⬡']
     ];
 
@@ -252,13 +295,16 @@ export class Inspector {
           </article>
           <section class="pax-development">
             <h3>Opciones de desarrollo</h3>
-            ${feature ? `<div class="pax-feature-tag">${feature}</div>` : ''}
+            ${isWater ? '<div class="pax-feature-tag">Agua</div>' : ''}
             <p>${this.phase === 2
               ? 'Elige un espacio de acción abajo. La orden queda guardada allí y se ejecuta al terminar el tiempo.'
               : 'Las órdenes se habilitan durante la fase de planificación y se ejecutan al terminar.'}</p>
             <div class="pax-tile-actions">
               ${this.getActions(tile, nation).map((action) => `
-                <div class="pax-tile-action-control">
+                <div
+                  class="pax-tile-action-control"
+                  ${action.enabled ? '' : `data-tooltip="${escapeHtml(action.reason)}"`}
+                >
                   ${action.quantity ? `
                     <label class="pax-tile-quantity">
                       <span>Cantidad (${action.quantity.unit})</span>
@@ -305,8 +351,10 @@ export class Inspector {
           type,
           x: tile.x,
           y: tile.y,
-          ...(type === 'RECRUIT_TROOP' ? { count: amount } : {}),
-          ...(type === 'MOVE_TROOPS' ? { troops: amount } : {})
+          ...(type === 'RECRUIT_TROOP' || type === 'BUILD_SHIP' ? { count: amount } : {}),
+          ...(['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(type)
+            ? { [type === 'MOVE_SHIPS' ? 'ships' : 'troops']: amount }
+            : {})
         });
       });
     }

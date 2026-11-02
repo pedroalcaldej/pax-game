@@ -78,21 +78,27 @@ export class InternationalOrganizationEngine {
     gameState.oiProposals = [];
     gameState.oiSession = {
       id: `oi-session-${gameState.currentRound}`,
-      phase: 'voting',
+      phase: selected.length ? 'voting' : 'complete',
       meetingAfterRound: gameState.currentRound,
-      timeRemaining: TIMINGS.DECISION_PHASE_DURATION,
+      timeRemaining: selected.length ? TIMINGS.DECISION_PHASE_DURATION : 0,
       proposals: selected,
       votes: {},
       botVoterIds: [],
-      results: null
+      results: selected.length ? null : []
     };
 
-    for (const player of gameState.players.values()) {
-      if (player.isBot) {
-        gameState.oiSession.votes[player.id] = this.getBotBallot(gameState, player, selected);
-        gameState.oiSession.botVoterIds.push(player.id);
-        gameState.recordEvent(`${player.name} (bot) registró su papeleta de la OI.`);
+    if (selected.length) {
+      for (const player of gameState.players.values()) {
+        if (player.isBot) {
+          gameState.oiSession.votes[player.id] = this.getBotBallot(gameState, player, selected);
+          gameState.oiSession.botVoterIds.push(player.id);
+          gameState.recordEvent(`${player.name} (bot) registró su papeleta de la OI.`);
+        }
       }
+    } else {
+      gameState.recordEvent('La reunión de la OI terminó: no hay mociones para votar.');
+      gameState.aggressions = [];
+      gameState.casusBelli = [];
     }
     gameState.recordEvent(`Comenzó la sesión de la OI de la ronda ${gameState.currentRound}.`);
     return gameState.oiSession;

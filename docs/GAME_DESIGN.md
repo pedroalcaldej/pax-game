@@ -48,6 +48,8 @@ La población de las Ciudades (`CIU`) es el motor fiscal del Estado. Las cantida
 
 Al comenzar, cada país recibe **100 de Plata, 100 de Materiales y 100 de Influencia**. Su Capital y Ciudad comienzan con **50 habitantes cada una**. Desde el inicio de la ronda 2, cada fábrica produce **2 de Materiales** y cada ciudad/capital genera **1 de Influencia**; después se actualiza la población y se recaudan los impuestos. Las cantidades iniciales, la producción, los precios y los costos se centralizan en `ECONOMY` dentro de `shared/Constants.js`.
 
+El Mercado Global tiene precios fijos por Material: comprar uno cuesta **3 de Plata** y vender uno entrega **1 de Plata**. La cantidad elegida se expresa en Materiales.
+
 ### 3.2. Infraestructura Industrial
 
 Los Materiales son indispensables para construir defensas y entrenar fuerzas armadas. Se producen mediante:
@@ -60,9 +62,11 @@ Los Materiales son indispensables para construir defensas y entrenar fuerzas arm
 
 - **Mercado Global:** Cada jugador puede comprar materiales por **1 de Plata** o
   venderlos por **1 de Plata** cada uno. El sistema neutral no tiene límites de stock.
-- **Transferencias directas:** Enviar Plata o Materiales a otro país retiene el **20%**
-  como arancel del Banco Mundial, redondeado hacia arriba. El receptor obtiene el resto;
-  los TLC activos entre ambos países eliminan el arancel.
+- **Comercio entre países:** Un jugador propone entregar Plata a cambio de Materiales,
+  o viceversa; el destinatario puede aceptar o rechazar y el proponente puede cancelar.
+  Sin TLC, el Banco Mundial retiene el **20%** de cada recurso transferido, redondeado
+  hacia arriba. Con un TLC activo y sin guerra, las cantidades deben ser iguales (1:1)
+  y no se cobran aranceles. El servidor vuelve a comprobar los saldos al aceptar.
 - **Emisión de Bonos:** Un bono entrega **20 de Plata** y crea una deuda de **25 de Plata**
   con vencimiento cinco rondas después de la emisión. El saldo se cobra
   automáticamente al vencimiento si hay fondos suficientes. El impago resta
@@ -71,8 +75,8 @@ Los Materiales son indispensables para construir defensas y entrenar fuerzas arm
 - **Ingreso de Influencia:** al inicio de cada ronda desde la segunda, cada ciudad o capital controlada
   otorga **1 Punto de Influencia Política**. Durante la planificación, el jugador también
   puede donar **15 de Plata al Banco Mundial** para obtener **1 Punto de Influencia**.
-- **Tratado de Libre Comercio (TLC):** Acuerdo político de cinco rondas que exime del
-  arancel de transferencias directas. Una acción militar contra el firmante rompe el TLC.
+- **Tratado de Libre Comercio (TLC):** Acuerdo político de cinco rondas que habilita
+  intercambios 1:1 sin aranceles. Una acción militar contra el firmante rompe el TLC.
   No se permiten nuevos TLC durante una guerra: combate en las últimas tres rondas o
   tropas de un país ocupando territorio del otro.
 
@@ -80,8 +84,9 @@ Los Materiales son indispensables para construir defensas y entrenar fuerzas arm
 
 ## 4. Logística y Combate Militar
 
-El combate implementado es terrestre. Las reglas futuras de barcos, transporte de tropas,
-escolta comercial y bloqueo costero aún no están activas.
+El combate implementado incluye operaciones terrestres y navales. Las flotas se construyen
+en fábricas costeras, se desplazan por casillas de agua y pueden transportar tropas.
+La escolta comercial y el bloqueo costero aún no están activos.
 
 ### Combate terrestre
 
@@ -93,7 +98,22 @@ Las tropas terrestres pueden atacar una casilla terrestre adyacente que pertenez
 - Atacar a un firmante de un Pacto de No Agresión vigente rompe inmediatamente el
   pacto y descuenta hasta 10 puntos de Influencia Política al atacante. Por ahora no se
   requiere Casus Belli.
-- No se aplica la antigua mecánica de bloqueo en dos etapas; el combate y la captura se resuelven en la misma ronda. El movimiento marítimo y el combate naval aún no están implementados.
+- No se aplica la antigua mecánica de bloqueo en dos etapas; el combate y la captura se resuelven en la misma ronda.
+
+### Operaciones navales
+
+- Una fábrica propia costera permite construir barcos durante la planificación. Cada barco
+  cuesta 15 de Plata y 15 de Materiales, y transporta hasta 5 tropas.
+- Los barcos se mueven una casilla de agua adyacente por acción y cada barco que se mueve
+  debe llevar al menos una tropa embarcada. Una flota puede embarcar tropas desde tierra
+  o desde una casilla de agua que comparta con tropas, y desembarcarlas en una casilla
+  terrestre adyacente; no se permite desembarcar directamente en territorio enemigo.
+- La acción de mover tropas cubre el movimiento terrestre, el embarque y el desembarque:
+  tierra → tierra mueve, tierra → agua embarca y agua → tierra desembarca. Todas estas
+  transiciones admiten las ocho casillas vecinas, incluidas las diagonales.
+- Si dos flotas hostiles ocupan la misma casilla, se resuelve un combate naval durante la
+  resolución de acciones. La flota atacante toma el control si sobrevive y las pérdidas
+  reducen también la capacidad disponible para las tropas embarcadas.
 
 ---
 
@@ -191,8 +211,10 @@ una Ciudad. Cada casilla conserva coordenadas, país (o neutral), tipo, poblaci�
 defensa, edificio y estado (`NORMAL`, `CONFLICT` o `BLOCKED`). Al seleccionarla con un
 clic, el inspector muestra estos valores; el cursor resalta suavemente la casilla
 señalada y las casillas sin país no llevan borde de soberanía.
-El agua se genera en cuerpos conectados de mar (sin charcos aislados) y un río continuo,
-que se distingue con un tono azul más claro.
+El mapa genera cuerpos de agua grandes; todos se representan simplemente como agua,
+sin distinguir entre mar, río, laguna o lago. Su forma y posición varían según el mapa.
+Las posiciones iniciales de los países también cambian en cada partida, manteniéndose
+separadas y distribuidas por distintas zonas del tablero.
 El tablero se ajusta al panel al iniciar; la rueda del ratón permite acercar y alejar,
 los controles ofrecen zoom y ajuste al panel, y se puede desplazar arrastrando el mapa
 o usando las barras de desplazamiento.

@@ -174,6 +174,10 @@ export class PhaseManager {
     const session = InternationalOrganizationEngine.startSession(this.gameState);
     this.gameState.timeRemaining = session.timeRemaining;
     this.notifyState();
+    if (session.phase === 'complete') {
+      this.schedulePhase(GAME_PHASES.PHASE_5_SUMMARY, 0);
+      return;
+    }
     if (InternationalOrganizationEngine.haveAllPlayersVoted(this.gameState)) {
       this.completeOISession();
       return;

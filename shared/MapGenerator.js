@@ -11,7 +11,7 @@ const DIRS8 = [
   [-1, 1],  [0, 1],  [1, 1]
 ];
 const DIRS4 = [[0, -1], [1, 0], [0, 1], [-1, 0]];
-const MIN_SEA_SIZE = 12;
+const MIN_WATER_BODY_SIZE = 12;
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -115,18 +115,22 @@ function enforceLandRatio(mask, rng, width, height, minRatio = 0.62, maxRatio = 
   }
 }
 
-function createNationTerritories(width, height) {
+function createNationTerritories(width, height, rng) {
   const positions = [
-    { x: 0.22, y: 0.22 },
-    { x: 0.78, y: 0.22 },
-    { x: 0.22, y: 0.78 },
-    { x: 0.78, y: 0.78 }
+    { x: [0.16, 0.34], y: [0.16, 0.34] },
+    { x: [0.66, 0.84], y: [0.16, 0.34] },
+    { x: [0.16, 0.34], y: [0.66, 0.84] },
+    { x: [0.66, 0.84], y: [0.66, 0.84] }
   ];
+  for (let index = positions.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(rng() * (index + 1));
+    [positions[index], positions[swapIndex]] = [positions[swapIndex], positions[index]];
+  }
   const radius = 1;
 
   return positions.slice(0, NATIONS.length).map((position) => ({
-    x: Math.round((width - 1) * position.x),
-    y: Math.round((height - 1) * position.y),
+    x: Math.round((width - 1) * (position.x[0] + rng() * (position.x[1] - position.x[0]))),
+    y: Math.round((height - 1) * (position.y[0] + rng() * (position.y[1] - position.y[0]))),
     radius
   }));
 }
@@ -141,12 +145,10 @@ function nationAt(x, y, territories) {
 function connectedWaterRegions(landMask, width, height) {
   const visited = new Set();
   const regions = [];
-
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const start = y * width + x;
       if (landMask[y][x] || visited.has(start)) continue;
-
       const region = [];
       const queue = [{ x, y }];
       visited.add(start);
@@ -166,27 +168,75 @@ function connectedWaterRegions(landMask, width, height) {
       regions.push(region);
     }
   }
-
   return regions;
 }
 
-function removeSmallWaterRegions(landMask, width, height) {
+function removeSmallWaterBodies(landMask, width, height) {
   for (const region of connectedWaterRegions(landMask, width, height)) {
-    if (region.length < MIN_SEA_SIZE) {
-      for (const { x, y } of region) landMask[y][x] = true;
+    if (region.length >= MIN_WATER_BODY_SIZE) continue;
+    for (const { x, y } of region) landMask[y][x] = true;
+  }
+}
+
+function carveStartingPorts(landMask, width, height, territories) {
+  for (const territory of territories) {
+    territory.portTile = { x: territory.x, y: territory.y - 1 };
+    for (let y = territory.y - 4; y <= territory.y - 2; y++) {
+      for (let x = territory.x - 2; x <= territory.x + 2; x++) {
+        if (inBounds(x, y, width, height)) landMask[y][x] = false;
+      }
     }
   }
 }
 
-function carveRiver(landMask, width, height, territories, rng) {
-  const riverMask = Array.from({ length: height }, () => Array(width).fill(false));
-  if (width < 3 || height < 2) return riverMask;
+function carveInlandWaterBodies(landMask, width, height, territories, rng) {
+  const bodyCount = 1 + Math.floor(rng() * 2);
+  const minX = 5;
+  const minY = 5;
+  const maxX = width - 6;
+  const maxY = height - 6;
 
-  const minX = Math.max(1, Math.floor(width * 0.35));
-  const maxX = Math.min(width - 2, Math.ceil(width * 0.65));
-  let x = Math.floor((minX + maxX) / 2);
+  for (let body = 0; body < bodyCount; body++) {
+    let center = null;
+    for (let attempt = 0; attempt < 40 && !center; attempt++) {
+      const x = minX + Math.floor(rng() * (maxX - minX + 1));
+      const y = minY + Math.floor(rng() * (maxY - minY + 1));
+      const nearNation = territories.some((territory) => (
+        Math.abs(x - territory.x) < 7 && Math.abs(y - territory.y) < 7
+      ));
+      if (!nearNation) center = { x, y };
+    }
+    if (!center) continue;
+
+    const targetSize = 20 + Math.floor(rng() * 16);
+    const bodyCells = [{ x: center.x, y: center.y }];
+    while (bodyCells.length < targetSize) {
+      const frontier = [];
+      for (const cell of bodyCells) {
+        for (const [dx, dy] of DIRS4) {
+          const candidate = { x: cell.x + dx, y: cell.y + dy };
+          if (
+            Math.abs(candidate.x - center.x) <= 4
+            && Math.abs(candidate.y - center.y) <= 4
+            && !bodyCells.some(({ x, y }) => x === candidate.x && y === candidate.y)
+            && !frontier.some(({ x, y }) => x === candidate.x && y === candidate.y)
+          ) frontier.push(candidate);
+        }
+      }
+      if (!frontier.length) break;
+      bodyCells.push(frontier[Math.floor(rng() * frontier.length)]);
+    }
+    for (const { x, y } of bodyCells) landMask[y][x] = false;
+  }
+}
+
+function carveRiver(landMask, width, height, territories, rng) {
+  if (width < 3 || height < 2) return;
+
+  const minX = 1;
+  const maxX = width - 2;
+  let x = minX + Math.floor(rng() * (maxX - minX + 1));
   let y = 0;
-  riverMask[y][x] = true;
   landMask[y][x] = false;
 
   while (y < height - 1) {
@@ -198,7 +248,6 @@ function carveRiver(landMask, width, height, territories, rng) {
       const candidateX = x + stepX;
       if (nationAt(candidateX, y, territories) >= 0) break;
       x = candidateX;
-      riverMask[y][x] = true;
       landMask[y][x] = false;
     }
 
@@ -211,11 +260,8 @@ function carveRiver(landMask, width, height, territories, rng) {
       x = alternateX;
     }
     y = nextY;
-    riverMask[y][x] = true;
     landMask[y][x] = false;
   }
-
-  return riverMask;
 }
 
 function randomLandTile(grid, rng, predicate) {
@@ -229,7 +275,7 @@ function randomLandTile(grid, rng, predicate) {
   return matches[Math.floor(rng() * matches.length)];
 }
 
-function placeNear(grid, origin, rng, nationId) {
+function placeNear(grid, origin, rng, nationId, excludedTile = null) {
   const candidates = [];
   for (let y = origin.y - 2; y <= origin.y + 2; y++) {
     for (let x = origin.x - 2; x <= origin.x + 2; x++) {
@@ -237,6 +283,7 @@ function placeNear(grid, origin, rng, nationId) {
       if (!tile) continue;
       if (tile.nationId !== nationId) continue;
       if (tile.x === origin.x && tile.y === origin.y) continue;
+      if (tile === excludedTile) continue;
       if (tile.type !== TERRAIN_TYPES.TR) continue;
       candidates.push(tile);
     }
@@ -245,7 +292,7 @@ function placeNear(grid, origin, rng, nationId) {
     return candidates[Math.floor(rng() * candidates.length)];
   }
   return randomLandTile(grid, rng, (tile) => (
-    tile.nationId === nationId && tile.type === TERRAIN_TYPES.TR
+    tile.nationId === nationId && tile.type === TERRAIN_TYPES.TR && tile !== excludedTile
   ));
 }
 
@@ -271,9 +318,9 @@ export function generateInitialGrid(seed = Date.now()) {
   for (let i = 0; i < 3; i++) {
     landMask = smoothLand(landMask, width, height);
   }
-  enforceLandRatio(landMask, rng, width, height);
+  enforceLandRatio(landMask, rng, width, height, 0.60, 0.75);
 
-  const seeds = createNationTerritories(width, height);
+  const seeds = createNationTerritories(width, height, rng);
 
   seeds.forEach((territory) => {
     for (let y = territory.y - territory.radius; y <= territory.y + territory.radius; y++) {
@@ -283,8 +330,10 @@ export function generateInitialGrid(seed = Date.now()) {
     }
   });
 
-  removeSmallWaterRegions(landMask, width, height);
-  const riverMask = carveRiver(landMask, width, height, seeds, rng);
+  removeSmallWaterBodies(landMask, width, height);
+  carveStartingPorts(landMask, width, height, seeds);
+  carveInlandWaterBodies(landMask, width, height, seeds, rng);
+  carveRiver(landMask, width, height, seeds, rng);
 
   const grid = [];
   for (let y = 0; y < height; y++) {
@@ -295,7 +344,6 @@ export function generateInitialGrid(seed = Date.now()) {
       const nationId = territoryNationId >= 0 ? territoryNationId : null;
       const type = isLand ? TERRAIN_TYPES.TR : TERRAIN_TYPES.AG;
       const tile = createTile(x, y, type, nationId);
-      tile.waterFeature = isLand ? null : riverMask[y][x] ? 'RIVER' : 'SEA';
       row.push(tile);
     }
     grid.push(row);
@@ -310,7 +358,8 @@ export function generateInitialGrid(seed = Date.now()) {
       troops: 4
     });
 
-    const city = placeNear(grid, seedPos, rng, nationId);
+    const portTile = grid[seedPos.portTile.y][seedPos.portTile.x];
+    const city = placeNear(grid, seedPos, rng, nationId, portTile);
     if (city) {
       applyType(city, TERRAIN_TYPES.CIU, {
         defense: 2,
@@ -319,11 +368,10 @@ export function generateInitialGrid(seed = Date.now()) {
       });
     }
 
-    const mpt = placeNear(grid, seedPos, rng, nationId);
+    const mpt = placeNear(grid, seedPos, rng, nationId, portTile);
     if (mpt) applyType(mpt, TERRAIN_TYPES.MPT);
 
-    const ft = placeNear(grid, seedPos, rng, nationId);
-    if (ft) applyType(ft, TERRAIN_TYPES.FT);
+    if (portTile) applyType(portTile, TERRAIN_TYPES.FT);
   });
 
   const scatter = (baseType, nextType, chance) => {

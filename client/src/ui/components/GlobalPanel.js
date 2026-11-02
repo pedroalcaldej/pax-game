@@ -113,7 +113,7 @@ export class GlobalPanel {
               <option value="${TREATY_TYPES.FREE_TRADE}">Tratado de Libre Comercio</option>
             </select>
           </label>
-          <p>Los tratados aceptados duran cinco rondas. Un TLC exime del arancel del ${Math.round(ECONOMY.BANK_TRANSFER_TARIFF_RATE * 100)}% en transferencias directas mientras no haya conflicto militar.</p>
+          <p>Los tratados aceptados duran cinco rondas. Un TLC permite intercambios 1:1 sin aranceles mientras no haya conflicto militar.</p>
           <button type="submit" id="treaty-propose-button">Enviar propuesta</button>
           <p class="pax-global-panel-status" id="treaty-status" role="status"></p>
         </form>

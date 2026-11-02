@@ -22,7 +22,7 @@ export class FinancePanel {
     this.container.innerHTML = `
       <section class="pax-finance">
         <div id="finance-economy-content">
-        <p class="pax-finance-note">Compra materiales por ${ECONOMY.COSTS.MARKET_BUY_MATERIAL_SILVER} de plata o vende cada material por ${ECONOMY.COSTS.MARKET_SELL_MATERIAL_SILVER} de plata. Las operaciones se suspenden durante la reunión de la OI.</p>
+        <p class="pax-finance-note">Compra cada Material por ${ECONOMY.COSTS.MARKET_BUY_MATERIAL_SILVER} de Plata o vende cada Material por ${ECONOMY.COSTS.MARKET_SELL_MATERIAL_SILVER} de Plata. Las operaciones se suspenden durante la reunión de la OI.</p>
         <div class="pax-market-card">
           <div class="pax-market-quantity">
             <button type="button" data-quantity-adjust="-1" aria-label="Reducir cantidad">−</button>
@@ -36,6 +36,32 @@ export class FinancePanel {
             <button type="button" data-market-action="SELL_MATERIALS">Vender</button>
           </div>
         </div>
+        <section class="pax-peer-trade">
+          <h4>Comercio con otros países</h4>
+          <form data-trade-proposal class="pax-peer-trade-form">
+            <select id="trade-proposal-recipient" name="recipientId" aria-label="País destinatario"></select>
+            <div class="pax-peer-trade-fields">
+              <label>Ofreces
+                <select id="trade-offer-resource" name="offerResource" aria-label="Recurso ofrecido">
+                  <option value="SILVER">Plata</option>
+                  <option value="MATERIALS">Materiales</option>
+                </select>
+                <input name="offerAmount" type="number" min="1" step="1" value="1" aria-label="Cantidad ofrecida">
+              </label>
+              <span aria-hidden="true">⇄</span>
+              <label>Solicitas
+                <select id="trade-request-resource" name="requestResource" aria-label="Recurso solicitado">
+                  <option value="MATERIALS">Materiales</option>
+                  <option value="SILVER">Plata</option>
+                </select>
+                <input name="requestAmount" type="number" min="1" step="1" value="1" aria-label="Cantidad solicitada">
+              </label>
+            </div>
+            <button type="submit" id="trade-propose-button">Proponer intercambio</button>
+          </form>
+          <div class="pax-peer-trade-offers" id="trade-offer-list"></div>
+          <small>Con un TLC activo, las cantidades deben ser 1:1 y no pagan arancel. Sin TLC, el Banco Mundial retiene el ${Math.round(ECONOMY.BANK_TRANSFER_TARIFF_RATE * 100)}% de cada recurso transferido.</small>
+        </section>
         </div>
         <div id="finance-debt-content">
           <div class="pax-bank-card">
@@ -73,6 +99,20 @@ export class FinancePanel {
         });
         return;
       }
+      const tradeResponse = event.target.closest?.('[data-trade-response]');
+      if (tradeResponse) {
+        this.onAction({
+          type: 'RESPOND_TO_TRADE',
+          offerId: tradeResponse.dataset.offerId,
+          accepted: tradeResponse.dataset.tradeResponse === 'accept'
+        });
+        return;
+      }
+      const tradeCancel = event.target.closest?.('[data-trade-cancel]');
+      if (tradeCancel) {
+        this.onAction({ type: 'CANCEL_TRADE', offerId: tradeCancel.dataset.offerId });
+        return;
+      }
       const button = event.target.closest?.('[data-issue-bond], [data-repay-bond], [data-donate-world-bank]');
       if (!button) return;
       if (button.matches('[data-donate-world-bank]')) {
@@ -83,16 +123,38 @@ export class FinancePanel {
         this.onAction({ type: 'ISSUE_BOND' });
         return;
       }
-      const form = button.closest('[data-bond-form]');
-      const amount = Number(new FormData(form).get('amount'));
+      const input = button.parentElement?.querySelector('[data-bond-amount]');
+      const amount = Number(input?.value);
       this.onAction({
         type: 'REPAY_BOND',
         bondId: button.dataset.repayBond,
         amount
       });
     });
+    this.root.addEventListener('submit', (event) => {
+      const form = event.target.closest?.('[data-trade-proposal]');
+      if (!form) return;
+      event.preventDefault();
+      const values = new FormData(form);
+      this.onAction({
+        type: 'PROPOSE_TRADE',
+        recipientId: values.get('recipientId'),
+        offerResource: values.get('offerResource'),
+        offerAmount: Number(values.get('offerAmount')),
+        requestResource: values.get('requestResource'),
+        requestAmount: Number(values.get('requestAmount'))
+      });
+    });
     this.root.addEventListener('input', (event) => {
       if (event.target.matches('#market-quantity-input')) this.updateMarketQuantity();
+    });
+    this.root.addEventListener('change', (event) => {
+      if (!event.target.matches('#trade-offer-resource, #trade-request-resource')) return;
+      const offerResource = this.container.querySelector('#trade-offer-resource');
+      const requestResource = this.container.querySelector('#trade-request-resource');
+      if (offerResource.value === requestResource.value) {
+        requestResource.value = offerResource.value === 'SILVER' ? 'MATERIALS' : 'SILVER';
+      }
     });
   }
 
@@ -112,14 +174,35 @@ export class FinancePanel {
     if (marketInput) {
       marketInput.max = String(Math.max(
         1,
-        Math.min(materials, Math.floor(silver / ECONOMY.COSTS.MARKET_BUY_MATERIAL_SILVER) || 1)
+        Math.max(
+          Math.floor(silver / ECONOMY.COSTS.MARKET_BUY_MATERIAL_SILVER),
+          materials
+        )
       ));
     }
+    const tradeRecipient = root.querySelector('#trade-proposal-recipient');
+    const tradePlayers = players.filter((player) => player.id !== localPlayerId && !player.isBot);
+    const recipientSignature = tradePlayers.map((player) => `${player.id}:${player.name}`).join('|');
+    if (tradeRecipient && recipientSignature !== this.tradeRecipientSignature) {
+      const selectedRecipient = tradeRecipient.value;
+      tradeRecipient.innerHTML = tradePlayers.length
+        ? tradePlayers.map((player) => (
+          `<option value="${escapeHtml(player.id)}">${escapeHtml(player.name || 'País')}</option>`
+        )).join('')
+        : '<option value="">No hay otros jugadores humanos</option>';
+      if (tradePlayers.some((player) => player.id === selectedRecipient)) {
+        tradeRecipient.value = selectedRecipient;
+      }
+      this.tradeRecipientSignature = recipientSignature;
+    }
+    root.querySelector('#trade-propose-button').disabled = !active || !tradePlayers.length;
+    this.renderTradeOffers(gameState, localPlayerId, tradePlayers, active);
     this.updateMarketQuantity();
     for (const control of root.querySelectorAll(
-      '[data-market-action], #market-quantity-input, [data-quantity-adjust], [data-quantity-max], [data-issue-bond], [data-donate-world-bank]'
+      '[data-market-action], #market-quantity-input, [data-quantity-adjust], [data-quantity-max], #trade-proposal-recipient, [data-trade-proposal] select, [data-trade-proposal] input, [data-trade-proposal] button, [data-trade-response], [data-trade-cancel], [data-issue-bond], [data-donate-world-bank]'
     )) {
-      control.disabled = !active;
+      const needsRecipient = control.matches('#trade-proposal-recipient, #trade-propose-button');
+      control.disabled = !active || (needsRecipient && !tradePlayers.length);
     }
 
     const bonds = (gameState?.bonds || []).filter((bond) => (
@@ -150,6 +233,35 @@ export class FinancePanel {
     const output = this.container.querySelector('#market-quantity');
     if (!input || !output) return;
     output.textContent = input.value || '1';
+  }
+
+  renderTradeOffers(gameState, localPlayerId, tradePlayers, canRespond) {
+    const offersEl = this.root.querySelector('#trade-offer-list');
+    if (!offersEl) return;
+    const playersById = new Map((gameState?.players || []).map((player) => [player.id, player]));
+    const offers = (gameState?.tradeOffers || []).filter((offer) => (
+      offer.proposerId === localPlayerId || offer.recipientId === localPlayerId
+    ));
+    offersEl.innerHTML = offers.length
+      ? offers.map((offer) => {
+        const incoming = offer.recipientId === localPlayerId;
+        const otherPlayer = playersById.get(incoming ? offer.proposerId : offer.recipientId);
+        const playerName = escapeHtml(otherPlayer?.name || (incoming ? offer.proposerName : offer.recipientName) || 'País');
+        const offerResource = offer.offerResource === 'SILVER' ? 'Plata' : 'Materiales';
+        const requestResource = offer.requestResource === 'SILVER' ? 'Plata' : 'Materiales';
+        const offerText = `${formatValue(offer.offerAmount)} ${offerResource}`;
+        const requestText = `${formatValue(offer.requestAmount)} ${requestResource}`;
+        return `
+          <article class="pax-peer-trade-offer">
+            <strong>${incoming ? `Propuesta de ${playerName}` : `Propuesta para ${playerName}`}</strong>
+            <span>${incoming ? `Recibes ${offerText} · entregas ${requestText}` : `Ofreces ${offerText} · solicitas ${requestText}`}</span>
+            ${incoming
+              ? `<div><button type="button" data-trade-response="accept" data-offer-id="${escapeHtml(offer.id)}" ${canRespond ? '' : 'disabled'}>Aceptar</button><button type="button" data-trade-response="reject" data-offer-id="${escapeHtml(offer.id)}" ${canRespond ? '' : 'disabled'}>Rechazar</button></div>`
+              : `<button type="button" data-trade-cancel data-offer-id="${escapeHtml(offer.id)}" ${canRespond ? '' : 'disabled'}>Cancelar</button>`}
+          </article>
+        `;
+      }).join('')
+      : `<p class="pax-peer-trade-empty">${tradePlayers.length ? 'No hay propuestas pendientes.' : 'Conéctate a una partida multijugador para comerciar con otros jugadores.'}</p>`;
   }
 
   setStatus(message) {

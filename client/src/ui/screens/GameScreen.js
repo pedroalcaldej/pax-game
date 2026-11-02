@@ -91,6 +91,7 @@ export class GameScreen {
     this.player = null;
     this.events = [];
     this.localEvents = [];
+    this.seenBondEventKeys = null;
     this.pendingMoveSource = null;
     this.activeActionSlot = 0;
     this.startPending = false;
@@ -131,7 +132,11 @@ export class GameScreen {
         if (picker.id === 'lobby-player-color') this.saveLobbyProfile();
       }
     });
-    this.eventLog = new EventLog(this.container.querySelector('#event-log'));
+    this.eventLog = new EventLog(this.container.querySelector('#event-log'), {
+      onCoordinateHover: (x, y) => this.map?.setHoveredPosition(x, y),
+      onCoordinateLeave: () => this.map?.clearHoveredPosition(),
+      onCoordinateSelect: (x, y) => this.map?.selectPosition(x, y)
+    });
     this.phaseReadyButton = new PhaseReadyButton(
       this.container.querySelector('#phase-ready-button'),
       () => {
@@ -192,10 +197,12 @@ export class GameScreen {
             this.financePanel.setStatus(error
               ? 'El servidor no respondió; comprueba la conexión e inténtalo otra vez.'
               : result?.message || 'No se pudo completar la operación financiera.');
-            this.showToast(
-              error || !result?.ok ? (error || result?.message || 'No se pudo completar la operación financiera.') : result.message,
-              error || !result?.ok ? 'error' : ['BUY_MATERIALS', 'SELL_MATERIALS', 'REPAY_BOND'].includes(action.type) ? 'success' : 'info'
-            );
+            if (error || !result?.ok || action.type !== 'REPAY_BOND') {
+              this.showToast(
+                error || !result?.ok ? (error || result?.message || 'No se pudo completar la operación financiera.') : result.message,
+                error || !result?.ok ? 'error' : ['BUY_MATERIALS', 'SELL_MATERIALS'].includes(action.type) ? 'success' : 'info'
+              );
+            }
           }
         );
       }
@@ -532,23 +539,17 @@ export class GameScreen {
 
   updateDisabledTooltips(stage) {
     const planning = stage === GAME_STAGES.PLANNING;
-    const reason = planning ? 'Requisito de recursos no cumplido' : 'Acción bloqueada fuera de la planificación';
+    for (const control of this.container.querySelectorAll(
+      '[data-market-action], [data-quantity-adjust], [data-quantity-max], '
+      + '[data-issue-bond], [data-donate-world-bank], [data-repay-bond], [data-bond-amount]'
+    )) {
+      control.removeAttribute('data-tooltip');
+      control.removeAttribute('title');
+    }
     for (const element of this.container.querySelectorAll('button:disabled, input:disabled, select:disabled')) {
       if (element.id === 'play-button') element.dataset.tooltip = 'Esperando conexión con la partida';
       else if (element.id === 'single-player-button') element.dataset.tooltip = 'Esperando conexión con la partida';
       else if (element.matches('#create-room-button, #quick-match-button, #join-room-button')) element.dataset.tooltip = 'El servidor no está disponible';
-      else if (element.matches('[data-issue-bond]')) element.dataset.tooltip = planning
-        ? 'Ya tienes un bono pendiente'
-        : 'Acción bloqueada fuera de la planificación';
-      else if (element.matches('[data-donate-world-bank]')) element.dataset.tooltip = planning
-        ? `Requiere ${ECONOMY.COSTS.DONATION_SILVER} Plata`
-        : 'Acción bloqueada fuera de la planificación';
-      else if (element.matches('[data-market-action], [data-quantity-adjust], [data-quantity-max]')) element.dataset.tooltip = planning
-        ? reason
-        : 'Mercado suspendido durante la ronda de OI o la resolución';
-      else if (element.matches('[data-repay-bond], [data-bond-amount]')) element.dataset.tooltip = planning
-        ? 'Requiere saldo de Plata para pagar la deuda'
-        : 'Pago bloqueado fuera de la planificación';
       else if (element.matches('#oi-propose')) element.dataset.tooltip = planning
         ? `Requiere ${ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE} de Influencia`
         : 'Propuesta bloqueada fuera de la reunión de la OI';
@@ -643,6 +644,7 @@ export class GameScreen {
     ) {
       this.lastAnimatedResolutionId = gameState.actionResolutionId;
       this.map.animateTroopMovements(gameState.lastActionResolutions || []);
+      this.map.animateShipMovements(gameState.lastActionResolutions || []);
     }
   }
 
@@ -737,6 +739,20 @@ export class GameScreen {
               `;
             }).join('')}
             <button id="oi-submit-vote" type="button" ${this.player ? '' : 'disabled'}>Registrar todos los votos</button>`}
+        </div>
+      `;
+      return;
+    }
+
+    if (
+      session?.phase === 'complete'
+      && !session.proposals?.length
+      && gameState.currentStage === GAME_STAGES.INTERNATIONAL_MEETING
+    ) {
+      status.textContent = 'La reunión de la OI terminó sin mociones.';
+      content.innerHTML = `
+        <div class="pax-oi-controls">
+          <p class="pax-oi-note">No hay mociones para votar en esta reunión.</p>
         </div>
       `;
       return;
@@ -875,8 +891,12 @@ export class GameScreen {
       BUILD_CITY: 'Construir ciudad',
       BUILD_FACTORY: 'Construir fábrica',
       RECRUIT_TROOP: 'Reclutar tropa',
+      BUILD_SHIP: 'Construir barco',
       MOVE_CAPITAL: 'Trasladar capital',
-      MOVE_TROOPS: 'Mover tropas'
+      MOVE_TROOPS: 'Mover tropas',
+      MOVE_SHIPS: 'Mover barcos',
+      EMBARK_TROOPS: 'Embarcar tropas',
+      DISEMBARK_TROOPS: 'Desembarcar tropas'
     };
     slots.innerHTML = `
       <div class="pax-action-slots-heading">
@@ -888,13 +908,19 @@ export class GameScreen {
       let detail = action
         ? `Casilla (${action.x}, ${action.y})`
         : 'Vacío · selecciona para editar';
-      if (action?.type === 'MOVE_TROOPS') {
-        detail = `(${action.x}, ${action.y}) → (${action.targetX}, ${action.targetY}) · ${action.troops} tropas`;
+      if (['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action?.type)) {
+        const quantity = action.type === 'MOVE_SHIPS' ? action.ships : action.troops;
+        const unit = action.type === 'MOVE_SHIPS' ? 'barcos' : 'tropas';
+        detail = `(${action.x}, ${action.y}) → (${action.targetX}, ${action.targetY}) · ${quantity} ${unit}`;
       } else if (action?.type === 'RECRUIT_TROOP') {
         detail = `Casilla (${action.x}, ${action.y}) · ${action.count || 1} tropas`;
       }
       if (this.pendingMoveSource?.slot === slot) {
-        detail = `Origen marcado · ${this.pendingMoveSource.troops} tropas · selecciona destino`;
+        const quantity = this.pendingMoveSource.type === 'MOVE_SHIPS'
+          ? this.pendingMoveSource.ships
+          : this.pendingMoveSource.troops;
+        const unit = this.pendingMoveSource.type === 'MOVE_SHIPS' ? 'barcos' : 'tropas';
+        detail = `Origen marcado · ${quantity} ${unit} · selecciona destino`;
       }
       const active = this.activeActionSlot === slot;
       return `
@@ -922,7 +948,7 @@ export class GameScreen {
     const highlights = [];
     const plannedActions = this.player?.plannedActions || [];
     for (const action of plannedActions) {
-      if (action?.type !== 'MOVE_TROOPS') continue;
+      if (!['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action?.type)) continue;
       highlights.push({ x: action.x, y: action.y, role: 'source' });
       highlights.push({ x: action.targetX, y: action.targetY, role: 'target' });
     }
@@ -1047,7 +1073,7 @@ export class GameScreen {
 
   handleInspectorAction(action) {
     if (this.gameState?.currentStage !== GAME_STAGES.PLANNING || !this.player) return;
-    if (action.type === 'MOVE_TROOPS') {
+    if (['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)) {
       this.pendingMoveSource = { ...action, slot: this.activeActionSlot };
       this.updateActionSlots();
       this.updateActionHighlights();
@@ -1074,17 +1100,19 @@ export class GameScreen {
     const source = this.pendingMoveSource;
     if (tile.x === source.x && tile.y === source.y) return;
     this.updateActionHighlights({ x: tile.x, y: tile.y });
-    const sourceTile = this.gameState?.grid?.[source.y]?.[source.x];
     this.pendingMoveSource = null;
     this.updateActionSlots();
-    this.emitPlannedAction(source.slot, {
-      type: 'MOVE_TROOPS',
+    const targetAction = {
+      type: source.type,
       x: source.x,
       y: source.y,
       targetX: tile.x,
       targetY: tile.y,
-      troops: source.troops ?? sourceTile?.troops
-    });
+      ...(source.type === 'MOVE_SHIPS'
+        ? { ships: source.ships }
+        : { troops: source.troops })
+    };
+    this.emitPlannedAction(source.slot, targetAction);
   }
 
   updateResources(animate = false) {
@@ -1137,6 +1165,22 @@ export class GameScreen {
   }
 
   syncGameEventHistory(history = []) {
+    const bondEvents = history.filter((event) => (
+      typeof event?.message === 'string'
+      && /(?:pagó|incumplió|acumuló).*bono/i.test(event.message)
+    ));
+    const bondEventKeys = new Set(bondEvents.map((event) => (
+      `${event.timestamp}:${event.message}`
+    )));
+    if (this.seenBondEventKeys) {
+      for (const event of bondEvents) {
+        const key = `${event.timestamp}:${event.message}`;
+        if (this.seenBondEventKeys.has(key)) continue;
+        const isPayment = /pagó.*bono/i.test(event.message);
+        this.showToast(event.message, isPayment ? 'success' : 'warning');
+      }
+    }
+    this.seenBondEventKeys = bondEventKeys;
     const savedScrollTop = this.eventLog?.element?.scrollTop || 0;
     this.events = [
       ...this.localEvents,

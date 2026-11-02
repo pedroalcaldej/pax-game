@@ -32,6 +32,8 @@ export class Map {
     this.onTileSelected = onTileSelected;
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d');
+    this.baseCanvas = document.createElement('canvas');
+    this.baseCtx = this.baseCanvas.getContext('2d');
     this.grid = null;
     this.selectedPosition = null;
     this.dmzZones = [];
@@ -56,6 +58,8 @@ export class Map {
 
     this.canvas.width = pixelWidth;
     this.canvas.height = pixelHeight;
+    this.baseCanvas.width = pixelWidth;
+    this.baseCanvas.height = pixelHeight;
     this.canvas.style.display = 'block';
     this.canvas.style.width = `${pixelWidth}px`;
     this.canvas.style.height = `${pixelHeight}px`;
@@ -66,6 +70,8 @@ export class Map {
     this.canvas.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.5)';
     this.canvas.style.cursor = 'grab';
     this.canvas.style.touchAction = 'none';
+    this.canvas.tabIndex = 0;
+    this.canvas.setAttribute('aria-label', 'Mapa de juego. Usa las flechas para cambiar de casilla.');
 
     this.viewport.innerHTML = '';
     this.viewport.appendChild(this.container);
@@ -73,6 +79,7 @@ export class Map {
     this.observeViewportSize();
 
     this.canvas.addEventListener('click', (event) => this.handleClick(event));
+    this.canvas.addEventListener('keydown', (event) => this.handleKeyDown(event));
     this.canvas.addEventListener('pointerdown', (event) => this.startPan(event));
     this.canvas.addEventListener('pointermove', (event) => this.pan(event));
     this.canvas.addEventListener('pointerleave', () => {
@@ -289,9 +296,29 @@ export class Map {
     this.actionHighlights = highlights.filter((position) => (
       Number.isInteger(position?.x) && Number.isInteger(position?.y)
     ));
-    if (this.grid) {
-      this.render(this.grid, false);
-    }
+    if (this.grid) this.redrawOverlay();
+  }
+
+  setHoveredPosition(x, y) {
+    const tile = this.getTile(this.grid, x, y);
+    if (!tile) return;
+    this.hoveredPosition = { x, y };
+    if (this.grid) this.redrawOverlay();
+  }
+
+  clearHoveredPosition() {
+    if (!this.hoveredPosition) return;
+    this.hoveredPosition = null;
+    if (this.grid) this.redrawOverlay();
+  }
+
+  redrawOverlay() {
+    if (!this.grid) return;
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.drawImage(this.baseCanvas, 0, 0);
+    this.drawHover();
+    this.drawSelection();
+    this.drawProposalPreview();
   }
 
   /**
@@ -302,6 +329,8 @@ export class Map {
     if (!grid || !Array.isArray(grid)) return;
     this.grid = grid;
 
+    const visibleCtx = this.ctx;
+    this.ctx = this.baseCtx;
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
     for (let y = 0; y < this.rows; y++) {
@@ -311,9 +340,7 @@ export class Map {
         const posX = x * this.tileSize;
         const posY = y * this.tileSize;
 
-        this.ctx.fillStyle = tile?.waterFeature === 'RIVER'
-          ? '#38BDF8'
-          : this.getTerrainColor(type);
+        this.ctx.fillStyle = this.getTerrainColor(type);
         this.ctx.fillRect(posX, posY, this.tileSize, this.tileSize);
 
         this.drawTileIcon(type, posX, posY);
@@ -331,15 +358,15 @@ export class Map {
         if (population > 0) this.ctx.fillText(`P${population}`, posX + 3, posY + this.tileSize - 3);
         const troops = tile?.troops ?? 0;
         this.drawTroopMarkers(troops, posX, posY);
+        this.drawShipMarkers(tile, posX, posY);
       }
 
     }
 
     this.drawBorders(grid);
     this.drawDemilitarizedZones();
-    this.drawHover();
-    this.drawSelection();
-    this.drawProposalPreview();
+    this.ctx = visibleCtx;
+    this.redrawOverlay();
     if (notifySelection && this.selectedPosition) {
       this.onTileSelected(this.getTile(grid, this.selectedPosition.x, this.selectedPosition.y));
     }
@@ -364,7 +391,7 @@ export class Map {
       const startedAt = performance.now();
       const draw = (now) => {
         const progress = Math.min(1, (now - startedAt) / duration);
-        this.render(this.grid, false);
+        this.redrawOverlay();
         const eased = 1 - ((1 - progress) ** 3);
         for (const movement of movements) {
           const { action } = movement;
@@ -395,6 +422,39 @@ export class Map {
       requestAnimationFrame(draw);
     }
 
+    animateShipMovements(resolutions = [], duration = 1800) {
+      const movements = resolutions
+        .filter((resolution) => (
+          resolution?.ok
+          && resolution.action?.type === 'MOVE_SHIPS'
+          && Number.isInteger(resolution.action.x)
+          && Number.isInteger(resolution.action.y)
+          && Number.isInteger(resolution.action.targetX)
+          && Number.isInteger(resolution.action.targetY)
+        ))
+        .map((resolution) => ({
+          action: resolution.action,
+          color: this.nationColors[Number(resolution.playerId?.split('-').pop())] || '#f8fafc'
+        }));
+      if (!movements.length) return;
+
+      const startedAt = performance.now();
+      const draw = (now) => {
+        const progress = Math.min(1, (now - startedAt) / duration);
+        this.render(this.grid, false);
+        const eased = 1 - ((1 - progress) ** 3);
+        for (const movement of movements) {
+          const { action } = movement;
+          const x = action.x + (action.targetX - action.x) * eased;
+          const y = action.y + (action.targetY - action.y) * eased;
+          this.drawShip(x * this.tileSize, y * this.tileSize, movement.color, Math.min(9, action.ships || 1));
+        }
+        if (progress < 1) requestAnimationFrame(draw);
+        else this.render(this.grid, false);
+      };
+      requestAnimationFrame(draw);
+    }
+
   drawTroopMarkers(troops, posX, posY) {
     const count = Math.min(16, Math.max(0, Math.floor(troops || 0)));
     const columns = 4;
@@ -415,6 +475,49 @@ export class Map {
       ctx.lineWidth = 0.75;
       ctx.stroke();
     }
+  }
+
+  drawShipMarkers(tile, posX, posY) {
+      const ships = Object.entries(tile?.shipsByPlayer || {})
+        .filter(([, count]) => count > 0);
+      ships.forEach(([playerId, count], index) => {
+        const color = this.nationColors[Number(playerId.split('-').pop())] || '#f8fafc';
+        const offsetX = (index % 2) * this.tileSize * 0.42;
+        const offsetY = Math.floor(index / 2) * this.tileSize * 0.3;
+        this.drawShip(posX + this.tileSize * 0.27 + offsetX, posY + this.tileSize * 0.25 + offsetY, color, count);
+      });
+    }
+
+    drawShip(posX, posY, color, count) {
+      const ctx = this.ctx;
+      const width = Math.max(8, this.tileSize * 0.42);
+      const height = Math.max(4, this.tileSize * 0.16);
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(posX, posY + height);
+      ctx.lineTo(posX + width, posY + height);
+      ctx.lineTo(posX + width * 0.82, posY + height * 1.8);
+      ctx.lineTo(posX + width * 0.18, posY + height * 1.8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(posX + width * 0.48, posY + height);
+      ctx.lineTo(posX + width * 0.48, posY - height * 1.5);
+      ctx.lineTo(posX + width * 0.78, posY + height);
+      ctx.closePath();
+      ctx.fillStyle = '#f8fafc';
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = `bold ${Math.max(6, this.tileSize * 0.2)}px system-ui, sans-serif`;
+      ctx.fillStyle = '#f8fafc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(count), posX + width / 2, posY + height * 2.45);
+      ctx.restore();
   }
 
   drawDemilitarizedZones() {
@@ -621,14 +724,40 @@ export class Map {
       return;
     }
     if (!this.grid) return;
+    this.canvas.focus();
     const position = this.getPositionAtEvent(event);
     const tile = position ? this.getTile(this.grid, position.x, position.y) : null;
     if (!tile) return;
 
-    this.selectedPosition = position;
+    this.selectPosition(position.x, position.y);
+  }
+
+  handleKeyDown(event) {
+    const directions = {
+      ArrowUp: [0, -1],
+      ArrowRight: [1, 0],
+      ArrowDown: [0, 1],
+      ArrowLeft: [-1, 0]
+    };
+    const direction = directions[event.key];
+    if (!direction || !this.selectedPosition || !this.grid) return;
+
+    const x = this.selectedPosition.x + direction[0];
+    const y = this.selectedPosition.y + direction[1];
+    const tile = this.getTile(this.grid, x, y);
+    if (!tile) return;
+
+    event.preventDefault();
+    this.selectPosition(x, y);
+  }
+
+  selectPosition(x, y) {
+    const tile = this.getTile(this.grid, x, y);
+    if (!tile) return;
+    this.selectedPosition = { x, y };
     this.selectionFromUser = true;
     try {
-      this.render(this.grid, false);
+      this.redrawOverlay();
       this.onTileSelected(tile);
     } finally {
       this.selectionFromUser = false;
@@ -637,7 +766,7 @@ export class Map {
 
   clearSelection() {
     this.selectedPosition = null;
-    if (this.grid) this.render(this.grid, false);
+    if (this.grid) this.redrawOverlay();
     this.onTileSelected(null);
   }
 }
