@@ -19,12 +19,13 @@ export const ActionEngine = {
       return { ok: false, message: 'La orden de planificación no es válida.' };
     }
     const { slot, plannedAction } = action;
-    if (!Number.isInteger(slot) || slot < 0 || slot >= ACTION_SLOT_COUNT) {
-      return { ok: false, message: `Selecciona uno de los ${ACTION_SLOT_COUNT} espacios de acción.` };
+    const actionSlotCount = this.settings?.actionSlotCount || ACTION_SLOT_COUNT;
+    if (!Number.isInteger(slot) || slot < 0 || slot >= actionSlotCount) {
+      return { ok: false, message: `Selecciona uno de los ${actionSlotCount} espacios de acción.` };
     }
 
     player.plannedActions = Array.from(
-      { length: ACTION_SLOT_COUNT },
+      { length: actionSlotCount },
       (_, index) => player.plannedActions?.[index] ?? null
     );
     if (plannedAction == null) {
@@ -151,19 +152,6 @@ export const ActionEngine = {
             return { ok: false, message: 'No puedes reclutar tropas dentro de una Zona Desmilitarizada.' };
           }
           action.count = count;
-          if (this.oiPolicies.armamentLimit != null) {
-            const plannedRecruitment = otherActions
-              .filter((planned) => planned.type === 'RECRUIT_TROOP')
-              .reduce((sum, planned) => sum + (planned.count ?? 1), 0);
-            if (
-              InternationalOrganizationEngine.countTroops(this, player.id)
-              + plannedRecruitment
-              + count
-              > this.oiPolicies.armamentLimit
-            ) {
-              return { ok: false, message: `El límite de armamento es de ${this.oiPolicies.armamentLimit} tropas.` };
-            }
-          }
           silverCost = ECONOMY.COSTS.RECRUIT_TROOP_SILVER * count;
           materialCost = ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * count;
         }
@@ -206,9 +194,6 @@ export const ActionEngine = {
           if (ships < 1) {
             return { ok: false, message: 'Necesitas barcos propios en la casilla de origen.' };
           }
-          if (destination.ownerId != null && destination.ownerId !== player.id) {
-            return { ok: false, message: 'No puedes desembarcar directamente en territorio enemigo.' };
-          }
           if (!Number.isInteger(troops) || troops < 1 || troops > transported) {
             return { ok: false, message: 'No hay tantas tropas embarcadas en esta flota.' };
           }
@@ -223,12 +208,6 @@ export const ActionEngine = {
           || InternationalOrganizationEngine.isInActiveDmz(this, destination.x, destination.y)
         ) {
           return { ok: false, message: 'No se pueden mover tropas hacia, desde o a través de una Zona Desmilitarizada.' };
-        }
-        if (otherActions.some((planned) => (
-          planned.type === 'MOVE_TROOPS'
-          && planned.targetX === destination.x && planned.targetY === destination.y
-        ))) {
-          return { ok: false, message: 'Ya tienes un movimiento planificado hacia esa casilla.' };
         }
         const otherTroops = otherActions
           .filter((planned) => (
@@ -314,9 +293,6 @@ export const ActionEngine = {
         if (!destination || !LAND_TERRAIN.has(destination.type)
           || !isDiagonalOrOrthogonalStep(tile, destination)) {
           return { ok: false, message: 'Selecciona una casilla terrestre adyacente, incluso en diagonal, para desembarcar.' };
-        }
-        if (destination.ownerId != null && destination.ownerId !== player.id) {
-          return { ok: false, message: 'No puedes desembarcar directamente en territorio enemigo.' };
         }
         if (!Number.isInteger(troops) || troops < 1 || troops > carried) {
           return { ok: false, message: 'No hay tantas tropas embarcadas en esta flota.' };
@@ -415,7 +391,7 @@ export const ActionEngine = {
   resolvePlannedActions() {
     const results = [];
     for (const player of this.players.values()) {
-      const plannedActions = player.plannedActions || createEmptyActionSlots();
+      const plannedActions = player.plannedActions || createEmptyActionSlots(this.settings?.actionSlotCount);
       for (let slot = 0; slot < plannedActions.length; slot += 1) {
         const action = plannedActions[slot];
         if (!action) continue;
@@ -457,7 +433,7 @@ export const ActionEngine = {
             : `${player.name}: ${this.getActionName(action.type)}${coordinates} no realizada: ${result.message || 'No se pudo realizar la acción.'}`);
         }
       }
-      player.plannedActions = createEmptyActionSlots();
+      player.plannedActions = createEmptyActionSlots(this.settings?.actionSlotCount);
     }
     return results;
   },
@@ -708,6 +684,67 @@ export const ActionEngine = {
     ) {
       return { ok: false, message: 'La orden de desembarco ya no es válida.' };
     }
+    const defenderId = destination.ownerId != null && destination.ownerId !== player.id
+      ? destination.ownerId
+      : null;
+    if (defenderId) {
+      this.registerMilitaryConflict(player, defenderId);
+      this.breakNonAggressionPact(player, defenderId);
+      const defenderTroops = this.getTroopsForPlayerOnTile(destination, defenderId);
+      const attackerWins = action.troops > defenderTroops;
+      if (!attackerWins) {
+        const attackerSurvivors = Math.floor(action.troops / 2);
+        const losses = action.troops - attackerSurvivors;
+        source.transportedTroopsByPlayer[player.id] -= losses;
+        if (source.transportedTroopsByPlayer[player.id] <= 0) delete source.transportedTroopsByPlayer[player.id];
+        return {
+          ok: true,
+          message: attackerSurvivors
+            ? `Desembarco rechazado: ${player.name} pierde ${losses} tropas y se retira.`
+            : `Desembarco rechazado: ${player.name} pierde todas sus tropas y se retira.`,
+          combat: {
+            attackerId: player.id,
+            defenderId,
+            attackerTroops: action.troops,
+            defenderTroops,
+            winnerId: defenderId,
+            attackerSurvivors,
+            defenderSurvivors: defenderTroops
+          }
+        };
+      }
+
+      const defenderSurvivors = Math.floor(defenderTroops / 2);
+      source.transportedTroopsByPlayer[player.id] -= action.troops;
+      if (source.transportedTroopsByPlayer[player.id] <= 0) delete source.transportedTroopsByPlayer[player.id];
+      destination.troops = Math.max(0, (destination.troops || 0) - defenderTroops + defenderSurvivors);
+      if (defenderSurvivors > 0) {
+        destination.visitingTroops ||= {};
+        destination.visitingTroops[defenderId] = (
+          destination.visitingTroops[defenderId] || 0
+        ) + defenderSurvivors;
+      }
+      destination.ownerId = player.id;
+      destination.nationId = player.nationId;
+      destination.troops += action.troops;
+      return {
+        ok: true,
+        message: defenderSurvivors
+          ? `Desembarco exitoso: ${player.name} conquista la casilla; ${defenderSurvivors} tropas enemigas sobreviven.`
+          : `Desembarco exitoso: ${player.name} conquista la casilla.`,
+        claimed: true,
+        combat: {
+          attackerId: player.id,
+          defenderId,
+          attackerTroops: action.troops,
+          defenderTroops,
+          winnerId: player.id,
+          attackerSurvivors: action.troops,
+          defenderSurvivors
+        }
+      };
+    }
+
     source.transportedTroopsByPlayer[player.id] -= action.troops;
     if (source.transportedTroopsByPlayer[player.id] <= 0) delete source.transportedTroopsByPlayer[player.id];
     destination.troops = (destination.troops || 0) + action.troops;
@@ -807,13 +844,6 @@ export const ActionEngine = {
         const materialCost = ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * count;
         if (!Number.isInteger(count) || count < 1) {
           return { ok: false, message: 'La cantidad de tropas a reclutar no es válida.' };
-        }
-        if (
-          this.oiPolicies.armamentLimit != null
-          && InternationalOrganizationEngine.countTroops(this, player.id) + count
-            > this.oiPolicies.armamentLimit
-        ) {
-          return { ok: false, message: `El límite de armamento es de ${this.oiPolicies.armamentLimit} tropas.` };
         }
         if (InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)) {
           return { ok: false, message: 'No puedes reclutar tropas dentro de una Zona Desmilitarizada.' };

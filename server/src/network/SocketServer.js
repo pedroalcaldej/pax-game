@@ -33,6 +33,7 @@ export class SocketServer {
         await socket.join(`lobby:${room.code}`);
         socket.data.lobbyRoomCode = room.code;
         socket.data.lobbyUserId = userId;
+        socket.data.lobbySettings = room.settings;
         socket.emit(PROTOCOL.LOBBY_STATE_UPDATE, room);
         const messages = await this.lobbyStore.getChat(room.code);
         for (const message of messages) socket.emit(PROTOCOL.LOBBY_CHAT_MESSAGE, message);
@@ -83,6 +84,17 @@ export class SocketServer {
         }
         catch(error) { ackError(acknowledge,error); }
       });
+      socket.on(PROTOCOL.LOBBY_UPDATE_SETTINGS, async ({ roomId, userId, settings } = {}, acknowledge) => {
+        try {
+          if (!roomId || socket.data.lobbyRoomCode !== roomId || socket.data.lobbyUserId !== userId) {
+            throw new Error('Debes estar en la sala para cambiar su configuración.');
+          }
+          const room = await this.lobbyStore.updateSettings(roomId, userId, settings);
+          socket.data.lobbySettings = room.settings;
+          publishLobby(room);
+          acknowledge?.({ ok: true });
+        } catch (error) { ackError(acknowledge, error); }
+      });
       socket.on(PROTOCOL.LOBBY_TOGGLE_READY, async ({ roomId, userId } = {}, acknowledge) => {
         try { const room=await this.lobbyStore.toggleReady(roomId,userId); publishLobby(room); acknowledge?.({ok:true}); }
         catch(error) { ackError(acknowledge,error); }
@@ -113,13 +125,16 @@ export class SocketServer {
       });
 
       // Recibir datos de unión incluyendo playerId
-      socket.on(PROTOCOL.JOIN_GAME, ({ playerName, playerColor, roomId, playerId }) => {
+      socket.on(PROTOCOL.JOIN_GAME, ({ playerName, playerColor, roomId, playerId, settings }) => {
         if (!roomId) {
           socket.emit(PROTOCOL.ACTION_ERROR, 'Se requiere un identificador de sala para unirse.');
           return;
         }
         const targetRoomId = roomId;
-        const room = this.roomManager.getOrCreateRoom(targetRoomId);
+        const room = this.roomManager.getOrCreateRoom(
+          targetRoomId,
+          settings || socket.data.lobbySettings || {}
+        );
 
         // Registrar o reconectar al jugador
         const existingPlayer = playerId && Array.from(room.gameState.players.values()).find(

@@ -7,10 +7,11 @@ import { PhaseManager } from '../game/PhaseManager.js';
 import { MAX_PLAYERS } from '../../../shared/Constants.js';
 
 export class Room {
-  constructor(id, publishState) {
+  constructor(id, publishState, settings = {}) {
     this.id = id;
     this.publishState = publishState;
-    this.gameState = new GameState();
+    this.settings = settings;
+    this.gameState = new GameState(settings);
     this.phaseManager = new PhaseManager(this.gameState, (state) => this.publishState(state));
   }
 
@@ -82,7 +83,7 @@ export class Room {
         name: player.name
       }));
     this.phaseManager.stop();
-    this.gameState = new GameState();
+    this.gameState = new GameState(this.settings);
     for (const player of connectedPlayers) {
       this.gameState.addPlayer(player.socketId, player.name, player.playerId);
     }
@@ -111,12 +112,12 @@ export class RoomManager {
     }
   }
 
-  getOrCreateRoom(roomId) {
+  getOrCreateRoom(roomId, settings = {}) {
     if (!roomId) throw new Error('Se requiere un identificador de sala.');
     if (!this.rooms.has(roomId)) {
       const room = new Room(roomId, (state) => {
         if (this.publishState) this.publishState(room, state);
-      });
+      }, settings);
       this.rooms.set(roomId, room);
       console.log(`[RoomManager] Sala creada: ${roomId}`);
     }

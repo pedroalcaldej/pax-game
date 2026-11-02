@@ -20,7 +20,7 @@ El objetivo principal de la partida es consolidar a la nación como la potencia 
 
 ## 2. Estructura de la Partida y Dinámica de Ronda
 
-Las partidas duran **30 rondas** y cada etapa de planificación dura **60 segundos**. Cada ronda sigue estas etapas conceptuales:
+Las partidas usan por defecto **30 rondas** y **60 segundos** de planificación, pero el anfitrión puede elegir antes de comenzar los presets rápida (15/30 s), normal (30/60 s) o estratégica (40/120 s). También puede ajustar rondas, acciones por ronda, frecuencia de reuniones de la OI, semilla y tamaño del mapa. Los barcos siempre están disponibles. El servidor valida y congela estos parámetros al iniciar la partida.
 
 1. **Inicio de ronda:** desde la ronda 2, el servidor procesa en este orden Materiales, Influencia, crecimiento poblacional y recaudación de impuestos. La primera ronda solo usa las cantidades iniciales. Los intereses y vencimientos de bonos se procesan al comienzo de todas las rondas.
 2. **Planificación:** es la única etapa normal en la que el jugador interactúa. Aquí se gestionan impuestos, mercado, transferencias, bonos, pagos, diplomacia y las órdenes territoriales. Los jugadores pueden confirmar que están listos; si todos lo hacen, la etapa termina antes de los 60 segundos.
@@ -107,7 +107,7 @@ Las tropas terrestres pueden atacar una casilla terrestre adyacente que pertenez
 - Los barcos se mueven una casilla de agua adyacente por acción y cada barco que se mueve
   debe llevar al menos una tropa embarcada. Una flota puede embarcar tropas desde tierra
   o desde una casilla de agua que comparta con tropas, y desembarcarlas en una casilla
-  terrestre adyacente; no se permite desembarcar directamente en territorio enemigo.
+  terrestre adyacente. El desembarco en territorio enemigo inicia un combate terrestre.
 - La acción de mover tropas cubre el movimiento terrestre, el embarque y el desembarque:
   tierra → tierra mueve, tierra → agua embarca y agua → tierra desembarca. Todas estas
   transiciones admiten las ocho casillas vecinas, incluidas las diagonales.
@@ -135,7 +135,7 @@ Los países controlados por bots votan automáticamente: si una resolución los 
 
 ### Resoluciones Oficiales de la OI
 - **Multas del Banco Mundial:** Resolución oficial reservada para una versión futura; no se puede proponer ni aprobar actualmente.
-- **Límites de Armamento:** Fija un máximo de **10 tropas por país**. Una vez aprobada, permanece activa hasta el final de la partida.
+- **Reclutamiento:** no existe un límite global de tropas; solo limitan los recursos disponibles para pagar cada reclutamiento.
 - **Límites de Industria:** Fija un máximo de **10 fábricas por país**. Una vez aprobada, permanece activa hasta el final de la partida.
 - **Zonas Desmilitarizadas (ZDM):** El proponente elige una casilla central al redactar su propuesta. La ZDM cubre esa casilla y las casillas situadas hasta dos posiciones en cada dirección (un área de 5×5, 25 casillas en el interior del mapa; se recorta en los bordes). No se pueden reclutar, estacionar ni mover tropas hacia, desde o a través de una ZDM. Al aprobarse, las tropas que ya están dentro se desplazan a la casilla propia válida más cercana. La zona permanece activa hasta la siguiente reunión de la OI.
 - **Subsidios Condicionados:** Entrega **25 de Plata** al país con menor GDI en el momento de aplicar la resolución. Crea un **Pacto de No Agresión (PNA) de 5 rondas** entre el beneficiario y cada país que votó a favor. Una ruptura por ataque cancela el pacto y sanciona al atacante.

@@ -21,7 +21,7 @@ export const BotController = {
       if (!player.isBot) continue;
       if (!resetReadiness && player.phaseReady) continue;
       player.phaseReady = false;
-      player.plannedActions = createEmptyActionSlots();
+      player.plannedActions = createEmptyActionSlots(this.settings?.actionSlotCount);
       player.taxRate = 0.15;
 
       const expansion = this.findBotExpansion(player, 0);
@@ -159,11 +159,6 @@ export const BotController = {
   },
 
   findBotRecruitment(player, slot) {
-    const troopLimit = this.oiPolicies.armamentLimit ?? 10;
-    const currentTroops = InternationalOrganizationEngine.countTroops(this, player.id);
-    const plannedRecruitment = player.plannedActions
-      .filter((action) => action?.type === 'RECRUIT_TROOP')
-      .reduce((sum, action) => sum + action.count, 0);
     const reservedSilver = player.plannedActions
       .filter(Boolean)
       .reduce((sum, action) => sum + this.getSilverCost(action), 0);
@@ -171,7 +166,6 @@ export const BotController = {
       .filter(Boolean)
       .reduce((sum, action) => sum + this.getMaterialCost(action), 0);
     const count = Math.min(
-      troopLimit - currentTroops - plannedRecruitment,
       Math.floor((player.resources.SILVER - reservedSilver) / ECONOMY.COSTS.RECRUIT_TROOP_SILVER),
       Math.floor((player.resources.MATERIALS - reservedMaterials) / ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS)
     );

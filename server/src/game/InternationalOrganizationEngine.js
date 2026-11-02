@@ -6,13 +6,14 @@ import {
 } from '../../../shared/Constants.js';
 
 export const OI_RESOLUTION_NAMES = {
-  [OI_RESOLUTIONS.ARMAMENT_LIMIT]: 'Límites de Armamento (máximo 10 tropas)',
   [OI_RESOLUTIONS.INDUSTRY_LIMIT]: 'Límites de Industria (máximo 10 fábricas)',
   [OI_RESOLUTIONS.DEMILITARIZED_ZONE]: 'Zona Desmilitarizada (ZDM)',
   [OI_RESOLUTIONS.CONDITIONAL_SUBSIDY]: `Subsidios Condicionados (+${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata)`
 };
 
-const VALID_RESOLUTIONS = new Set(Object.values(OI_RESOLUTIONS));
+const VALID_RESOLUTIONS = new Set(Object.values(OI_RESOLUTIONS).filter(
+  (resolution) => resolution !== OI_RESOLUTIONS.ARMAMENT_LIMIT
+));
 export class InternationalOrganizationEngine {
   static propose(gameState, socketId, proposal) {
     const player = Array.from(gameState.players.values()).find(
@@ -80,7 +81,7 @@ export class InternationalOrganizationEngine {
       id: `oi-session-${gameState.currentRound}`,
       phase: selected.length ? 'voting' : 'complete',
       meetingAfterRound: gameState.currentRound,
-      timeRemaining: selected.length ? TIMINGS.DECISION_PHASE_DURATION : 0,
+      timeRemaining: selected.length ? gameState.settings.oiMeetingDuration : 0,
       proposals: selected,
       votes: {},
       botVoterIds: [],
@@ -246,9 +247,6 @@ export class InternationalOrganizationEngine {
 
   static applyResolution(gameState, proposal, votes) {
     switch (proposal.type) {
-      case OI_RESOLUTIONS.ARMAMENT_LIMIT:
-        gameState.oiPolicies.armamentLimit = 10;
-        break;
       case OI_RESOLUTIONS.INDUSTRY_LIMIT:
         gameState.oiPolicies.industryLimit = 10;
         break;

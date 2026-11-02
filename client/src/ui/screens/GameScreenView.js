@@ -88,7 +88,7 @@ export function renderGameScreen(container) {
             <section class="pax-action-slots" id="action-slots" aria-label="Acciones de este turno"></section>
             <footer class="pax-map-footer">
               <span class="pax-map-hint">ⓘ Haz clic en una casilla para inspeccionarla; arrastra para desplazarte.</span>
-              <span class="pax-map-size">Matriz ${MAP_CONFIG.GRID_WIDTH}×${MAP_CONFIG.GRID_HEIGHT} (${MAP_CONFIG.TOTAL_TILES} casillas)</span>
+              <span class="pax-map-size">Matriz ${MAP_CONFIG.GRID_SIZE}×${MAP_CONFIG.GRID_SIZE} (${MAP_CONFIG.TOTAL_TILES} casillas)</span>
             </footer>
             <div id="chat-container"></div>
           </section>

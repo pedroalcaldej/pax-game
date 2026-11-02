@@ -145,12 +145,14 @@ export class Inspector {
       .reduce((sum, action) => sum + action.ships, 0);
     const transportedTroops = tile?.transportedTroopsByPlayer?.[this.player?.id] || 0;
     const movableShips = Math.max(0, Math.min(ships - shipsReserved, transportedTroops));
+    const isWater = [TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA, TERRAIN_TYPES.FA].includes(tile?.type);
     const visitorTroops = tile?.visitingTroops?.[this.player?.id] || 0;
-    const tileTroops = tile?.ownerId === this.player?.id
+    const landTroops = tile?.ownerId === this.player?.id
       ? (tile.troops || 0) - Object.entries(tile.visitingTroops || {})
         .filter(([playerId]) => playerId !== this.player.id)
         .reduce((sum, [, count]) => sum + count, 0)
       : visitorTroops;
+    const tileTroops = isWater ? transportedTroops : landTroops;
     const movableTroops = Math.max(0, tileTroops - movementReserved);
     const quantity = (type, limit, unit, field) => {
       const key = `${tile?.x}:${tile?.y}:${type}`;
@@ -191,8 +193,8 @@ export class Inspector {
         title: 'Mover tropas',
         cost: `${movableTroops} tropas disponibles`,
         quantity: quantity('MOVE_TROOPS', movableTroops, 'tropas', 'troops'),
-        enabled: planningPhase && (isOwned || visitorTroops > 0) && movableTroops > 0,
-        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned && visitorTroops === 0 ? 'No hay tropas propias en esta casilla' : 'No hay tropas disponibles para otro movimiento'
+        enabled: planningPhase && (isWater ? transportedTroops > 0 : isOwned || visitorTroops > 0) && movableTroops > 0,
+        reason: !planningPhase ? 'Disponible en fase de planificación' : isWater && transportedTroops <= 0 ? 'No hay tropas embarcadas en esta casilla' : !isWater && !isOwned && visitorTroops === 0 ? 'No hay tropas propias en esta casilla' : 'No hay tropas disponibles para otro movimiento'
       },
       {
         type: 'BUILD_SHIP',

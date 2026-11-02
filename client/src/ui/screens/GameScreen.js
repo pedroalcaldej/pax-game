@@ -123,9 +123,11 @@ export class GameScreen {
       onCreate: () => this.createRoom(),
       onQuickMatch: () => this.quickMatch(),
       onSinglePlayer: () => this.startSinglePlayer(),
+      onSinglePlayerSettings: () => this.lobbyScreen.getSinglePlayerSettings(),
       onJoin: (code) => this.joinRoom(code),
       onCopy: () => this.copyRoomCode(),
       onReady: () => this.startRoom(),
+      onSettingsChange: (settings) => this.saveLobbySettings(settings),
       onLeave: () => this.returnToMainMenu(),
       onProfileChange: () => this.saveLobbyProfile(),
       onColorSelect: (picker) => {
@@ -785,7 +787,6 @@ export class GameScreen {
         ${proposalWindow ? `
           <label>Resolución
             <select id="oi-resolution-type">
-              <option value="${OI_RESOLUTIONS.ARMAMENT_LIMIT}">Límite de armamento · 10 tropas</option>
               <option value="${OI_RESOLUTIONS.INDUSTRY_LIMIT}">Límite de industria · 10 fábricas</option>
               <option value="${OI_RESOLUTIONS.DEMILITARIZED_ZONE}">Zona Desmilitarizada · elegir casilla</option>
               <option value="${OI_RESOLUTIONS.CONDITIONAL_SUBSIDY}">Subsidio condicionado · ${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata</option>
@@ -1311,7 +1312,8 @@ export class GameScreen {
       playerId: this.playerId,
       playerName: name,
       playerColor: color,
-      roomId: this.roomCode
+      roomId: this.roomCode,
+      settings: this.lobbyScreen.getSinglePlayerSettings()
     });
     socket.timeout(5000).emit(
       PROTOCOL.START_GAME,
@@ -1409,6 +1411,15 @@ export class GameScreen {
     try {
       if (!await this.saveLobbyProfile()) return;
       await this.lobby.startGame();
+    } catch (error) {
+      this.setStartStatus(error.message);
+    }
+  }
+
+  async saveLobbySettings(settings) {
+    try {
+      await this.lobby.updateSettings(settings);
+      this.setStartStatus('Configuración guardada.');
     } catch (error) {
       this.setStartStatus(error.message);
     }

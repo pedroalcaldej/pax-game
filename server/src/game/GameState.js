@@ -3,25 +3,26 @@
  */
 
 import { generateInitialGrid } from '../../../shared/MapGenerator.js';
-import { MAP_CONFIG, GAME_STAGES, TIMINGS } from '../../../shared/Constants.js';
+import { MAP_CONFIG, GAME_STAGES, TIMINGS, normalizeGameSettings } from '../../../shared/Constants.js';
 import { DiplomacyEngine } from './DiplomacyEngine.js';
 import { FinanceEngine } from './FinanceEngine.js';
 import { PlayerManager } from './PlayerManager.js';
 import { ActionEngine } from './ActionEngine.js';
 import { BotController } from './BotController.js';
 export class GameState {
-  constructor() {
-    this.gridWidth = MAP_CONFIG.GRID_WIDTH;
-    this.gridHeight = MAP_CONFIG.GRID_HEIGHT;
+  constructor(settings = {}) {
+    this.settings = normalizeGameSettings(settings);
+    this.gridWidth = this.settings.mapSize;
+    this.gridHeight = this.settings.mapSize;
     this.players = new Map();
     this.gameStarted = false;
     this.gameOver = false;
     this.currentPhase = 1;
     this.currentStage = GAME_STAGES.ROUND_START;
-    this.timeRemaining = TIMINGS.DECISION_PHASE_DURATION;
+    this.timeRemaining = this.settings.planningDuration;
     this.isPaused = false;
     this.currentRound = 1;
-    this.seed = Date.now();
+    this.seed = this.settings.mapSeed || Date.now();
     this.actionResolutionId = 0;
     this.lastActionResolutions = [];
     this.eventHistory = [];
@@ -49,7 +50,10 @@ export class GameState {
     this.casusBelli = [];
     this.taxRatesAtLastRoundEnd = new Map();
 
-    this.grid = generateInitialGrid(this.seed);
+    const numericSeed = typeof this.seed === 'number'
+      ? this.seed
+      : [...String(this.seed)].reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 7);
+    this.grid = generateInitialGrid(numericSeed, { size: this.settings.mapSize });
     this.createNations();
     for (const player of this.players.values()) {
       this.taxRatesAtLastRoundEnd.set(player.id, player.taxRate);
@@ -316,7 +320,8 @@ export class GameState {
       bonds: this.bonds,
       activeConflicts: this.getActiveConflicts(),
       aggressions: this.aggressions,
-      casusBelli: this.casusBelli
+      casusBelli: this.casusBelli,
+      settings: this.settings
     };
   }
 }

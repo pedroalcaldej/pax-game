@@ -15,19 +15,82 @@ export const MAX_PLAYERS = NATIONS.length;
 export const MAX_PLAYER_NAME_LENGTH = 24;
 export const MAX_CHAT_MESSAGE_LENGTH = 240;
 
-const GRID_WIDTH = 30;
-const GRID_HEIGHT = 30;
+const GRID_SIZE = 30;
 
 export const MAP_CONFIG = {
-  GRID_WIDTH,
-  GRID_HEIGHT,
-  TOTAL_TILES: GRID_WIDTH * GRID_HEIGHT,
+  GRID_SIZE,
+  TOTAL_TILES: GRID_SIZE * GRID_SIZE,
   TILE_SIZE: 32,
   MAX_PLAYERS
 };
 
 export const ACTION_SLOT_COUNT = 3;
 export const MAX_ROUNDS = 30;
+
+export const GAME_SETTINGS_LIMITS = {
+  maxRounds: { min: 5, max: 100 },
+  planningDuration: { min: 15, max: 300 },
+  actionSlotCount: { min: 1, max: 6 },
+  startingResource: { min: 0, max: 1000 },
+  oiFrequency: { min: 0, max: 20 },
+  oiMeetingDuration: { min: 15, max: 180 },
+  mapSize: { min: 12, max: 50 }
+};
+
+export const GAME_SETTINGS_PRESETS = {
+  quick: { maxRounds: 15, planningDuration: 30, actionSlotCount: 2 },
+  normal: { maxRounds: 30, planningDuration: 60, actionSlotCount: 3 },
+  strategic: { maxRounds: 40, planningDuration: 120, actionSlotCount: 4 }
+};
+
+export const DEFAULT_GAME_SETTINGS = {
+  preset: 'normal',
+  maxRounds: MAX_ROUNDS,
+  planningDuration: 60,
+  actionSlotCount: ACTION_SLOT_COUNT,
+  startingResources: { SILVER: 100, MATERIALS: 100, INFLUENCE: 100 },
+  oiFrequency: 5,
+  oiMeetingDuration: 60,
+  mapSeed: null,
+  mapSize: GRID_SIZE,
+  dmzEnabled: true
+};
+
+const clampSetting = (value, { min, max }, fallback) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(number)));
+};
+
+export function normalizeGameSettings(input = {}) {
+  const preset = GAME_SETTINGS_PRESETS[input.preset] ? input.preset : DEFAULT_GAME_SETTINGS.preset;
+  const presetValues = GAME_SETTINGS_PRESETS[preset];
+  const source = { ...DEFAULT_GAME_SETTINGS, ...presetValues, ...input };
+  const resources = input.startingResources || DEFAULT_GAME_SETTINGS.startingResources;
+  const mapSeed = input.mapSeed === null || input.mapSeed === undefined || input.mapSeed === ''
+    ? null
+    : String(input.mapSeed).slice(0, 40);
+  return {
+    preset,
+    maxRounds: clampSetting(source.maxRounds, GAME_SETTINGS_LIMITS.maxRounds, presetValues.maxRounds),
+    planningDuration: clampSetting(source.planningDuration, GAME_SETTINGS_LIMITS.planningDuration, presetValues.planningDuration),
+    actionSlotCount: clampSetting(source.actionSlotCount, GAME_SETTINGS_LIMITS.actionSlotCount, presetValues.actionSlotCount),
+    startingResources: {
+      SILVER: clampSetting(resources.SILVER, GAME_SETTINGS_LIMITS.startingResource, 100),
+      MATERIALS: clampSetting(resources.MATERIALS, GAME_SETTINGS_LIMITS.startingResource, 100),
+      INFLUENCE: clampSetting(resources.INFLUENCE, GAME_SETTINGS_LIMITS.startingResource, 100)
+    },
+    oiFrequency: clampSetting(source.oiFrequency, GAME_SETTINGS_LIMITS.oiFrequency, 5),
+    oiMeetingDuration: clampSetting(source.oiMeetingDuration, GAME_SETTINGS_LIMITS.oiMeetingDuration, 60),
+    mapSeed,
+    mapSize: clampSetting(
+      source.mapSize,
+      GAME_SETTINGS_LIMITS.mapSize,
+      GRID_SIZE
+    ),
+    dmzEnabled: source.dmzEnabled !== false
+  };
+}
 
 // Siglas de terreno según GDD sección 8
 export const TERRAIN_TYPES = {
@@ -132,6 +195,7 @@ Object.assign(PROTOCOL, {
   LOBBY_QUICK_MATCH: 'lobby_quick_match',
   LOBBY_WATCH: 'lobby_watch',
   LOBBY_UPDATE_PROFILE: 'lobby_update_profile',
+  LOBBY_UPDATE_SETTINGS: 'lobby_update_settings',
   LOBBY_TOGGLE_READY: 'lobby_toggle_ready',
   LOBBY_REPLAY: 'lobby_replay',
   LOBBY_LEAVE: 'lobby_leave',

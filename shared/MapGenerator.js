@@ -301,10 +301,11 @@ function placeNear(grid, origin, rng, nationId, excludedTile = null) {
  * @param {number} [seed]
  * @returns {Array<Array<object>>}
  */
-export function generateInitialGrid(seed = Date.now()) {
+export function generateInitialGrid(seed = Date.now(), dimensions = {}) {
   const rng = mulberry32(Math.floor(seed) || 1);
-  const width = MAP_CONFIG.GRID_WIDTH;
-  const height = MAP_CONFIG.GRID_HEIGHT;
+  const size = Number.isInteger(dimensions.size) ? dimensions.size : MAP_CONFIG.GRID_SIZE;
+  const width = size;
+  const height = size;
 
   let landMask = [];
   for (let y = 0; y < height; y++) {

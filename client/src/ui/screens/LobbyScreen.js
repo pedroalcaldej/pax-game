@@ -2,7 +2,9 @@ import {
   AVAILABLE_NATION_COLORS,
   MAX_PLAYER_NAME_LENGTH,
   MAX_PLAYERS,
-  NATIONS
+  NATIONS,
+  DEFAULT_GAME_SETTINGS,
+  GAME_SETTINGS_PRESETS
 } from '../../../../shared/Constants.js';
 
 function escapeHTML(value) {
@@ -33,6 +35,22 @@ export class LobbyScreen {
                   <label>Nombre <input id="single-player-name" maxlength="${MAX_PLAYER_NAME_LENGTH}" value="alpha" autocomplete="off" /></label>
                   <label>Color <div class="pax-color-picker" id="single-player-color" role="radiogroup" aria-label="Color del país"></div></label>
                 </div>
+                <button class="pax-lobby-copy pax-settings-toggle" id="single-settings-toggle" type="button" aria-expanded="false" aria-controls="single-settings">⚙ Configurar partida</button>
+                <div class="pax-single-settings" id="single-settings" hidden>
+                  <label>Preset
+                    <select id="single-settings-preset">
+                      <option value="quick">Rápida</option><option value="normal" selected>Normal</option><option value="strategic">Estratégica</option>
+                    </select>
+                  </label>
+                  <div class="pax-settings-grid">
+                    <label>Rondas <input id="single-settings-rounds" type="number" min="5" max="100" value="30"></label>
+                    <label>Planificación (s) <input id="single-settings-planning" type="number" min="15" max="300" value="60"></label>
+                    <label>Acciones <input id="single-settings-actions" type="number" min="1" max="6" value="3"></label>
+                    <label>Frecuencia OI <input id="single-settings-oi-frequency" type="number" min="0" max="20" value="5"></label>
+                    <label>Tamaño del mapa <input id="single-settings-map-size" type="number" min="12" max="50" value="30"></label>
+                  </div>
+                  <label>Semilla <input id="single-settings-seed" maxlength="40" placeholder="Aleatoria"></label>
+                </div>
                 <button class="pax-start-button" id="single-player-button" type="button">Nueva partida</button>
               </section>
               <section class="pax-start-option">
@@ -62,6 +80,27 @@ export class LobbyScreen {
               <label>Nombre <input id="lobby-player-name" maxlength="${MAX_PLAYER_NAME_LENGTH}" autocomplete="off" /></label>
               <label>Color <div class="pax-color-picker" id="lobby-player-color" role="radiogroup" aria-label="Color del país"></div></label>
             </div>
+            <button class="pax-lobby-copy pax-settings-toggle" id="lobby-settings-toggle" type="button" aria-expanded="false" aria-controls="lobby-settings" hidden>⚙ Configurar partida</button>
+            <section class="pax-lobby-settings" id="lobby-settings" hidden>
+              <h2>Configuración de partida</h2>
+              <label>Preset
+                <select id="lobby-settings-preset">
+                  <option value="quick">Rápida</option>
+                  <option value="normal">Normal</option>
+                  <option value="strategic">Estratégica</option>
+                </select>
+              </label>
+              <div class="pax-settings-grid">
+                <label>Rondas <input id="settings-rounds" type="number" min="5" max="100"></label>
+                <label>Segundos de planificación <input id="settings-planning" type="number" min="15" max="300"></label>
+                <label>Acciones por ronda <input id="settings-actions" type="number" min="1" max="6"></label>
+                <label>Frecuencia OI (0 = nunca) <input id="settings-oi-frequency" type="number" min="0" max="20"></label>
+                <label>Tamaño del mapa <input id="settings-map-size" type="number" min="12" max="50"></label>
+                <label>Semilla <input id="settings-seed" maxlength="40" placeholder="Aleatoria"></label>
+              </div>
+              <button class="pax-lobby-copy" id="save-lobby-settings" type="button">Guardar configuración</button>
+              <p id="lobby-settings-summary"></p>
+            </section>
             <div class="pax-lobby-slots" id="lobby-slots"></div>
             <button class="pax-start-button" id="start-room-button" type="button" hidden>Listo (0/0)</button>
             <button class="pax-lobby-copy" id="leave-lobby-button" type="button">Volver al menú principal</button>
@@ -91,6 +130,18 @@ export class LobbyScreen {
     this.query('#copy-room-code').addEventListener('click', () => this.callbacks.onCopy?.());
     this.query('#start-room-button').addEventListener('click', () => this.callbacks.onReady?.());
     this.query('#leave-lobby-button').addEventListener('click', () => this.callbacks.onLeave?.());
+    this.query('#save-lobby-settings').addEventListener('click', () => this.callbacks.onSettingsChange?.(this.readSettings()));
+    this.query('#single-settings-toggle').addEventListener('click', () => this.toggleSettings('single'));
+    this.query('#lobby-settings-toggle').addEventListener('click', () => this.toggleSettings('lobby'));
+    this.query('#single-settings-preset').addEventListener('change', (event) => {
+      const preset = GAME_SETTINGS_PRESETS[event.target.value];
+      if (preset) this.writeSettings({ ...this.readSettings('single'), ...preset, preset: event.target.value }, 'single');
+    });
+    this.query('#lobby-settings-preset').addEventListener('change', (event) => {
+      const preset = GAME_SETTINGS_PRESETS[event.target.value];
+      if (!preset) return;
+      this.writeSettings({ ...this.readSettings(), ...preset, preset: event.target.value });
+    });
 
     const nameInput = this.query('#lobby-player-name');
     nameInput.addEventListener('keydown', (event) => {
@@ -132,6 +183,54 @@ export class LobbyScreen {
     return this.query(`#${id} .is-selected`)?.dataset.color;
   }
 
+  readSettings(scope = 'lobby') {
+    const prefix = scope === 'single' ? 'single-settings' : 'settings';
+    const value = (id) => Number(this.query(`#${id}`)?.value);
+    return {
+      preset: this.query(`#${prefix}-preset`).value,
+      maxRounds: value(`${prefix}-rounds`),
+      planningDuration: value(`${prefix}-planning`),
+      actionSlotCount: value(`${prefix}-actions`),
+      oiFrequency: value(`${prefix}-oi-frequency`),
+      mapSize: value(`${prefix}-map-size`),
+      mapSeed: this.query(`#${prefix}-seed`).value.trim() || null,
+    };
+  }
+
+  writeSettings(settings = DEFAULT_GAME_SETTINGS, scope = 'lobby') {
+    const prefix = scope === 'single' ? 'single-settings' : 'settings';
+    const setValue = (id, value) => {
+      const element = this.query(`#${id}`);
+      if (element) element.value = value;
+    };
+    setValue(`${prefix}-preset`, settings.preset || 'normal');
+    setValue(`${prefix}-rounds`, settings.maxRounds);
+    setValue(`${prefix}-planning`, settings.planningDuration);
+    setValue(`${prefix}-actions`, settings.actionSlotCount);
+    setValue(`${prefix}-oi-frequency`, settings.oiFrequency);
+    setValue(`${prefix}-map-size`, settings.mapSize);
+    setValue(`${prefix}-seed`, settings.mapSeed || '');
+    const summary = this.query('#lobby-settings-summary');
+    if (summary) {
+      summary.textContent =
+        `${settings.maxRounds} rondas · ${settings.planningDuration}s · ${settings.actionSlotCount} acciones · mapa ${settings.mapSize}×${settings.mapSize}`;
+    }
+  }
+
+  getSinglePlayerSettings() {
+    return this.readSettings('single');
+  }
+
+  toggleSettings(scope) {
+    const panelId = scope === 'single' ? 'single-settings' : 'lobby-settings';
+    const toggleId = scope === 'single' ? 'single-settings-toggle' : 'lobby-settings-toggle';
+    const panel = this.query(`#${panelId}`);
+    const toggle = this.query(`#${toggleId}`);
+    const expanded = !panel.hidden;
+    panel.hidden = expanded;
+    toggle.setAttribute('aria-expanded', String(!expanded));
+  }
+
   setRoomControlsEnabled(enabled) {
     this.mount.querySelectorAll('#create-room-button, #quick-match-button, #join-room-button')
       .forEach((button) => {
@@ -154,11 +253,22 @@ export class LobbyScreen {
     this.query('#room-menu').hidden = false;
     this.query('#lobby-view').hidden = true;
     this.query('#room-code-input').value = '';
+    this.query('#single-settings').hidden = true;
+    this.query('#single-settings-toggle').setAttribute('aria-expanded', 'false');
+    this.query('#lobby-settings').hidden = true;
+    this.query('#lobby-settings-toggle').setAttribute('aria-expanded', 'false');
   }
 
   updateRoom(room, playerId, normalizeName) {
+    const players = room.jugadores || {};
+    const rawSlots = Array.isArray(room.slots)
+      ? room.slots
+      : Object.values(room.slots || {});
+    const slots = Array.from({ length: MAX_PLAYERS }, (_, index) => (
+      rawSlots[index] || players[`slot_${index + 1}`] || null
+    ));
     const privateRoom = room.privada !== false;
-    const humanCount = room.slots.filter((player) => player?.tipo === 'humano').length;
+    const humanCount = slots.filter((player) => player?.tipo === 'humano').length;
     this.query('#room-menu').hidden = true;
     this.query('#lobby-view').hidden = false;
     this.query('#lobby-title').firstChild.textContent = privateRoom ? 'Sala ' : 'Partida rápida ';
@@ -166,15 +276,23 @@ export class LobbyScreen {
     this.query('#lobby-code').hidden = !privateRoom;
     this.query('#copy-room-code').hidden = !privateRoom;
     this.query('#lobby-count').textContent = `Jugadores en la sala: ${humanCount} / ${MAX_PLAYERS}`;
+    const settingsToggle = this.query('#lobby-settings-toggle');
+    settingsToggle.hidden = !room.isHost;
+    if (!room.isHost) {
+      this.query('#lobby-settings').hidden = true;
+      this.query('#lobby-settings-toggle').setAttribute('aria-expanded', 'false');
+      settingsToggle.setAttribute('aria-expanded', 'false');
+    }
+    this.query('#save-lobby-settings').disabled = !room.isHost || room.estado !== 'esperando';
 
-    const ownSlot = room.slots.find((player) => player?.id === playerId);
+    const ownSlot = slots.find((player) => player?.id === playerId);
     if (ownSlot) {
       const nameInput = this.query('#lobby-player-name');
       if (document.activeElement !== nameInput) nameInput.value = normalizeName(ownSlot.nombre || 'alpha');
       this.selectColor(this.query('#lobby-player-color'), ownSlot.color || AVAILABLE_NATION_COLORS[0]);
     }
     const ownColor = this.selectedColor('lobby-player-color');
-    const usedColors = new Set(room.slots.filter((player) => player?.id !== playerId).map((player) => player?.color));
+    const usedColors = new Set(slots.filter((player) => player?.id !== playerId).map((player) => player?.color));
     for (const choice of this.mount.querySelectorAll('#lobby-player-color [data-color]')) {
       const occupied = usedColors.has(choice.dataset.color) && choice.dataset.color !== ownColor;
       choice.disabled = occupied;
@@ -182,7 +300,7 @@ export class LobbyScreen {
       choice.title = occupied ? 'Este color ya está siendo usado' : 'Seleccionar color';
     }
 
-    this.query('#lobby-slots').innerHTML = room.slots.map((player, index) => `
+    this.query('#lobby-slots').innerHTML = slots.map((player, index) => `
       <div class="pax-lobby-slot">
         <strong>Ranura ${index + 1}:</strong>
         ${player
@@ -190,14 +308,15 @@ export class LobbyScreen {
           : 'Esperando jugador…'}
       </div>`).join('');
 
-    const readyCount = room.slots.filter((player) => player?.tipo === 'humano' && player.listo).length;
+    const readyCount = slots.filter((player) => player?.tipo === 'humano' && player.listo).length;
     const readyButton = this.query('#start-room-button');
-    readyButton.hidden = room.estado !== 'esperando' || !ownSlot;
+    readyButton.hidden = room.estado !== 'esperando';
     readyButton.disabled = false;
     readyButton.textContent = `${ownSlot?.listo ? 'Listo ✓' : 'Listo'} (${readyCount}/${humanCount})`;
     readyButton.title = ownSlot?.listo
       ? 'Pulsa de nuevo para dejar de estar listo'
       : 'Pulsa para confirmar que estás listo';
+    this.writeSettings(room.settings || DEFAULT_GAME_SETTINGS);
     return { ownSlot, humanCount, readyCount, privateRoom };
   }
 }

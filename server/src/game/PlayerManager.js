@@ -18,10 +18,10 @@ export const PlayerManager = {
         name: nation.name,
         color: nation.color,
         gdiPoints: initialGdi,
-        plannedActions: createEmptyActionSlots(),
+        plannedActions: createEmptyActionSlots(this.settings?.actionSlotCount),
         phaseReady: false,
         taxRate: ECONOMIC_POLICY.DEFAULT_TAX_RATE,
-        resources: { ...ECONOMY.STARTING_RESOURCES }
+        resources: { ...(this.settings?.startingResources || ECONOMY.STARTING_RESOURCES) }
       });
     });
   },
@@ -71,7 +71,7 @@ export const PlayerManager = {
         player.isDisconnected = false;
         player.isBot = false;
         player.phaseReady = false;
-        player.plannedActions = createEmptyActionSlots();
+        player.plannedActions = createEmptyActionSlots(this.settings?.actionSlotCount);
         if (playerName && playerName !== 'alpha') {
           player.name = LEGACY_NATION_NAMES.get(playerName) || playerName;
         }

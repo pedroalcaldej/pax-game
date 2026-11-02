@@ -47,6 +47,10 @@
   .pax-profile-fields { display: grid; gap: 8px; margin-top: 14px; }
   .pax-profile-fields label { display: grid; gap: 5px; color: #a7b3c7; font-size: 10px; font-weight: 800; text-transform: uppercase; }
   .pax-profile-fields input { width: 100%; min-height: 32px; padding: 6px 8px; border: 1px solid #34435d; border-radius: 6px; color: #f1f5f9; background: #0f172a; font: inherit; }
+  .pax-single-settings { margin-top: 12px; padding-top: 10px; border-top: 1px solid #34435d; }
+  .pax-settings-toggle { margin-top: 10px; }
+  .pax-single-settings label { display: grid; gap: 4px; margin: 5px 0; color: #a7b3c7; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+  .pax-single-settings input, .pax-single-settings select { min-height: 27px; padding: 5px 7px; border: 1px solid #34435d; border-radius: 5px; color: #f1f5f9; background: #0f172a; font: inherit; }
   .pax-color-picker { display: flex; flex-wrap: wrap; gap: 7px; padding: 5px; border: 1px solid #34435d; border-radius: 6px; background: #0f172a; }
   .pax-color-choice { width: 24px; height: 24px; padding: 0; border: 2px solid transparent; border-radius: 50%; cursor: pointer; }
   .pax-color-choice:disabled { cursor: not-allowed; filter: grayscale(1); opacity: .3; }
@@ -98,6 +102,15 @@
     cursor: pointer;
   }
   .pax-lobby-slots { display: grid; gap: 7px; margin: 16px 0; text-align: left; }
+  .pax-lobby-settings { margin: 16px 0; padding: 12px; border: 1px solid #34435d; border-radius: 8px; text-align: left; background: rgba(15, 23, 42, .55); }
+  .pax-lobby-settings[hidden] { display: none; }
+  .pax-lobby-settings h2 { margin: 0 0 10px; font-size: 13px; }
+  .pax-lobby-settings label { display: grid; gap: 4px; margin: 6px 0; color: #a7b3c7; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+  .pax-lobby-settings input, .pax-lobby-settings select { min-height: 28px; padding: 5px 7px; border: 1px solid #34435d; border-radius: 5px; color: #f1f5f9; background: #0f172a; font: inherit; }
+  .pax-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; }
+  .pax-settings-check { display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 6px !important; }
+  .pax-settings-check input { min-height: auto; }
+  #lobby-settings-summary { margin: 8px 0 0; color: #9ba9bf; font-size: 10px; }
   .pax-lobby-slot {
     padding: 9px 10px;
     border: 1px solid #34435d;

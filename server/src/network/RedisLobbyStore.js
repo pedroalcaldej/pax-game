@@ -2,7 +2,9 @@ import {
   AVAILABLE_NATION_COLORS,
   MAX_PLAYER_NAME_LENGTH,
   MAX_PLAYERS,
-  NATIONS
+  NATIONS,
+  DEFAULT_GAME_SETTINGS,
+  normalizeGameSettings
 } from '../../../shared/Constants.js';
 
 const ROOM_TTL_SECONDS = 60 * 60 * 24 * 7;
@@ -69,6 +71,11 @@ elseif operation == 'profile' then
     room.jugadores=players; persist(); return cjson.encode({ok=true,room=room})
   end end
   return cjson.encode({ok=false,error='No tienes un país reservado en esta sala.'})
+elseif operation == 'settings' then
+  if room.estado ~= 'esperando' then return cjson.encode({ok=false,error='La configuración solo se puede cambiar antes de iniciar.'}) end
+  if room.creador ~= payload.userId then return cjson.encode({ok=false,error='Solo el anfitrión puede cambiar la configuración.'}) end
+  room.settings = payload.settings
+  persist(); return cjson.encode({ok=true,room=room})
 elseif operation == 'ready' then
   if room.estado ~= 'esperando' then return cjson.encode({ok=false,error='La sala ya inició.'}) end
   local own=nil
@@ -133,6 +140,7 @@ export class RedisLobbyStore {
       const code = `PAX${Array.from({length:3},()=>alphabet[Math.floor(Math.random()*alphabet.length)]).join('')}`;
       const room = {
         creador: userId, privada, estado: 'esperando', rondaActual: 1, creadaEn: Date.now(),
+        settings: normalizeGameSettings(DEFAULT_GAME_SETTINGS),
         jugadores: { slot_1: { id:userId, nombre:playerName, color:AVAILABLE_NATION_COLORS[0], tipo:'humano', listo:false, conectado:true } }
       };
       const result = await this.mutate(code,'create',{ room });
@@ -170,6 +178,13 @@ export class RedisLobbyStore {
 
   async updateProfile(code,userId,name,color) {
     const result=await this.mutate(code,'profile',{userId,name,color,colors:AVAILABLE_NATION_COLORS}); if(!result.ok) throw new Error(result.error); return this.get(code);
+  }
+  async updateSettings(code, userId, settings) {
+    const result = await this.mutate(code, 'settings', {
+      userId, settings: normalizeGameSettings(settings)
+    });
+    if (!result.ok) throw new Error(result.error);
+    return this.get(code);
   }
   async toggleReady(code,userId) {
     const result=await this.mutate(code,'ready',{userId,colors:AVAILABLE_NATION_COLORS,nations:NATIONS}); if(!result.ok) throw new Error(result.error); return this.get(code);

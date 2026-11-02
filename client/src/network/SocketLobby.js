@@ -18,9 +18,13 @@ export class SocketLobby {
       if (room?.code) {
         this.roomCode = room.code;
         const players = room.jugadores || {};
+        const rawSlots = Array.isArray(room.slots) ? room.slots : Object.values(room.slots || {});
+        const slots = Array.from({ length: MAX_PLAYERS }, (_, index) => (
+          rawSlots[index] || players[`slot_${index + 1}`] || null
+        ));
         this.onChange?.({
           ...room,
-          slots: room.slots || Array.from({ length: MAX_PLAYERS }, (_, index) => players[`slot_${index + 1}`] || null),
+          slots,
           isHost: room.creador === this.playerId
         });
       }
@@ -58,6 +62,11 @@ export class SocketLobby {
   }
   async updateProfile({ name, color }) {
     await this.request(PROTOCOL.LOBBY_UPDATE_PROFILE, { roomId: this.roomCode, userId: this.playerId, name, color });
+  }
+  async updateSettings(settings) {
+    await this.request(PROTOCOL.LOBBY_UPDATE_SETTINGS, {
+      roomId: this.roomCode, userId: this.playerId, settings
+    });
   }
   async startGame() {
     await this.request(PROTOCOL.LOBBY_TOGGLE_READY, { roomId: this.roomCode, userId: this.playerId });

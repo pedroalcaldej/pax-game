@@ -50,8 +50,8 @@ export class Map {
     this.nationColors = [...NATION_COLORS];
 
     this.tileSize = MAP_CONFIG?.TILE_SIZE || 40;
-    this.cols = MAP_CONFIG?.GRID_WIDTH || 30;
-    this.rows = MAP_CONFIG?.GRID_HEIGHT || 30;
+    this.cols = MAP_CONFIG?.GRID_SIZE || 30;
+    this.rows = this.cols;
 
     const pixelWidth = this.cols * this.tileSize;
     const pixelHeight = this.rows * this.tileSize;
@@ -328,6 +328,22 @@ export class Map {
   render(grid, notifySelection = true) {
     if (!grid || !Array.isArray(grid)) return;
     this.grid = grid;
+    const nextRows = grid.length;
+    const nextCols = grid[0]?.length || this.cols;
+    if (nextRows !== this.rows || nextCols !== this.cols) {
+      this.rows = nextRows;
+      this.cols = nextCols;
+      const pixelWidth = this.cols * this.tileSize;
+      const pixelHeight = this.rows * this.tileSize;
+      this.canvas.width = pixelWidth;
+      this.canvas.height = pixelHeight;
+      this.baseCanvas.width = pixelWidth;
+      this.baseCanvas.height = pixelHeight;
+      this.canvas.style.width = `${pixelWidth}px`;
+      this.canvas.style.height = `${pixelHeight}px`;
+      this.canvas.style.minWidth = `${pixelWidth}px`;
+      this.canvas.style.minHeight = `${pixelHeight}px`;
+    }
 
     const visibleCtx = this.ctx;
     this.ctx = this.baseCtx;

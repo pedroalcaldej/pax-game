@@ -5,7 +5,6 @@
 import {
   GAME_PHASES,
   GAME_STAGES,
-  MAX_ROUNDS,
   STAGE_TIMINGS,
   TIMINGS
 } from '../../../shared/Constants.js';
@@ -22,7 +21,7 @@ export class PhaseManager {
     this.transitionDueAt = null;
     this.scheduledPhase = null;
     this.pausedTransition = null;
-    this.secondsRemaining = TIMINGS.DECISION_PHASE_DURATION;
+    this.secondsRemaining = gameState.settings.planningDuration;
     this.running = false;
     this.paused = false;
   }
@@ -52,7 +51,7 @@ export class PhaseManager {
         this.schedulePhase(GAME_PHASES.PHASE_2_DECISIONS, STAGE_TIMINGS.ROUND_START_MS);
         break;
       case GAME_PHASES.PHASE_2_DECISIONS:
-        this.secondsRemaining = TIMINGS.DECISION_PHASE_DURATION;
+        this.secondsRemaining = this.gameState.settings.planningDuration;
         this.gameState.timeRemaining = this.secondsRemaining;
         this.gameState.runBotDecisions();
         this.notifyState();
@@ -75,7 +74,8 @@ export class PhaseManager {
         this.gameState.timeRemaining = 0;
         this.notifyState();
         this.schedulePhase(
-          this.gameState.currentRound % 5 === 0
+          this.gameState.settings.oiFrequency > 0
+          && this.gameState.currentRound % this.gameState.settings.oiFrequency === 0
             ? GAME_PHASES.PHASE_6_OI_SESSION
             : GAME_PHASES.PHASE_5_SUMMARY,
           STAGE_TIMINGS.CLOSING_MS
@@ -85,9 +85,9 @@ export class PhaseManager {
         this.gameState.timeRemaining = 0;
         this.gameState.recordTaxRateChangesAtRoundEnd();
         this.gameState.expireTreatiesAfterRound(this.gameState.currentRound);
-        if (this.gameState.currentRound >= MAX_ROUNDS) {
+        if (this.gameState.currentRound >= this.gameState.settings.maxRounds) {
           this.gameState.gameOver = true;
-          this.gameState.recordEvent(`La partida terminó en la ronda ${MAX_ROUNDS}.`);
+          this.gameState.recordEvent(`La partida terminó en la ronda ${this.gameState.settings.maxRounds}.`);
           this.stop();
           this.notifyState();
           break;
