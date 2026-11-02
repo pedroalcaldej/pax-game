@@ -3,7 +3,7 @@
  * Genera un mapa de tierra y agua con pequeños territorios nacionales.
  */
 
-import { MAP_CONFIG, NATIONS, TERRAIN_TYPES, TILE_STATUS } from './Constants.js';
+import { ECONOMY, MAP_CONFIG, NATIONS, TERRAIN_TYPES, TILE_STATUS } from './Constants.js';
 
 const DIRS8 = [
   [-1, -1], [0, -1], [1, -1],
@@ -306,7 +306,7 @@ export function generateInitialGrid(seed = Date.now()) {
       nationId,
       ownerId: NATIONS[nationId].id,
       defense: 4,
-      population: 100,
+      population: ECONOMY.POPULATION.CAPITAL_START,
       troops: 4
     });
 
@@ -314,7 +314,7 @@ export function generateInitialGrid(seed = Date.now()) {
     if (city) {
       applyType(city, TERRAIN_TYPES.CIU, {
         defense: 2,
-        population: 80,
+        population: ECONOMY.POPULATION.CITY_START,
         troops: 2
       });
     }

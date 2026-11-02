@@ -1,5 +1,5 @@
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
-import { GAME_PHASES, TREATY_TYPES } from '../../../shared/Constants.js';
+import { ECONOMY, GAME_PHASES, TREATY_TYPES } from '../../../shared/Constants.js';
 import { BANK_TARIFF_RATE, TREATY_DURATION_ROUNDS, VALID_TRADE_RESOURCES } from './GameStateUtils.js';
 
 export const FinanceEngine = {
@@ -29,7 +29,7 @@ export const FinanceEngine = {
         return { ok: false, message: 'Indica una cantidad entera de materiales mayor que cero.' };
       }
       if (action.type === 'BUY_MATERIALS') {
-        const cost = quantity * 3;
+        const cost = quantity * ECONOMY.COSTS.MARKET_BUY_MATERIAL_SILVER;
         if (!Number.isSafeInteger(cost) || player.resources.SILVER < cost) {
           return { ok: false, message: 'No tienes suficiente plata para comprar esos materiales.' };
         }
@@ -43,10 +43,11 @@ export const FinanceEngine = {
         return { ok: false, message: 'No tienes suficientes materiales para vender esa cantidad.' };
       }
       player.resources.MATERIALS -= quantity;
-      player.resources.SILVER += quantity;
+      const proceeds = quantity * ECONOMY.COSTS.MARKET_SELL_MATERIAL_SILVER;
+      player.resources.SILVER += proceeds;
       this.bankFund.MATERIALS += quantity;
-      this.recordEvent(`${player.name} vendió ${quantity} materiales por ${quantity} de plata en el Mercado Global.`);
-      return { ok: true, message: `Vendiste ${quantity} materiales por ${quantity} de plata.` };
+      this.recordEvent(`${player.name} vendió ${quantity} materiales por ${proceeds} de plata en el Mercado Global.`);
+      return { ok: true, message: `Vendiste ${quantity} materiales por ${proceeds} de plata.` };
     }
 
     if (action.type === 'TRANSFER_RESOURCE') {
@@ -85,19 +86,19 @@ export const FinanceEngine = {
     }
 
     if (action.type === 'DONATE_TO_WORLD_BANK') {
-      const donationCost = 15;
+      const donationCost = ECONOMY.COSTS.DONATION_SILVER;
       if (player.resources.SILVER < donationCost) {
-        return { ok: false, message: 'Necesitas 15 de plata para donar al Banco Mundial.' };
+        return { ok: false, message: `Necesitas ${donationCost} de plata para donar al Banco Mundial.` };
       }
       player.resources.SILVER -= donationCost;
-      player.resources.INFLUENCE += 1;
+      player.resources.INFLUENCE += ECONOMY.COSTS.DONATION_INFLUENCE;
       this.bankFund.SILVER += donationCost;
       this.recordEvent(
-        `${player.name} donó ${donationCost} de plata al Banco Mundial y obtuvo 1 de Influencia Política.`
+        `${player.name} donó ${donationCost} de plata al Banco Mundial y obtuvo ${ECONOMY.COSTS.DONATION_INFLUENCE} de Influencia Política.`
       );
       return {
         ok: true,
-        message: 'Donación realizada: pagaste 15 de plata y obtuviste 1 de Influencia.'
+        message: `Donación realizada: pagaste ${donationCost} de plata y obtuviste ${ECONOMY.COSTS.DONATION_INFLUENCE} de Influencia.`
       };
     }
 
@@ -108,8 +109,8 @@ export const FinanceEngine = {
       const bond = {
         id: `bond-${this.nextBondId++}`,
         playerId: player.id,
-        principal: 25,
-        balance: 25,
+        principal: ECONOMY.COSTS.BOND_PRINCIPAL,
+        balance: ECONOMY.COSTS.BOND_PRINCIPAL,
         issueRound: this.currentRound,
         dueRound: this.currentRound + TREATY_DURATION_ROUNDS,
         defaulted: false,
@@ -117,11 +118,11 @@ export const FinanceEngine = {
         lastInterestRound: null
       };
       this.bonds.push(bond);
-      player.resources.SILVER += 20;
+      player.resources.SILVER += ECONOMY.COSTS.BOND_PROCEEDS;
       this.recordEvent(
-        `${player.name} emitió el bono ${bond.id}: recibió 20 de plata y debe pagar 25 en la ronda ${bond.dueRound}.`
+        `${player.name} emitió el bono ${bond.id}: recibió ${ECONOMY.COSTS.BOND_PROCEEDS} de plata y debe pagar ${bond.principal} en la ronda ${bond.dueRound}.`
       );
-      return { ok: true, message: `Bono emitido: recibiste 20 de plata; debes 25 en la ronda ${bond.dueRound}.` };
+      return { ok: true, message: `Bono emitido: recibiste ${ECONOMY.COSTS.BOND_PROCEEDS} de plata; debes ${bond.principal} en la ronda ${bond.dueRound}.` };
     }
 
     if (action.type === 'REPAY_BOND') {
@@ -170,16 +171,19 @@ export const FinanceEngine = {
           this.recordEvent(`${player.name} pagó automáticamente el bono ${bond.id}; deuda saldada.`);
         } else {
           bond.defaulted = true;
-          player.resources.INFLUENCE = Math.max(0, player.resources.INFLUENCE - 5);
+          player.resources.INFLUENCE = Math.max(
+            0,
+            player.resources.INFLUENCE - ECONOMY.COSTS.BOND_DEFAULT_INFLUENCE_PENALTY
+          );
           this.recordEvent(
-            `${player.name} incumplió el bono ${bond.id}: no pudo pagar ${bond.balance} de plata y perdió 5 de Influencia Política.`
+            `${player.name} incumplió el bono ${bond.id}: no pudo pagar ${bond.balance} de plata y perdió ${ECONOMY.COSTS.BOND_DEFAULT_INFLUENCE_PENALTY} de Influencia Política.`
           );
         }
       } else if (bond.defaulted && round > bond.dueRound && bond.lastInterestRound !== round) {
-        bond.balance += 1;
+        bond.balance += ECONOMY.COSTS.BOND_INTEREST_PER_ROUND;
         bond.lastInterestRound = round;
         this.recordEvent(
-          `El bono ${bond.id} de ${player.name} acumuló 1 de interés; la deuda asciende a ${bond.balance} de plata.`
+          `El bono ${bond.id} de ${player.name} acumuló ${ECONOMY.COSTS.BOND_INTEREST_PER_ROUND} de interés; la deuda asciende a ${bond.balance} de plata.`
         );
       }
     }

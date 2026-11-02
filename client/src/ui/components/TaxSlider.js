@@ -3,7 +3,7 @@
  * Componente UI para ajustar la Tasa Impositiva (Tau) durante la planificación.
  */
 
-import { ECONOMIC_POLICY } from '../../../../shared/Constants.js';
+import { ECONOMIC_POLICY, ECONOMY } from '../../../../shared/Constants.js';
 
 export class TaxSlider {
   /**
@@ -36,7 +36,7 @@ export class TaxSlider {
           value="${this.currentValue}"
         />
         <p>
-          * Impuestos altos aumentan el ingreso inmediato, pero reducen el crecimiento demográfico (G = 1 / 100τ).
+          * Impuestos altos aumentan el ingreso inmediato, pero reducen el crecimiento demográfico (G = 1 / (${ECONOMY.POPULATION.GROWTH_DIVISOR} × τ)).
         </p>
       </div>
     `;
@@ -69,6 +69,8 @@ export class TaxSlider {
     const input = this.container.querySelector('#taxInput');
     if (input) {
       input.disabled = !enabled;
+      if (enabled) input.removeAttribute('data-tooltip');
+      else input.dataset.tooltip = 'La tasa impositiva solo se puede cambiar durante la planificación.';
       this.container.style.opacity = enabled ? '1' : '0.5';
     }
   }

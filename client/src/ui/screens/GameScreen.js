@@ -11,6 +11,7 @@ import { socket } from '../../network/SocketClient.js';
 import { SocketLobby } from '../../network/SocketLobby.js';
 import {
   ACTION_SLOT_COUNT,
+  ECONOMY,
   GAME_STAGES,
   MAX_PLAYERS,
   MAX_ROUNDS,
@@ -23,6 +24,11 @@ import {
   TIMINGS
 } from '../../../../shared/Constants.js';
 import { getPlayerRankings } from '../components/PlayerRankings.js';
+import {
+  calculateTaxIncome,
+  getPopulationGrowthRate,
+  projectUrbanPopulation
+} from '../../../../shared/EconomyFormulas.js';
 import { Chat } from '../components/Chat.js';
 import { EventLog } from '../components/EventLog.js';
 import { PhaseReadyButton } from '../components/PhaseReadyButton.js';
@@ -55,6 +61,12 @@ const STAGE_LABELS = {
 
 function formatValue(value) {
   return Number.isFinite(value) ? Math.floor(value).toLocaleString('es-ES') : '—';
+}
+
+function formatFormulaNumber(value) {
+  return Number.isFinite(value)
+    ? value.toLocaleString('es-CL', { maximumFractionDigits: 4 })
+    : '0';
 }
 
 function escapeHTML(value) {
@@ -473,27 +485,49 @@ export class GameScreen {
   }
 
   updateTaxMetrics(taxRate) {
-    const growth = taxRate > 0 ? 1 / (100 * taxRate) : 0;
+    const growth = getPopulationGrowthRate(taxRate);
     this.container.querySelector('#tax-value').textContent = `${Math.round(taxRate * 100)}%`;
-    this.container.querySelector('#growth-value').textContent = `+${(growth * 100).toFixed(2)}%`;
+    const growthValue = this.container.querySelector('#growth-value');
+    this.container.querySelector('#growth-label').textContent = 'Crecimiento';
+    this.container.querySelector('#growth-rate-value').textContent = `+${(growth * 100).toFixed(2)}%`;
     const plannedActions = this.player?.plannedActions || [];
     let forecastPopulation = 0;
+    let populationIncrease = 0;
     for (const tile of this.gameState?.grid?.flat() || []) {
       if (tile.ownerId !== this.player?.id) continue;
       if (tile.type === 'CAP' || tile.type === 'CIU') {
-        forecastPopulation += Math.floor((tile.population || 0) * (1 + growth));
+        const projected = projectUrbanPopulation(tile, taxRate);
+        forecastPopulation += projected.population;
+        populationIncrease += projected.population - (tile.population || 0);
       }
     }
     for (const action of plannedActions) {
       if (action?.type !== 'BUILD_CITY') continue;
       const tile = this.gameState?.grid?.[action.y]?.[action.x];
       if (tile && tile.ownerId === this.player?.id && tile.type === 'TR' && !tile.building) {
-        forecastPopulation += Math.floor(50 * (1 + growth));
+        const newCityPopulation = ECONOMY.POPULATION.NEW_CITY;
+        const projected = projectUrbanPopulation({
+          population: newCityPopulation
+        }, taxRate);
+        forecastPopulation += projected.population;
+        populationIncrease += projected.population - newCityPopulation;
       }
     }
-    this.container.querySelector('#forecast-revenue-value').textContent = formatValue(
-      Math.floor(forecastPopulation * taxRate)
+    this.container.querySelector('#population-growth-value').textContent = (
+      `· +${formatValue(populationIncrease)} hab.`
     );
+    const growthFormula = `Tasa = 1 / (${ECONOMY.POPULATION.GROWTH_DIVISOR} × ${formatFormulaNumber(taxRate)}) = ${(growth * 100).toFixed(2)}%. Por casilla urbana: aumento = redondeo(población × tasa). Próxima ronda: +${formatFormulaNumber(populationIncrease)} habitantes.`;
+    growthValue.dataset.tooltip = growthFormula;
+    growthValue.setAttribute('aria-label', growthFormula);
+    const forecastIncome = calculateTaxIncome(
+      forecastPopulation,
+      taxRate
+    );
+    const forecastRevenue = this.container.querySelector('#forecast-revenue-value');
+    forecastRevenue.textContent = formatValue(forecastIncome.silverEarned);
+    const taxFormula = `Plata = redondeo(${formatFormulaNumber(forecastPopulation)} población × ${formatFormulaNumber(taxRate)} tasa × ${formatFormulaNumber(ECONOMY.POPULATION.TAX_REVENUE_RATE)}) = ${formatFormulaNumber(forecastIncome.silverEarned)}. Incluye el crecimiento proyectado de esta ronda; los decimales no se acumulan.`;
+    forecastRevenue.dataset.tooltip = taxFormula;
+    forecastRevenue.setAttribute('aria-label', taxFormula);
   }
 
   updateDisabledTooltips(stage) {
@@ -507,7 +541,7 @@ export class GameScreen {
         ? 'Ya tienes un bono pendiente'
         : 'Acción bloqueada fuera de la planificación';
       else if (element.matches('[data-donate-world-bank]')) element.dataset.tooltip = planning
-        ? 'Requiere 15 Plata'
+        ? `Requiere ${ECONOMY.COSTS.DONATION_SILVER} Plata`
         : 'Acción bloqueada fuera de la planificación';
       else if (element.matches('[data-market-action], [data-quantity-adjust], [data-quantity-max]')) element.dataset.tooltip = planning
         ? reason
@@ -516,7 +550,7 @@ export class GameScreen {
         ? 'Requiere saldo de Plata para pagar la deuda'
         : 'Pago bloqueado fuera de la planificación';
       else if (element.matches('#oi-propose')) element.dataset.tooltip = planning
-        ? 'Requiere 2 de Influencia'
+        ? `Requiere ${ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE} de Influencia`
         : 'Propuesta bloqueada fuera de la reunión de la OI';
       else if (element.matches('#oi-submit-vote')) element.dataset.tooltip = 'Solo puedes votar durante una sesión activa de la OI';
       else if (element.matches('#phase-ready-button')) element.dataset.tooltip = 'Pulsa para marcarte listo; puedes volver a pulsar para retirar tu confirmación';
@@ -727,7 +761,7 @@ export class GameScreen {
       `
       : '';
     status.textContent = proposalWindow
-      ? 'Puedes proponer resoluciones durante la planificación. Cada propuesta cuesta 2 de Influencia.'
+      ? `Puedes proponer resoluciones durante la planificación. Cada propuesta cuesta ${ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE} de Influencia.`
       : `Próxima sesión después de ronda ${Math.ceil(round / 5) * 5}.`;
     content.innerHTML = `
       <div class="pax-oi-controls">
@@ -738,11 +772,11 @@ export class GameScreen {
               <option value="${OI_RESOLUTIONS.ARMAMENT_LIMIT}">Límite de armamento · 10 tropas</option>
               <option value="${OI_RESOLUTIONS.INDUSTRY_LIMIT}">Límite de industria · 10 fábricas</option>
               <option value="${OI_RESOLUTIONS.DEMILITARIZED_ZONE}">Zona Desmilitarizada · elegir casilla</option>
-              <option value="${OI_RESOLUTIONS.CONDITIONAL_SUBSIDY}">Subsidio condicionado · 25 de plata</option>
+              <option value="${OI_RESOLUTIONS.CONDITIONAL_SUBSIDY}">Subsidio condicionado · ${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata</option>
             </select>
           </label>
           <button id="oi-select-target" type="button" hidden>Elegir casilla para la ZDM</button>
-          <button id="oi-propose" type="button" ${this.player?.resources?.INFLUENCE >= 2 ? '' : 'disabled'}>Proponer (cuesta 2 Influencia)</button>
+          <button id="oi-propose" type="button" ${this.player?.resources?.INFLUENCE >= ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE ? '' : 'disabled'}>Proponer (cuesta ${ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE} Influencia)</button>
           ${this.oiTargetSelection ? '<p class="pax-oi-note">Haz clic en la casilla objetivo del mapa (el centro de una zona de 5×5).</p>' : ''}
         ` : ''}
         ${gameState.oiProposals.length

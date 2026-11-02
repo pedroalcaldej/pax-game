@@ -20,9 +20,9 @@ El objetivo principal de la partida es consolidar a la nación como la potencia 
 
 ## 2. Estructura de la Partida y Dinámica de Ronda
 
-Las partidas se configuran con un límite cerrado de **20 a 30 rondas** (definible en la sala) y una etapa de planificación de **60 segundos**. Cada ronda sigue estas etapas conceptuales:
+Las partidas duran **30 rondas** y cada etapa de planificación dura **60 segundos**. Cada ronda sigue estas etapas conceptuales:
 
-1. **Inicio de ronda:** el servidor aplica intereses, vencimientos, producción, recaudación y crecimiento poblacional. Esta etapa es visible y dura brevemente para que Plata, Materiales, Población, Influencia y GDI se actualicen con animaciones count-up.
+1. **Inicio de ronda:** desde la ronda 2, el servidor procesa en este orden Materiales, Influencia, crecimiento poblacional y recaudación de impuestos. La primera ronda solo usa las cantidades iniciales. Los intereses y vencimientos de bonos se procesan al comienzo de todas las rondas.
 2. **Planificación:** es la única etapa normal en la que el jugador interactúa. Aquí se gestionan impuestos, mercado, transferencias, bonos, pagos, diplomacia y las órdenes territoriales. Los jugadores pueden confirmar que están listos; si todos lo hacen, la etapa termina antes de los 60 segundos.
 3. **Resolución:** el servidor valida y ejecuta automáticamente las órdenes planificadas. Normalmente no se muestra en pantalla; si tarda más de lo esperado, la interfaz informa que está resolviendo acciones.
 4. **Cierre:** se presenta el resultado de la resolución durante una ventana breve. Las tropas se animan sobre el mapa, se muestran combates y capturas, y los cambios restantes de recursos se presentan visualmente.
@@ -38,26 +38,27 @@ La economía de PAX pivota sobre tres recursos principales: **Plata** (moneda de
 
 ### 3.1. Mecánica Impositiva y Crecimiento Demográfico
 
-La población de las Ciudades (`CIU`) es el motor fiscal del Estado. Sin embargo, una tasa impositiva alta desincentiva el crecimiento poblacional e induce migración o estancamiento:
+La población de las Ciudades (`CIU`) es el motor fiscal del Estado. Las cantidades iniciales y la producción por ronda se calibran para que Plata, Materiales, Influencia y Población comiencen y evolucionen en rangos comparables; el GDI suma sus valores directamente.
 
 1. **Rango Permitido de Impuestos:** La Tasa Impositiva ($\tau \in [0.05, 0.50]$) se fija dentro de un rango obligatorio del **5% al 50%**.
-2. **Fórmula de Crecimiento:** La Tasa de Crecimiento ($G$) de la población para la siguiente ronda se calcula mediante la relación recíproca con constante $k = 1$:
-   $$G = \frac{1}{100 \times \tau}$$
-3. **Actualización de Población:** Al final de cada ronda, la nueva población del Estado se determina aplicando la tasa obtenida sobre la población actual:
-   $$\text{Población}_{T+1} = \text{Población}_T \times (1 + G)$$
+2. **Crecimiento:** cada casilla urbana crece a una tasa de $G = \frac{1}{250 \times \tau}$ por ronda, sin tope. La población añadida en cada casilla se calcula como $\operatorname{redondeo}(\text{población} \times G)$; las fracciones no se acumulan entre rondas. Con el impuesto predeterminado del 20%, la tasa es del 2%; al 5%, es del 8%.
+3. **Recaudación:** la Plata obtenida por ronda es $\operatorname{redondeo}(\text{Población urbana} \times \tau \times 0.2)$. Los decimales no se acumulan entre rondas. Con 100 habitantes, al 5% se recauda 1 de Plata por ronda; al impuesto predeterminado del 20%, se recaudan 4.
 
-> **Regla de Jugabilidad:** A menor carga impositiva, la población crece a mayor velocidad, ampliando la base tributaria para rondas futuras. A mayor tasa impositiva, la recaudación por habitante aumenta de inmediato, pero el crecimiento de la población se desacelera hasta alcanzar un mínimo del 2%.
+> **Regla de Jugabilidad:** A menor carga impositiva, la población crece a mayor velocidad; a mayor tasa, la recaudación por habitante aumenta de inmediato.
+
+Al comenzar, cada país recibe **100 de Plata, 100 de Materiales y 100 de Influencia**. Su Capital y Ciudad comienzan con **50 habitantes cada una**. Desde el inicio de la ronda 2, cada fábrica produce **2 de Materiales** y cada ciudad/capital genera **1 de Influencia**; después se actualiza la población y se recaudan los impuestos. Las cantidades iniciales, la producción, los precios y los costos se centralizan en `ECONOMY` dentro de `shared/Constants.js`.
 
 ### 3.2. Infraestructura Industrial
 
 Los Materiales son indispensables para construir defensas y entrenar fuerzas armadas. Se producen mediante:
 
-- **Fábricas (`FT` / `FA`):** Edificaciones industriales construibles tanto en tierra (`FT`) como en agua (`FA`). Aportan **+2 Materiales por turno** y tienen un costo base de **$10 Plata**.
+- **Fábricas (`FT` / `FA`):** Edificaciones industriales construibles tanto en tierra (`FT`) como en agua (`FA`). Desde el inicio de la ronda 2 aportan **+2 Materiales al comienzo de cada ronda** y tienen un costo base de **$10 Plata**.
 - **Materia Prima (`MPT` / `MPA`):** Yacimientos naturales en tierra (`MPT`) o agua (`MPA`). No producen recursos por sí solas, pero otorgan un descuento especial reduciendo el costo de construcción de una Fábrica a solo **$5 Plata**.
+- **Costos de acción:** construir una ciudad cuesta **50 de Plata**; una fábrica cuesta **10 de Plata** o **5 en un yacimiento**. Reclutar una tropa cuesta **5 de Plata y 20 de Materiales**. Estos costos comparten la misma configuración que valida el servidor y muestra la interfaz.
 
 ### 3.3. Emisión de Deuda y Comercio
 
-- **Mercado Global:** Cada jugador puede comprar materiales por **3 de Plata** o
+- **Mercado Global:** Cada jugador puede comprar materiales por **1 de Plata** o
   venderlos por **1 de Plata** cada uno. El sistema neutral no tiene límites de stock.
 - **Transferencias directas:** Enviar Plata o Materiales a otro país retiene el **20%**
   como arancel del Banco Mundial, redondeado hacia arriba. El receptor obtiene el resto;
@@ -67,7 +68,7 @@ Los Materiales son indispensables para construir defensas y entrenar fuerzas arm
   automáticamente al vencimiento si hay fondos suficientes. El impago resta
   **5 de Influencia** y añade **1 de Plata** de interés al comienzo de cada ronda
   posterior; se permiten pagos parciales y totales manuales en cualquier momento.
-- **Ingreso de Influencia:** al finalizar cada ronda, cada ciudad o capital controlada
+- **Ingreso de Influencia:** al inicio de cada ronda desde la segunda, cada ciudad o capital controlada
   otorga **1 Punto de Influencia Política**. Durante la planificación, el jugador también
   puede donar **15 de Plata al Banco Mundial** para obtener **1 Punto de Influencia**.
 - **Tratado de Libre Comercio (TLC):** Acuerdo político de cinco rondas que exime del
@@ -131,18 +132,13 @@ El diseño contempla que un ataque o bloqueo militar ejecutado sin un Casus Bell
 
 ## 6. Sistema de Victoria y Marcador Global
 
-La victoria se determina al finalizar el límite de rondas mediante el **Índice de Dominio Global (GDI)**.
+La victoria se determina al finalizar el límite de rondas. Gana el país con el **Índice de Dominio Global (GDI)** más alto.
 
-$$\text{Puntuación Total} = \text{Plata} + \text{Materiales} + \text{Población Total} + \text{Influencia} + \text{Tropas} + \text{Infraestructura}$$
+$$\text{GDI} = \left\lfloor \text{Plata} + \text{Materiales} + \text{Influencia} + \text{Población} \right\rfloor$$
 
-Todos los activos acumulados se convierten directamente a puntos con una relación matemática limpia de **1 a 1**:
-- **Plata y Materiales:** 1 Punto por cada unidad acumulada en las arcas.
-- **Población:** 1 Punto por cada habitante residente en las Ciudades y Capital.
-- **Influencia Política:** 1 Punto por cada punto en la reserva diplomática.
-- **Ejército y Flota:** 1 Punto por cada unidad militar terrestre o naval activa.
-- **Infraestructura:** 1 Punto por cada nivel de fortificación o estructura industrial edificada.
+Cada unidad de **Plata**, **Materiales** e **Influencia** aporta un punto. La población aporta un punto por cada habitante de las casillas que controla el país. El total se redondea hacia abajo.
 
-El marcador muestra Plata, Materiales, Influencia Política y Población para cada nación. El GDI actual de cada país es la suma de esos cuatro valores; la tabla ordena las naciones por ese total.
+El marcador también presenta territorio, tropas, ciudades y fábricas como estadísticas, pero esos valores no se suman al GDI. La tabla ordena los países de mayor a menor puntuación.
 
 ---
 
@@ -158,7 +154,7 @@ La interfaz del mapa de PAX se rige por un lenguaje de diseño estrictamente bid
 
 ### Composición Inicial y Cambio de Capital
 - **Composición Inicial:** Cada país comienza la partida con una Capital principal. Además, su territorio asignado o adyacente puede contener otra(s) ciudad(es) o zonas de recursos desde el inicio.
-- **Cambio de Capital:** Un participante puede reubicar su Capital hacia otra ciudad bajo su control ejecutando la acción estratégica *Trasladar Capital* (**Costo:** 10$ + 2 Materiales y 1 slot de acción). Al trasladarse, la nueva ciudad pasa a tener **4 de defensa base** y la anterior conserva **2 de defensa base**.
+- **Cambio de Capital:** Un participante puede reubicar su Capital hacia otra ciudad bajo su control ejecutando la acción estratégica *Trasladar Capital* (**Costo:** 10$ + 20 Materiales y 1 slot de acción). Al trasladarse, la nueva ciudad pasa a tener **4 de defensa base** y la anterior conserva **2 de defensa base**.
 
 ---
 

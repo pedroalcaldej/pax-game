@@ -1,9 +1,12 @@
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
-import { ECONOMIC_POLICY, AVAILABLE_NATION_COLORS, LEGACY_NATION_NAMES, ACTION_SLOT_COUNT, NATIONS } from '../../../shared/Constants.js';
+import { ECONOMY, ECONOMIC_POLICY, AVAILABLE_NATION_COLORS, LEGACY_NATION_NAMES, ACTION_SLOT_COUNT, NATIONS } from '../../../shared/Constants.js';
 import { createEmptyActionSlots } from './GameStateUtils.js';
 
 export const PlayerManager = {
   createNations() {
+    const initialPopulation = ECONOMY.POPULATION.CAPITAL_START + ECONOMY.POPULATION.CITY_START;
+    const initialGdi = Object.values(ECONOMY.STARTING_RESOURCES)
+      .reduce((total, value) => total + value, initialPopulation);
     NATIONS.forEach((nation) => {
       this.players.set(nation.id, {
         id: nation.id,
@@ -14,20 +17,11 @@ export const PlayerManager = {
         isBot: true,
         name: nation.name,
         color: nation.color,
-        gdiPoints: 100,
-        gdiBreakdown: {
-          initial: 100,
-          population: 0,
-          industry: 0
-        },
+        gdiPoints: initialGdi,
         plannedActions: createEmptyActionSlots(),
         phaseReady: false,
         taxRate: ECONOMIC_POLICY.DEFAULT_TAX_RATE,
-        resources: {
-          SILVER: 100,
-          MATERIALS: 10,
-          INFLUENCE: 20
-        }
+        resources: { ...ECONOMY.STARTING_RESOURCES }
       });
     });
   },

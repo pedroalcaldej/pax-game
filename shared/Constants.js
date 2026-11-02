@@ -152,17 +152,6 @@ export const OI_RESOLUTIONS = {
   CONDITIONAL_SUBSIDY: 'CONDITIONAL_SUBSIDY'
 };
 
-export const INITIAL_STATE = {
-  // Infraestructura asignada a cada jugador al iniciar la partida
-  BUILDINGS: [
-    { type: 'CAPITAL', count: 1 },
-    { type: 'CITY', count: 1 }
-  ],
-  INITIAL_RESOURCES: {
-    BASIC: 100 // Reserva inicial de recurso base
-  }
-};
-
 export const TIMINGS = {
   // Duraciones de fase en segundos
   DECISION_PHASE_DURATION: 60, // Duración de la etapa de planificación
@@ -176,28 +165,42 @@ export const ECONOMIC_POLICY = {
   DEFAULT_TAX_RATE: 0.20, // 20%
 };
 
-// Tipos de recursos (Diseñado para expandirse a múltiples recursos en el futuro)
-export const RESOURCE_TYPES = {
-  BASIC: 'BASIC' // Por el momento un solo recurso genérico
-};
-
-// Tipos de infraestructuras/fábricas
-export const BUILDING_TYPES = {
-  CAPITAL: {
-    id: 'CAPITAL',
-    name: 'Capital',
-    cost: { [RESOURCE_TYPES.BASIC]: 0 }
+// Economía en unidades comparables: los cuatro componentes del GDI comienzan
+// en 100 puntos y sus ingresos por ronda mantienen magnitudes similares.
+export const ECONOMY = {
+  STARTING_RESOURCES: { SILVER: 100, MATERIALS: 100, INFLUENCE: 100 },
+  POPULATION: {
+    CAPITAL_START: 50,
+    CITY_START: 50,
+    NEW_CITY: 50,
+    GROWTH_DIVISOR: 250,
+    TAX_REVENUE_RATE: 0.2
   },
-  CITY: {
-    id: 'CITY',
-    name: 'Ciudad',
-    cost: { [RESOURCE_TYPES.BASIC]: 50 }
+  ROUND_PRODUCTION: {
+    MATERIALS_PER_FACTORY: 2,
+    INFLUENCE_PER_CITY: 1
   },
-  FACTORY: {
-    id: 'FACTORY',
-    name: 'Fábrica Base',
-    cost: { [RESOURCE_TYPES.BASIC]: 100 }, // Costo de construcción en recurso base
-    baseProduction: 10 // Producción base por ronda
+  OI_BOT_WAGER_SHARE: 0.5,
+  BANK_TRANSFER_TARIFF_RATE: 0.2,
+  COSTS: {
+    BUILD_CITY_SILVER: 50,
+    BUILD_FACTORY_SILVER: 10,
+    BUILD_FACTORY_RESOURCE_SILVER: 5,
+    RECRUIT_TROOP_SILVER: 5,
+    RECRUIT_TROOP_MATERIALS: 20,
+    MOVE_CAPITAL_SILVER: 10,
+    MOVE_CAPITAL_MATERIALS: 20,
+    MARKET_BUY_MATERIAL_SILVER: 1,
+    MARKET_SELL_MATERIAL_SILVER: 1,
+    DONATION_SILVER: 15,
+    DONATION_INFLUENCE: 1,
+    BOND_PRINCIPAL: 25,
+    BOND_PROCEEDS: 20,
+    BOND_INTEREST_PER_ROUND: 1,
+    OI_PROPOSAL_INFLUENCE: 2,
+    OI_SUBSIDY_SILVER: 25,
+    BROKEN_PACT_INFLUENCE_PENALTY: 10,
+    BOND_DEFAULT_INFLUENCE_PENALTY: 5
   }
 };
 

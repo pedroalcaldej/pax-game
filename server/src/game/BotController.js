@@ -1,5 +1,5 @@
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
-import { LAND_TERRAIN, NATIONS, TERRAIN_TYPES } from '../../../shared/Constants.js';
+import { ECONOMY, LAND_TERRAIN, NATIONS, TERRAIN_TYPES } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 import { createEmptyActionSlots } from './GameStateUtils.js';
 
@@ -172,8 +172,8 @@ export const BotController = {
       .reduce((sum, action) => sum + this.getMaterialCost(action), 0);
     const count = Math.min(
       troopLimit - currentTroops - plannedRecruitment,
-      Math.floor((player.resources.SILVER - reservedSilver) / 5),
-      Math.floor((player.resources.MATERIALS - reservedMaterials) / 2)
+      Math.floor((player.resources.SILVER - reservedSilver) / ECONOMY.COSTS.RECRUIT_TROOP_SILVER),
+      Math.floor((player.resources.MATERIALS - reservedMaterials) / ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS)
     );
     if (count < 1) return null;
 

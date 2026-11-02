@@ -1,4 +1,4 @@
-import { GAME_STAGES, LEGACY_NATION_NAMES, NATIONS, TIMINGS, TREATY_TYPES } from '../../../../shared/Constants.js';
+import { ECONOMY, GAME_STAGES, LEGACY_NATION_NAMES, NATIONS, TIMINGS, TREATY_TYPES } from '../../../../shared/Constants.js';
 import { getPlayerRankings } from './PlayerRankings.js';
 
 const TREATY_NAMES = {
@@ -89,6 +89,7 @@ export class GlobalPanel {
           </table>
         </div>
         <p class="pax-scoreboard-note">GDI: Plata + Materiales + Influencia + Población.</p>
+        <p class="pax-scoreboard-note">Desde la ronda 2, al inicio: +${ECONOMY.ROUND_PRODUCTION.MATERIALS_PER_FACTORY} Materiales por fábrica → +${ECONOMY.ROUND_PRODUCTION.INFLUENCE_PER_CITY} Influencia por ciudad/capital → crecimiento poblacional → recaudación de impuestos.</p>
         <section class="pax-global-treaties">
           <h3>Tratados vigentes</h3>
           <div id="global-treaty-list"></div>
@@ -112,7 +113,7 @@ export class GlobalPanel {
               <option value="${TREATY_TYPES.FREE_TRADE}">Tratado de Libre Comercio</option>
             </select>
           </label>
-          <p>Los tratados aceptados duran cinco rondas. Un TLC exime del arancel del 20% en transferencias directas mientras no haya conflicto militar.</p>
+          <p>Los tratados aceptados duran cinco rondas. Un TLC exime del arancel del ${Math.round(ECONOMY.BANK_TRANSFER_TARIFF_RATE * 100)}% en transferencias directas mientras no haya conflicto militar.</p>
           <button type="submit" id="treaty-propose-button">Enviar propuesta</button>
           <p class="pax-global-panel-status" id="treaty-status" role="status"></p>
         </form>

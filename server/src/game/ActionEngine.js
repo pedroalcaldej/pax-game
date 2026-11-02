@@ -1,5 +1,5 @@
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
-import { ACTION_SLOT_COUNT, GAME_PHASES, LAND_TERRAIN, TREATY_TYPES, TERRAIN_TYPES } from '../../../shared/Constants.js';
+import { ACTION_SLOT_COUNT, ECONOMY, GAME_PHASES, LAND_TERRAIN, TREATY_TYPES, TERRAIN_TYPES } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 import { createEmptyActionSlots } from './GameStateUtils.js';
 
@@ -86,7 +86,7 @@ export const ActionEngine = {
         if (tile.type !== TERRAIN_TYPES.TR || tile.building) {
           return { ok: false, message: 'Solo puedes construir una ciudad en tierra vacía.' };
         }
-        silverCost = 50;
+        silverCost = ECONOMY.COSTS.BUILD_CITY_SILVER;
         break;
       case 'BUILD_FACTORY':
         if (![TERRAIN_TYPES.TR, TERRAIN_TYPES.MPT, TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA].includes(tile.type)
@@ -104,7 +104,9 @@ export const ActionEngine = {
             return { ok: false, message: `El límite de industria es de ${this.oiPolicies.industryLimit} fábricas.` };
           }
         }
-        silverCost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA ? 5 : 10;
+        silverCost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA
+          ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER
+          : ECONOMY.COSTS.BUILD_FACTORY_SILVER;
         break;
       case 'RECRUIT_TROOP':
         {
@@ -129,16 +131,16 @@ export const ActionEngine = {
               return { ok: false, message: `El límite de armamento es de ${this.oiPolicies.armamentLimit} tropas.` };
             }
           }
-          silverCost = 5 * count;
-          materialCost = 2 * count;
+          silverCost = ECONOMY.COSTS.RECRUIT_TROOP_SILVER * count;
+          materialCost = ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * count;
         }
         break;
       case 'MOVE_CAPITAL':
         if (tile.type !== TERRAIN_TYPES.CIU) {
           return { ok: false, message: 'Selecciona una ciudad propia para trasladar la capital.' };
         }
-        silverCost = 10;
-        materialCost = 2;
+        silverCost = ECONOMY.COSTS.MOVE_CAPITAL_SILVER;
+        materialCost = ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS;
         break;
       case 'MOVE_TROOPS': {
         const destination = this.grid[action.targetY]?.[action.targetX];
@@ -193,21 +195,23 @@ export const ActionEngine = {
   },
 
   getSilverCost(action) {
-    if (action.type === 'BUILD_CITY') return 50;
+    if (action.type === 'BUILD_CITY') return ECONOMY.COSTS.BUILD_CITY_SILVER;
     if (action.type === 'BUILD_FACTORY') {
       const tile = this.grid[action.y]?.[action.x];
-      return tile?.type === TERRAIN_TYPES.MPT || tile?.type === TERRAIN_TYPES.MPA ? 5 : 10;
+      return tile?.type === TERRAIN_TYPES.MPT || tile?.type === TERRAIN_TYPES.MPA
+        ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER
+        : ECONOMY.COSTS.BUILD_FACTORY_SILVER;
     }
-    if (action.type === 'RECRUIT_TROOP') return 5 * (action.count ?? 1);
-    if (action.type === 'MOVE_CAPITAL') return 10;
+    if (action.type === 'RECRUIT_TROOP') return ECONOMY.COSTS.RECRUIT_TROOP_SILVER * (action.count ?? 1);
+    if (action.type === 'MOVE_CAPITAL') return ECONOMY.COSTS.MOVE_CAPITAL_SILVER;
     return 0;
   },
 
   getMaterialCost(action) {
     return action.type === 'RECRUIT_TROOP'
-      ? 2 * (action.count ?? 1)
+      ? ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * (action.count ?? 1)
       : action.type === 'MOVE_CAPITAL'
-        ? 2
+        ? ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS
         : 0;
   },
 
@@ -393,11 +397,13 @@ export const ActionEngine = {
         if (tile.type !== TERRAIN_TYPES.TR || tile.building) {
           return { ok: false, message: 'Solo puedes construir una ciudad en una casilla de tierra vacía.' };
         }
-        if (resources.SILVER < 50) return { ok: false, message: 'Necesitas 50 de plata.' };
-        resources.SILVER -= 50;
+        if (resources.SILVER < ECONOMY.COSTS.BUILD_CITY_SILVER) {
+          return { ok: false, message: `Necesitas ${ECONOMY.COSTS.BUILD_CITY_SILVER} de plata.` };
+        }
+        resources.SILVER -= ECONOMY.COSTS.BUILD_CITY_SILVER;
         tile.type = TERRAIN_TYPES.CIU;
         tile.building = 'CITY';
-        tile.population = 50;
+        tile.population = ECONOMY.POPULATION.NEW_CITY;
         tile.defense = 2;
         return { ok: true, message: 'Ciudad construida.' };
       }
@@ -413,7 +419,9 @@ export const ActionEngine = {
         ) {
           return { ok: false, message: `El límite de industria es de ${this.oiPolicies.industryLimit} fábricas.` };
         }
-        const cost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA ? 5 : 10;
+        const cost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA
+          ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER
+          : ECONOMY.COSTS.BUILD_FACTORY_SILVER;
         if (resources.SILVER < cost) return { ok: false, message: `Necesitas ${cost} de plata.` };
         resources.SILVER -= cost;
         tile.type = isWater ? TERRAIN_TYPES.FA : TERRAIN_TYPES.FT;
@@ -423,8 +431,8 @@ export const ActionEngine = {
       }
       case 'RECRUIT_TROOP': {
         const count = action.count ?? 1;
-        const silverCost = 5 * count;
-        const materialCost = 2 * count;
+        const silverCost = ECONOMY.COSTS.RECRUIT_TROOP_SILVER * count;
+        const materialCost = ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * count;
         if (!Number.isInteger(count) || count < 1) {
           return { ok: false, message: 'La cantidad de tropas a reclutar no es válida.' };
         }
@@ -450,15 +458,21 @@ export const ActionEngine = {
         if (tile.type !== TERRAIN_TYPES.CIU || tile.ownerId !== player.id) {
           return { ok: false, message: 'Selecciona una ciudad propia para trasladar la capital.' };
         }
-        if (resources.SILVER < 10 || resources.MATERIALS < 2) {
-          return { ok: false, message: 'Necesitas 10 de plata y 2 materiales.' };
+        if (
+          resources.SILVER < ECONOMY.COSTS.MOVE_CAPITAL_SILVER
+          || resources.MATERIALS < ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS
+        ) {
+          return {
+            ok: false,
+            message: `Necesitas ${ECONOMY.COSTS.MOVE_CAPITAL_SILVER} de plata y ${ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS} materiales.`
+          };
         }
         const oldCapital = this.grid.flat().find((candidate) => (
           candidate.ownerId === player.id && candidate.type === TERRAIN_TYPES.CAP
         ));
         if (!oldCapital) return { ok: false, message: 'No se encontró la capital actual.' };
-        resources.SILVER -= 10;
-        resources.MATERIALS -= 2;
+        resources.SILVER -= ECONOMY.COSTS.MOVE_CAPITAL_SILVER;
+        resources.MATERIALS -= ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS;
         oldCapital.type = TERRAIN_TYPES.CIU;
         oldCapital.building = 'CITY';
         oldCapital.defense = 2;

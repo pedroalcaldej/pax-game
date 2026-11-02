@@ -1,4 +1,4 @@
-import { GAME_STAGES } from '../../../../shared/Constants.js';
+import { ECONOMY, GAME_STAGES } from '../../../../shared/Constants.js';
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -22,7 +22,7 @@ export class FinancePanel {
     this.container.innerHTML = `
       <section class="pax-finance">
         <div id="finance-economy-content">
-        <p class="pax-finance-note">Compra materiales por 3 de plata o vende cada material por 1 de plata. Las operaciones se suspenden durante la reunión de la OI.</p>
+        <p class="pax-finance-note">Compra materiales por ${ECONOMY.COSTS.MARKET_BUY_MATERIAL_SILVER} de plata o vende cada material por ${ECONOMY.COSTS.MARKET_SELL_MATERIAL_SILVER} de plata. Las operaciones se suspenden durante la reunión de la OI.</p>
         <div class="pax-market-card">
           <div class="pax-market-quantity">
             <button type="button" data-quantity-adjust="-1" aria-label="Reducir cantidad">−</button>
@@ -43,8 +43,8 @@ export class FinancePanel {
             <p class="pax-finance-note">Fondo del Banco Mundial: <strong id="finance-bank-fund">0 plata · 0 materiales</strong></p>
           </div>
           <div class="pax-bank-card pax-bank-actions">
-            <button type="button" data-issue-bond>Emitir Bono (+20 plata)</button>
-            <button type="button" data-donate-world-bank>Donar al BM (-15 plata, +1 Influencia)</button>
+            <button type="button" data-issue-bond>Emitir Bono (+${ECONOMY.COSTS.BOND_PROCEEDS} plata)</button>
+            <button type="button" data-donate-world-bank>Donar al BM (-${ECONOMY.COSTS.DONATION_SILVER} plata, +${ECONOMY.COSTS.DONATION_INFLUENCE} Influencia)</button>
           </div>
           <div class="pax-bank-card" id="finance-repayment-card">
             <h4>Pago de deuda</h4>
@@ -109,7 +109,12 @@ export class FinancePanel {
     const silver = Number(localPlayer?.resources?.SILVER ?? localPlayer?.silver ?? 0);
     const materials = Number(localPlayer?.resources?.MATERIALS ?? localPlayer?.materials ?? 0);
     const marketInput = root.querySelector('#market-quantity-input');
-    if (marketInput) marketInput.max = String(Math.max(1, Math.min(materials, Math.floor(silver / 3) || 1)));
+    if (marketInput) {
+      marketInput.max = String(Math.max(
+        1,
+        Math.min(materials, Math.floor(silver / ECONOMY.COSTS.MARKET_BUY_MATERIAL_SILVER) || 1)
+      ));
+    }
     this.updateMarketQuantity();
     for (const control of root.querySelectorAll(
       '[data-market-action], #market-quantity-input, [data-quantity-adjust], [data-quantity-max], [data-issue-bond], [data-donate-world-bank]'

@@ -1,4 +1,5 @@
 import {
+  ECONOMY,
   NATIONS,
   TERRAIN_TYPES,
   TILE_STATUS,
@@ -92,23 +93,28 @@ export class Inspector {
     const otherActions = (this.player?.plannedActions || [])
       .filter((action, index) => action && index !== this.activeSlot);
     const silverReserved = otherActions.reduce((sum, action) => {
-      if (action.type === 'BUILD_CITY') return sum + 50;
+      if (action.type === 'BUILD_CITY') return sum + ECONOMY.COSTS.BUILD_CITY_SILVER;
       if (action.type === 'BUILD_FACTORY') {
         const target = this.grid?.[action.y]?.[action.x];
-        return sum + (target?.type === 'MPT' || target?.type === 'MPA' ? 5 : 10);
+        return sum + (target?.type === 'MPT' || target?.type === 'MPA'
+          ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER
+          : ECONOMY.COSTS.BUILD_FACTORY_SILVER);
       }
-      if (action.type === 'RECRUIT_TROOP') return sum + 5 * (action.count || 1);
-      if (action.type === 'MOVE_CAPITAL') return sum + 10;
+      if (action.type === 'RECRUIT_TROOP') return sum + ECONOMY.COSTS.RECRUIT_TROOP_SILVER * (action.count || 1);
+      if (action.type === 'MOVE_CAPITAL') return sum + ECONOMY.COSTS.MOVE_CAPITAL_SILVER;
       return sum;
     }, 0);
     const materialsReserved = otherActions.reduce((sum, action) => {
-      if (action.type === 'RECRUIT_TROOP') return sum + 2 * (action.count || 1);
-      if (action.type === 'MOVE_CAPITAL') return sum + 2;
+      if (action.type === 'RECRUIT_TROOP') return sum + ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * (action.count || 1);
+      if (action.type === 'MOVE_CAPITAL') return sum + ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS;
       return sum;
     }, 0);
     const availableSilver = Math.max(0, (resources.SILVER || 0) - silverReserved);
     const availableMaterials = Math.max(0, (resources.MATERIALS || 0) - materialsReserved);
-    const recruitLimit = Math.floor(Math.min(availableSilver / 5, availableMaterials / 2));
+    const recruitLimit = Math.floor(Math.min(
+      availableSilver / ECONOMY.COSTS.RECRUIT_TROOP_SILVER,
+      availableMaterials / ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS
+    ));
     const movementReserved = otherActions
       .filter((action) => action.type === 'MOVE_TROOPS' && action.x === tile?.x && action.y === tile?.y)
       .reduce((sum, action) => sum + action.troops, 0);
@@ -134,21 +140,21 @@ export class Inspector {
       {
         type: 'BUILD_CITY',
         title: 'Construir ciudad',
-        cost: '50 plata',
-        enabled: planningPhase && isOwned && tile.type === 'TR' && !tile.building && hasSilver(50),
+        cost: `${ECONOMY.COSTS.BUILD_CITY_SILVER} plata`,
+        enabled: planningPhase && isOwned && tile.type === 'TR' && !tile.building && hasSilver(ECONOMY.COSTS.BUILD_CITY_SILVER),
         reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : tile?.type !== 'TR' || tile?.building ? 'Requiere tierra vacía' : 'Plata insuficiente'
       },
       {
         type: 'BUILD_FACTORY',
         title: 'Construir fábrica',
-        cost: `${['MPT', 'MPA'].includes(tile?.type) ? 5 : 10} plata`,
-        enabled: planningPhase && isOwned && (landCanBuild || waterCanBuild) && hasSilver(['MPT', 'MPA'].includes(tile?.type) ? 5 : 10),
+        cost: `${['MPT', 'MPA'].includes(tile?.type) ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER : ECONOMY.COSTS.BUILD_FACTORY_SILVER} plata`,
+        enabled: planningPhase && isOwned && (landCanBuild || waterCanBuild) && hasSilver(['MPT', 'MPA'].includes(tile?.type) ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER : ECONOMY.COSTS.BUILD_FACTORY_SILVER),
         reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : !(landCanBuild || waterCanBuild) ? 'Terreno no apto o ya edificado' : 'Plata insuficiente'
       },
       {
         type: 'RECRUIT_TROOP',
         title: 'Reclutar tropa',
-        cost: '5 plata · 2 materiales por tropa',
+        cost: `${ECONOMY.COSTS.RECRUIT_TROOP_SILVER} plata · ${ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS} materiales por tropa`,
         quantity: quantity('RECRUIT_TROOP', recruitLimit, 'tropas', 'count'),
         enabled: planningPhase && isOwned && recruitLimit > 0,
         reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : 'Recursos insuficientes o reservados'
@@ -164,8 +170,8 @@ export class Inspector {
       {
         type: 'MOVE_CAPITAL',
         title: 'Trasladar capital',
-        cost: '10 plata · 2 materiales',
-        enabled: planningPhase && isOwned && tile?.type === 'CIU' && hasSilver(10) && hasMaterials(2),
+        cost: `${ECONOMY.COSTS.MOVE_CAPITAL_SILVER} plata · ${ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS} materiales`,
+        enabled: planningPhase && isOwned && tile?.type === 'CIU' && hasSilver(ECONOMY.COSTS.MOVE_CAPITAL_SILVER) && hasMaterials(ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS),
         reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : tile?.type !== 'CIU' ? 'Selecciona una ciudad propia' : 'Recursos insuficientes'
       }
     ];

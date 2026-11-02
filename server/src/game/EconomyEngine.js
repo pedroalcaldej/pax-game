@@ -2,47 +2,56 @@
  * Procesa crecimiento demográfico, recaudación y producción al comenzar una ronda.
  */
 
+import { ECONOMY } from '../../../shared/Constants.js';
+import { calculateTaxIncome, projectUrbanPopulation } from '../../../shared/EconomyFormulas.js';
+
 export class EconomyEngine {
-  static awardEndOfTurnInfluence(gameState) {
-    for (const player of gameState.players.values()) {
-      const controlledCities = gameState.grid.flat().filter((tile) => (
-        tile.ownerId === player.id
-        && (tile.type === 'CAP' || tile.type === 'CIU')
-      )).length;
-      if (controlledCities < 1) continue;
-      player.resources.INFLUENCE += controlledCities;
-      gameState.recordEvent(
-        `${player.name} obtuvo ${controlledCities} de Influencia Política por sus ciudades y capitales controladas.`
+  static processRoundEconomy(gameState) {
+    const economies = Array.from(gameState.players.values(), (player) => {
+      const ownedTiles = gameState.grid.flat().filter((tile) => tile.ownerId === player.id);
+      return {
+        player,
+        taxRate: player.taxRate,
+        ownedTiles,
+        factoryCount: ownedTiles.reduce((count, tile) => (
+          count + (tile.building === 'FACTORY' ? tile.factoriesCount || 1 : 0)
+        ), 0),
+        controlledCities: ownedTiles.filter((tile) => tile.type === 'CAP' || tile.type === 'CIU').length,
+        population: 0
+      };
+    });
+
+    // Aplicar cada fase a todos los países mantiene el orden económico global.
+    for (const economy of economies) {
+      economy.player.resources.MATERIALS += (
+        economy.factoryCount * ECONOMY.ROUND_PRODUCTION.MATERIALS_PER_FACTORY
       );
     }
-  }
 
-  static processRoundEconomy(gameState) {
-    for (const player of gameState.players.values()) {
-      const taxRate = player.taxRate;
-      let population = 0;
-      let factoryCount = 0;
-
-      for (const row of gameState.grid) {
-        for (const tile of row) {
-          if (tile.ownerId !== player.id) continue;
-
-          if (tile.type === 'CAP' || tile.type === 'CIU') {
-            tile.population = Math.floor(tile.population * (1 + 1 / (100 * taxRate)));
-            population += tile.population;
-          }
-          if (tile.building === 'FACTORY') {
-            factoryCount += tile.factoriesCount || 1;
-          }
-        }
+    for (const economy of economies) {
+      const { player, controlledCities } = economy;
+      const influenceEarned = controlledCities * ECONOMY.ROUND_PRODUCTION.INFLUENCE_PER_CITY;
+      player.resources.INFLUENCE += influenceEarned;
+      if (influenceEarned > 0) {
+        gameState.recordEvent(
+          `${player.name} obtuvo ${influenceEarned} de Influencia Política por sus ciudades y capitales controladas.`
+        );
       }
+    }
 
-      player.resources.SILVER += Math.floor(population * taxRate);
-      player.resources.MATERIALS += factoryCount * 2;
-      const populationPoints = population;
-      const industryPoints = factoryCount * 2;
-      player.gdiBreakdown.population += populationPoints;
-      player.gdiBreakdown.industry += industryPoints;
+    for (const economy of economies) {
+      for (const tile of economy.ownedTiles) {
+        if (tile.type !== 'CAP' && tile.type !== 'CIU') continue;
+        const projected = projectUrbanPopulation(tile, economy.taxRate);
+        tile.population = projected.population;
+        economy.population += tile.population;
+      }
+    }
+
+    for (const economy of economies) {
+      const { player, taxRate, population } = economy;
+      const taxIncome = calculateTaxIncome(population, taxRate);
+      player.resources.SILVER += taxIncome.silverEarned;
       player.gdiPoints = gameState.calculateGDI(player);
     }
   }

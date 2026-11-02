@@ -1,4 +1,5 @@
-import { MAX_ROUNDS, MAP_CONFIG } from '../../../../shared/Constants.js';
+import { ECONOMIC_POLICY, ECONOMY, MAX_ROUNDS, MAP_CONFIG } from '../../../../shared/Constants.js';
+import { getPopulationGrowthRate } from '../../../../shared/EconomyFormulas.js';
 
 export function renderGameScreen(container) {
   container.innerHTML = `
@@ -28,8 +29,8 @@ export function renderGameScreen(container) {
           <div class="pax-phase"><span class="pax-label">Estado:</span><strong id="phase-value">Inicio de ronda</strong></div>
           <div class="pax-resources" aria-label="Recursos nacionales">
             <span class="pax-resource" title="Plata"><i class="pax-resource-icon" data-tooltip="Plata" tabindex="0" aria-label="Plata">◉</i><span id="silver-value">—</span></span>
-            <span class="pax-resource" title="Materiales"><i class="pax-resource-icon" data-tooltip="Materiales" tabindex="0" aria-label="Materiales">▣</i><span id="materials-value">—</span></span>
-            <span class="pax-resource" title="Influencia"><i class="pax-resource-icon" data-tooltip="Influencia" tabindex="0" aria-label="Influencia">♧</i><span id="influence-value">—</span></span>
+            <span class="pax-resource" title="Materiales"><i class="pax-resource-icon" data-tooltip="Desde la ronda 2, al inicio: +${ECONOMY.ROUND_PRODUCTION.MATERIALS_PER_FACTORY} por fábrica" tabindex="0" aria-label="Materiales; desde la ronda 2 se producen al inicio de cada ronda">▣</i><span id="materials-value">—</span></span>
+            <span class="pax-resource" title="Influencia"><i class="pax-resource-icon" data-tooltip="Desde la ronda 2, al inicio: +${ECONOMY.ROUND_PRODUCTION.INFLUENCE_PER_CITY} por ciudad o capital" tabindex="0" aria-label="Influencia; desde la ronda 2 se produce al inicio de cada ronda">♧</i><span id="influence-value">—</span></span>
             <span class="pax-resource" title="Población"><i class="pax-resource-icon" data-tooltip="Población" tabindex="0" aria-label="Población">♟</i><span id="population-value">0</span></span>
           </div>
           <button class="pax-global-panel-button" id="global-panel-open" type="button" title="Ver información de todos los países y tratados"><span aria-hidden="true">◎</span><span>Panel<br>Global</span></button>
@@ -51,8 +52,8 @@ export function renderGameScreen(container) {
               <div class="pax-panel-heading pax-info-heading"><span class="pax-panel-heading-icon">％</span>Tasa impositiva (τ)<strong id="tax-value" style="margin-left:auto;color:#f2bb3b">20%</strong><span class="pax-section-help" data-tooltip="La tasa impositiva cambia el crecimiento demográfico y la recaudación." aria-label="Ayuda sobre la tasa impositiva" tabindex="0">?</span></div>
               <div id="tax-container"></div>
               <div class="pax-tax-card">
-                <div class="pax-formula-line"><span>Crecimiento</span><strong id="growth-value">+5.00%</strong></div>
-                <div class="pax-formula-line"><span>Recaudación esperada</span><strong id="forecast-revenue"><span class="pax-resource-icon" aria-hidden="true">◉</span><span id="forecast-revenue-value">—</span></strong></div>
+                <div class="pax-formula-line"><span id="growth-label">Crecimiento</span><strong id="growth-value" tabindex="0" data-tooltip="Fórmula de crecimiento poblacional"><span id="growth-rate-value">+${(getPopulationGrowthRate(ECONOMIC_POLICY.DEFAULT_TAX_RATE) * 100).toFixed(2)}%</span> <span id="population-growth-value">· +0 hab.</span></strong></div>
+                <div class="pax-formula-line"><span>Recaudación esperada</span><strong id="forecast-revenue"><span class="pax-resource-icon" aria-hidden="true">◉</span><span id="forecast-revenue-value" tabindex="0" data-tooltip="Fórmula de recaudación de impuestos">—</span></strong></div>
                 <p class="pax-tax-note">A menor impuesto, mayor crecimiento demográfico. A mayor impuesto, más recaudación inmediata.</p>
               </div>
             </section>

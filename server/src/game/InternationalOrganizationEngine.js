@@ -1,5 +1,6 @@
 import {
   LAND_TERRAIN,
+  ECONOMY,
   OI_RESOLUTIONS,
   TIMINGS
 } from '../../../shared/Constants.js';
@@ -8,7 +9,7 @@ export const OI_RESOLUTION_NAMES = {
   [OI_RESOLUTIONS.ARMAMENT_LIMIT]: 'Límites de Armamento (máximo 10 tropas)',
   [OI_RESOLUTIONS.INDUSTRY_LIMIT]: 'Límites de Industria (máximo 10 fábricas)',
   [OI_RESOLUTIONS.DEMILITARIZED_ZONE]: 'Zona Desmilitarizada (ZDM)',
-  [OI_RESOLUTIONS.CONDITIONAL_SUBSIDY]: 'Subsidios Condicionados (+25 de plata)'
+  [OI_RESOLUTIONS.CONDITIONAL_SUBSIDY]: `Subsidios Condicionados (+${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata)`
 };
 
 const VALID_RESOLUTIONS = new Set(Object.values(OI_RESOLUTIONS));
@@ -28,8 +29,8 @@ export class InternationalOrganizationEngine {
     if (!proposal || !VALID_RESOLUTIONS.has(proposal.type)) {
       return { ok: false, message: 'La resolución seleccionada no está disponible.' };
     }
-    if (player.resources.INFLUENCE < 2) {
-      return { ok: false, message: 'Necesitas 2 puntos de Influencia para proponer una resolución.' };
+    if (player.resources.INFLUENCE < ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE) {
+      return { ok: false, message: `Necesitas ${ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE} puntos de Influencia para proponer una resolución.` };
     }
 
     let target = null;
@@ -48,7 +49,7 @@ export class InternationalOrganizationEngine {
       target = { x, y };
     }
 
-    player.resources.INFLUENCE -= 2;
+    player.resources.INFLUENCE -= ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE;
     const sequence = gameState.nextOIProposalId++;
     const entry = {
       id: `oi-proposal-${sequence}`,
@@ -61,7 +62,7 @@ export class InternationalOrganizationEngine {
     };
     gameState.oiProposals.push(entry);
     gameState.recordEvent(`${player.name} propuso: ${entry.name}${target ? ` en (${target.x}, ${target.y})` : ''}.`);
-    return { ok: true, message: `Resolución propuesta: ${entry.name}. Se descontaron 2 puntos de Influencia.` };
+    return { ok: true, message: `Resolución propuesta: ${entry.name}. Se descontaron ${ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE} puntos de Influencia.` };
   }
 
   static startSession(gameState) {
@@ -160,7 +161,7 @@ export class InternationalOrganizationEngine {
       if (!harmful && !beneficial) {
         return { proposalId: proposal.id, choice: 'ABSTAIN', wager: 0 };
       }
-      const wager = Math.floor(remainingInfluence * 0.5);
+      const wager = Math.floor(remainingInfluence * ECONOMY.OI_BOT_WAGER_SHARE);
       remainingInfluence -= wager;
       return {
         proposalId: proposal.id,
@@ -257,7 +258,7 @@ export class InternationalOrganizationEngine {
       case OI_RESOLUTIONS.CONDITIONAL_SUBSIDY: {
         const beneficiary = this.getLowestGDIPlayer(gameState);
         if (!beneficiary) break;
-        beneficiary.resources.SILVER += 25;
+        beneficiary.resources.SILVER += ECONOMY.COSTS.OI_SUBSIDY_SILVER;
         for (const vote of votes) {
           if (vote.choice !== 'FOR' || vote.playerId === beneficiary.id) continue;
           gameState.nonAggressionPacts.push({

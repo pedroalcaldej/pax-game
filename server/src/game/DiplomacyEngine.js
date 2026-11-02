@@ -1,5 +1,5 @@
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
-import { GAME_PHASES, TREATY_TYPES } from '../../../shared/Constants.js';
+import { ECONOMY, GAME_PHASES, TREATY_TYPES } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 import { TREATY_DURATION_ROUNDS } from './GameStateUtils.js';
 
@@ -195,10 +195,13 @@ export const DiplomacyEngine = {
     const influence = Number.isFinite(attacker.resources?.INFLUENCE)
       ? attacker.resources.INFLUENCE
       : 0;
-    attacker.resources.INFLUENCE = Math.max(0, influence - 10);
+    attacker.resources.INFLUENCE = Math.max(
+      0,
+      influence - ECONOMY.COSTS.BROKEN_PACT_INFLUENCE_PENALTY
+    );
     const defender = this.players.get(defenderId);
     this.recordEvent(
-      `${attacker.name} traicionó el Pacto de No Agresión con ${defender?.name || defenderId}: el pacto se rompió y perdió 10 de Influencia Política.`
+      `${attacker.name} traicionó el Pacto de No Agresión con ${defender?.name || defenderId}: el pacto se rompió y perdió ${ECONOMY.COSTS.BROKEN_PACT_INFLUENCE_PENALTY} de Influencia Política.`
     );
     return true;
   },
