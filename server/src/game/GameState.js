@@ -5,12 +5,14 @@
 import { generateInitialGrid } from '../../../shared/MapGenerator.js';
 import { MAP_CONFIG, GAME_STAGES, TIMINGS, normalizeGameSettings } from '../../../shared/Constants.js';
 import { DiplomacyEngine } from './DiplomacyEngine.js';
+import { EconomyEngine } from './EconomyEngine.js';
 import { FinanceEngine } from './FinanceEngine.js';
 import { PlayerManager } from './PlayerManager.js';
 import { ActionEngine } from './ActionEngine.js';
 import { BotController } from './BotController.js';
+import { BotDecisionTable } from './BotDecisionTable.js';
 export class GameState {
-  constructor(settings = {}) {
+  constructor(settings = {}, botDecisionTables = null) {
     this.settings = normalizeGameSettings(settings);
     this.gridWidth = this.settings.mapSize;
     this.gridHeight = this.settings.mapSize;
@@ -49,6 +51,10 @@ export class GameState {
     this.aggressions = [];
     this.casusBelli = [];
     this.taxRatesAtLastRoundEnd = new Map();
+    this.botDecisionTables = botDecisionTables || new Map();
+    this.trainingMode = false;
+    this.botExplorationRate = 0.05;
+    this.botStrategicActionsEnabled = true;
 
     const numericSeed = typeof this.seed === 'number'
       ? this.seed
@@ -57,6 +63,9 @@ export class GameState {
     this.createNations();
     for (const player of this.players.values()) {
       this.taxRatesAtLastRoundEnd.set(player.id, player.taxRate);
+      if (!this.botDecisionTables.has(player.id)) {
+        this.botDecisionTables.set(player.id, BotDecisionTable.create());
+      }
     }
   }
 
@@ -141,6 +150,10 @@ export class GameState {
     return FinanceEngine.processBondsAtRoundStart.apply(this, args);
   }
 
+  awardEndOfTurnInfluence(...args) {
+    return EconomyEngine.awardEndOfTurnInfluence.apply(this, args);
+  }
+
   botAcceptsTreaty(...args) {
     return DiplomacyEngine.botAcceptsTreaty.apply(this, args);
   }
@@ -163,6 +176,10 @@ export class GameState {
 
   leavePlayer(...args) {
     return PlayerManager.leavePlayer.apply(this, args);
+  }
+
+  removePlayer(...args) {
+    return PlayerManager.removePlayer.apply(this, args);
   }
 
   setPlayerTaxRate(...args) {
@@ -241,6 +258,38 @@ export class GameState {
     return BotController.runBotDecisions.apply(this, args);
   }
 
+  chooseBotTaxRate(...args) {
+    return BotController.chooseBotTaxRate.apply(this, args);
+  }
+
+  runBotStrategicActions(...args) {
+    return BotController.runBotStrategicActions.apply(this, args);
+  }
+
+  rememberStrategicDecision(...args) {
+    return BotController.rememberStrategicDecision.apply(this, args);
+  }
+
+  findBotFinanceActions(...args) {
+    return BotController.findBotFinanceActions.apply(this, args);
+  }
+
+  findBotTreatyActions(...args) {
+    return BotController.findBotTreatyActions.apply(this, args);
+  }
+
+  findBotOIProposals(...args) {
+    return BotController.findBotOIProposals.apply(this, args);
+  }
+
+  findBotNavalAction(...args) {
+    return BotController.findBotNavalAction.apply(this, args);
+  }
+
+  findBotCapitalAction(...args) {
+    return BotController.findBotCapitalAction.apply(this, args);
+  }
+
   findBotExpansion(...args) {
     return BotController.findBotExpansion.apply(this, args);
   }
@@ -259,6 +308,14 @@ export class GameState {
 
   planBotAction(...args) {
     return BotController.planBotAction.apply(this, args);
+  }
+
+  rememberBotActionResult(...args) {
+    return BotController.rememberBotActionResult.apply(this, args);
+  }
+
+  awardBotFinalRewards(...args) {
+    return BotController.awardBotFinalRewards.apply(this, args);
   }
 
   allPlayersReady(...args) {
@@ -292,10 +349,10 @@ export class GameState {
       : null;
     return {
       grid: this.grid,
-      players: Array.from(this.players.values(), (player) => ({
-        ...player,
-        gdiPoints: this.calculateGDI(player)
-      })),
+      players: Array.from(this.players.values(), (player) => {
+        const { botDecisionContext, ...publicPlayer } = player;
+        return { ...publicPlayer, gdiPoints: this.calculateGDI(player) };
+      }),
       gameStarted: this.gameStarted,
       gameOver: this.gameOver,
       isPaused: this.isPaused,

@@ -129,7 +129,22 @@ export const PlayerManager = {
     return player;
   },
 
-  setPlayerTaxRate(socketId, taxRate) {
+  removePlayer(socketId) {
+    const player = Array.from(this.players.values()).find(
+      (entry) => entry.socketId === socketId
+    );
+    if (!player) return false;
+    player.socketId = null;
+    player.boundPlayerId = null;
+    player.isDisconnected = false;
+    player.isBot = true;
+    player.phaseReady = false;
+    player.name = NATIONS[player.nationId].name;
+    this.refreshBotColors();
+    return true;
+  },
+
+  setPlayerTaxRate(socketId, taxRate, playerId = null) {
     if (
       !this.gameStarted
       || this.currentPhase !== 2
@@ -140,11 +155,12 @@ export const PlayerManager = {
       return false;
     }
 
-    for (const player of this.players.values()) {
-      if (player.socketId === socketId) {
-        player.taxRate = taxRate;
-        return true;
-      }
+    const player = playerId
+      ? this.players.get(playerId)
+      : Array.from(this.players.values()).find((entry) => entry.socketId === socketId);
+    if (player && (!player.isBot || playerId)) {
+      player.taxRate = taxRate;
+      return true;
     }
     return false;
   },

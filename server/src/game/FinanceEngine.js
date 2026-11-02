@@ -4,9 +4,11 @@ import { BANK_TARIFF_RATE, TREATY_DURATION_ROUNDS, VALID_TRADE_RESOURCES } from 
 
 export const FinanceEngine = {
   performFinancialAction(socketId, action = {}) {
-    const player = Array.from(this.players.values()).find(
-      (entry) => entry.socketId === socketId && !entry.isBot
-    );
+    const player = action.playerId
+      ? this.players.get(action.playerId)
+      : Array.from(this.players.values()).find(
+        (entry) => entry.socketId === socketId && !entry.isBot
+      );
     if (!player) return { ok: false, message: 'No tienes un país activo en esta partida.' };
     if (!this.gameStarted || this.gameOver) {
       return { ok: false, message: 'Las operaciones financieras requieren una partida activa.' };
@@ -21,6 +23,41 @@ export const FinanceEngine = {
     }
     if (!action || typeof action.type !== 'string') {
       return { ok: false, message: 'La operación financiera no es válida.' };
+    }
+
+    if (action.type === 'TRANSFER_RESOURCE') {
+      const recipient = this.players.get(action.recipientId);
+      const { resource, amount } = action;
+      if (!recipient || recipient.id === player.id) {
+        return { ok: false, message: 'Selecciona otro país como destinatario.' };
+      }
+      if (!VALID_TRADE_RESOURCES.has(resource)) {
+        return { ok: false, message: 'Solo puedes transferir Plata o Materiales.' };
+      }
+      if (!Number.isSafeInteger(amount) || amount < 1) {
+        return { ok: false, message: 'Indica una cantidad entera mayor que cero.' };
+      }
+      if (player.resources[resource] < amount) {
+        return { ok: false, message: 'No tienes suficientes recursos para transferir esa cantidad.' };
+      }
+      const tariffExempt = this.areTreatyPartners(
+        player.id,
+        recipient.id,
+        TREATY_TYPES.FREE_TRADE
+      ) && !this.isPlayersAtWar(player.id, recipient.id);
+      const tariff = tariffExempt ? 0 : Math.ceil(amount * BANK_TARIFF_RATE);
+      player.resources[resource] -= amount;
+      recipient.resources[resource] += amount - tariff;
+      this.bankFund[resource] += tariff;
+      this.recordEvent(
+        `${player.name} transfirió ${amount} ${resource === 'SILVER' ? 'de Plata' : 'de Materiales'} a ${recipient.name}; ${tariffExempt ? 'sin arancel por TLC' : `el Banco Mundial recaudó ${tariff} de arancel`}.`
+      );
+      return {
+        ok: true,
+        message: tariffExempt
+          ? 'Transferencia completada sin arancel.'
+          : `Transferencia completada; se cobraron ${tariff} de arancel.`
+      };
     }
 
     if (action.type === 'BUY_MATERIALS' || action.type === 'SELL_MATERIALS') {

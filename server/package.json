@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "train:bots": "node src/training/runBotTraining.js"
   },
   "dependencies": {
     "@upstash/redis": "^1.41.0",

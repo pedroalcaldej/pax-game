@@ -152,6 +152,13 @@ export const ActionEngine = {
             return { ok: false, message: 'No puedes reclutar tropas dentro de una Zona Desmilitarizada.' };
           }
           action.count = count;
+          if (
+            this.oiPolicies.armamentLimit != null
+            && InternationalOrganizationEngine.countTroops(this, player.id) + count
+              > this.oiPolicies.armamentLimit
+          ) {
+            return { ok: false, message: `El límite de armamento es de ${this.oiPolicies.armamentLimit} tropas.` };
+          }
           silverCost = ECONOMY.COSTS.RECRUIT_TROOP_SILVER * count;
           materialCost = ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * count;
         }
@@ -424,6 +431,9 @@ export const ActionEngine = {
           message: result.message || (result.ok ? 'Acción realizada.' : 'No se pudo realizar la acción.'),
           ...result
         });
+        if (player.isBot) {
+          this.rememberBotActionResult(player.id, { ...action, slot }, result.ok);
+        }
         if (action.type !== 'HOLD_POSITION') {
           const coordinates = ['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)
             ? ` desde (${action.x}, ${action.y}) hasta (${action.targetX}, ${action.targetY})`

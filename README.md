@@ -57,6 +57,8 @@ En el menú puedes iniciar una partida de un jugador, crear una sala privada o u
 
 La partida multijugador comienza cuando todos los jugadores humanos están listos. Los espacios restantes se completan con bots. Durante la planificación de cada ronda, la fase avanza cuando todos los humanos vuelven a marcarse listos o al terminar el temporizador.
 
+Los bots consultan una tabla de decisiones contextual antes de planificar cada orden. La tabla agrupa la situación por ronda, territorio, tropas, fábricas y recursos; registra los intentos y resultados de cada tipo de acción, y usa una recompensa terminal para favorecer decisiones que ayudan a ganar la partida completa, no solo una ronda: +100 para el primer lugar, +40 para el segundo, -25 para el tercero y -60 para el cuarto. La memoria se guarda en `server/data/bot-decision-memory.json` y se carga al iniciar el servidor o el entrenador, por lo que sobrevive a los reinicios. Las partidas normales solo consultan esa memoria: no agregan aprendizajes ni la sobrescriben. El aprendizaje ocurre exclusivamente en sesiones del entrenador. Las tablas se conservan al reiniciar una sala, con una exploración limitada para descubrir alternativas en partidas de cuatro jugadores. El entrenador usa además las mismas opciones humanas de economía, impuestos, tratados, OI, movimientos navales, capital y órdenes militares.
+
 ## Multijugador en red local
 
 Con ambos servicios ejecutándose, abre en cada dispositivo la dirección de red que muestra Vite, por ejemplo `http://192.168.1.7:5173`. El cliente se conecta al servidor del mismo equipo por el puerto `3000`.

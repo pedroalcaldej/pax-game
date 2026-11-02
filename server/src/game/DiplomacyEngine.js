@@ -6,9 +6,11 @@ import { TREATY_DURATION_ROUNDS } from './GameStateUtils.js';
 export const DiplomacyEngine = {
   proposeTreaty(socketId, treaty = {}) {
     const { recipientId, type } = treaty || {};
-    const proposer = Array.from(this.players.values()).find(
-      (player) => player.socketId === socketId && !player.isBot
-    );
+    const proposer = treaty.playerId
+      ? this.players.get(treaty.playerId)
+      : Array.from(this.players.values()).find(
+        (player) => player.socketId === socketId && !player.isBot
+      );
     if (!proposer) return { ok: false, message: 'No tienes un país activo en esta partida.' };
     if (!this.gameStarted || this.gameOver) {
       return { ok: false, message: 'Solo puedes proponer tratados durante una partida activa.' };

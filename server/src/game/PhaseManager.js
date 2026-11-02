@@ -83,9 +83,11 @@ export class PhaseManager {
         break;
       case GAME_PHASES.PHASE_5_SUMMARY: {
         this.gameState.timeRemaining = 0;
+        EconomyEngine.awardEndOfTurnInfluence(this.gameState);
         this.gameState.recordTaxRateChangesAtRoundEnd();
         this.gameState.expireTreatiesAfterRound(this.gameState.currentRound);
         if (this.gameState.currentRound >= this.gameState.settings.maxRounds) {
+          this.gameState.awardBotFinalRewards();
           this.gameState.gameOver = true;
           this.gameState.recordEvent(`La partida terminó en la ronda ${this.gameState.settings.maxRounds}.`);
           this.stop();

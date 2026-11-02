@@ -5,13 +5,15 @@
 import { GameState } from '../game/GameState.js';
 import { PhaseManager } from '../game/PhaseManager.js';
 import { MAX_PLAYERS } from '../../../shared/Constants.js';
+import { loadBotDecisionTables, saveBotDecisionTables } from '../training/BotMemoryStore.js';
 
 export class Room {
   constructor(id, publishState, settings = {}) {
     this.id = id;
     this.publishState = publishState;
     this.settings = settings;
-    this.gameState = new GameState(settings);
+    this.botDecisionTables = loadBotDecisionTables();
+    this.gameState = new GameState(settings, this.botDecisionTables);
     this.phaseManager = new PhaseManager(this.gameState, (state) => this.publishState(state));
   }
 
@@ -83,7 +85,7 @@ export class Room {
         name: player.name
       }));
     this.phaseManager.stop();
-    this.gameState = new GameState(this.settings);
+    this.gameState = new GameState(this.settings, this.botDecisionTables);
     for (const player of connectedPlayers) {
       this.gameState.addPlayer(player.socketId, player.name, player.playerId);
     }

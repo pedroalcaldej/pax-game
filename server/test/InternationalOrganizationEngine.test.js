@@ -80,6 +80,7 @@ test('meeting selects the first three proposals, clears the rest, and hides ball
 test('bots oppose harmful resolutions with half their influence and abstain on neutral ones', () => {
   const { gameState } = createHumanGame();
   const bot = gameState.players.get('nation-1');
+  bot.resources.INFLUENCE = 20;
   for (const tile of gameState.grid.flat()) {
     if (tile.ownerId === bot.id) tile.troops = 0;
   }
@@ -105,6 +106,7 @@ test('bots oppose harmful resolutions with half their influence and abstain on n
 
 test('vote stakes are consumed and an armament limit passes only on a strict majority', () => {
   const { gameState, player } = createHumanGame();
+  player.resources.INFLUENCE = 20;
   gameState.oiProposals = [{
     id: 'armament',
     type: OI_RESOLUTIONS.ARMAMENT_LIMIT,
@@ -128,6 +130,7 @@ test('vote stakes are consumed and an armament limit passes only on a strict maj
 
 test('a tie rejects a resolution and still consumes the submitted wagers', () => {
   const { gameState, player } = createHumanGame();
+  player.resources.INFLUENCE = 20;
   gameState.aggressions = [{ attackerId: player.id }];
   gameState.casusBelli = [{ holderId: player.id }];
   gameState.oiProposals = [{
@@ -138,6 +141,7 @@ test('a tie rejects a resolution and still consumes the submitted wagers', () =>
   }];
   const session = OI.startSession(gameState);
   const opposingBot = gameState.players.get('nation-1');
+  opposingBot.resources.INFLUENCE = 20;
   session.votes[opposingBot.id] = [{
     proposalId: 'industry',
     choice: 'AGAINST',
@@ -439,6 +443,7 @@ test('direct transfers charge the 20 percent tariff and TLC transfers are exempt
   const recipient = gameState.players.get('nation-1');
   player.resources.SILVER = 20;
   recipient.resources.SILVER = 0;
+  recipient.resources.MATERIALS = 10;
 
   const taxed = gameState.performFinancialAction(player.socketId, {
     type: 'TRANSFER_RESOURCE',
@@ -524,6 +529,7 @@ test('players can donate 15 silver to gain one influence from the World Bank', (
 test('donation to the World Bank requires 15 silver', () => {
   const { gameState, player } = createHumanGame();
   player.resources.SILVER = 14;
+  player.resources.INFLUENCE = 20;
 
   const result = gameState.performFinancialAction(player.socketId, {
     type: 'DONATE_TO_WORLD_BANK'
@@ -537,6 +543,7 @@ test('donation to the World Bank requires 15 silver', () => {
 test('bonds default at maturity, lose influence, accrue one interest per round, and accept partial payment', () => {
   const { gameState, player } = createHumanGame();
   player.resources.SILVER = 100;
+  player.resources.INFLUENCE = 20;
   const issued = gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
   assert.equal(issued.ok, true);
   assert.equal(player.resources.SILVER, 120);
@@ -568,6 +575,7 @@ test('a bond is automatically repaid when the player can cover its maturity bala
   const { gameState, player } = createHumanGame();
   gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
   player.resources.SILVER = 25;
+  player.resources.INFLUENCE = 20;
 
   gameState.processBondsAtRoundStart(6);
 
@@ -919,6 +927,7 @@ test('bots build cities when military and factory actions are unavailable', () =
   bot.resources.SILVER = 150;
   bot.resources.MATERIALS = 0;
   gameState.oiPolicies.industryLimit = OI.countFactories(gameState, bot.id);
+  gameState.botStrategicActionsEnabled = false;
 
   gameState.runBotDecisions();
 
@@ -973,6 +982,7 @@ test('bots leave unavailable slots empty and legacy hold orders do not appear in
       if (tile.ownerId === bot.id) tile.troops = 0;
     }
   }
+  gameState.botStrategicActionsEnabled = false;
 
   gameState.runBotDecisions();
 

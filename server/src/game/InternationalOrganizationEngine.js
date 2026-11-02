@@ -6,19 +6,20 @@ import {
 } from '../../../shared/Constants.js';
 
 export const OI_RESOLUTION_NAMES = {
+  [OI_RESOLUTIONS.ARMAMENT_LIMIT]: 'Límites de Armamento (máximo 10 tropas)',
   [OI_RESOLUTIONS.INDUSTRY_LIMIT]: 'Límites de Industria (máximo 10 fábricas)',
   [OI_RESOLUTIONS.DEMILITARIZED_ZONE]: 'Zona Desmilitarizada (ZDM)',
   [OI_RESOLUTIONS.CONDITIONAL_SUBSIDY]: `Subsidios Condicionados (+${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata)`
 };
 
-const VALID_RESOLUTIONS = new Set(Object.values(OI_RESOLUTIONS).filter(
-  (resolution) => resolution !== OI_RESOLUTIONS.ARMAMENT_LIMIT
-));
+const VALID_RESOLUTIONS = new Set(Object.values(OI_RESOLUTIONS));
 export class InternationalOrganizationEngine {
   static propose(gameState, socketId, proposal) {
-    const player = Array.from(gameState.players.values()).find(
-      (entry) => entry.socketId === socketId && !entry.isBot
-    );
+    const player = proposal?.playerId
+      ? gameState.players.get(proposal.playerId)
+      : Array.from(gameState.players.values()).find(
+        (entry) => entry.socketId === socketId && !entry.isBot
+      );
     if (!player) return { ok: false, message: 'No tienes un país activo en esta partida.' };
     if (
       !gameState.gameStarted
@@ -249,6 +250,9 @@ export class InternationalOrganizationEngine {
     switch (proposal.type) {
       case OI_RESOLUTIONS.INDUSTRY_LIMIT:
         gameState.oiPolicies.industryLimit = 10;
+        break;
+      case OI_RESOLUTIONS.ARMAMENT_LIMIT:
+        gameState.oiPolicies.armamentLimit = 10;
         break;
       case OI_RESOLUTIONS.DEMILITARIZED_ZONE: {
         const zone = {
