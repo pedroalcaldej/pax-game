@@ -1,4 +1,4 @@
-import { GAME_STAGES, LEGACY_NATION_NAMES, NATIONS, TREATY_TYPES } from '../../../../shared/Constants.js';
+import { GAME_STAGES, LEGACY_NATION_NAMES, NATIONS, TIMINGS, TREATY_TYPES } from '../../../../shared/Constants.js';
 import { getPlayerRankings } from './PlayerRankings.js';
 
 const TREATY_NAMES = {
@@ -136,7 +136,7 @@ export class GlobalPanel {
     );
     this.container.querySelector('#global-phase').textContent = STAGE_NAMES[stage] || 'En curso';
     this.container.querySelector('#global-timer').textContent = (
-      `${gameState?.timeRemaining ?? 60}s${gameState?.isPaused ? ' · Pausado' : ''}`
+      `${gameState?.timeRemaining ?? TIMINGS.DECISION_PHASE_DURATION}s${gameState?.isPaused ? ' · Pausado' : ''}`
     );
 
     const sortedPlayers = getPlayerRankings(gameState);

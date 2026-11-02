@@ -2,7 +2,12 @@
  * server/src/network/SocketServer.js
  */
 
-import { PROTOCOL } from '../../../shared/Constants.js';
+import {
+  AVAILABLE_NATION_COLORS,
+  MAX_CHAT_MESSAGE_LENGTH,
+  MAX_PLAYER_NAME_LENGTH,
+  PROTOCOL
+} from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from '../game/InternationalOrganizationEngine.js';
 
 export class SocketServer {
@@ -60,7 +65,7 @@ export class SocketServer {
           if (!room || !room.slots.some((player) => player?.id === userId)) throw new Error('La sala o el país reservado ya no existen.');
           const result = await this.lobbyStore.mutate(roomId, 'join', {
             userId, playerName: room.slots.find((player) => player?.id === userId)?.nombre || 'alpha',
-            defaultColor: '#FDE047', colors: ['#FDE047', '#FB7185', '#34D399', '#A78BFA', '#22D3EE', '#FB923C', '#F472B6', '#A3E635']
+            defaultColor: AVAILABLE_NATION_COLORS[0], colors: AVAILABLE_NATION_COLORS
           });
           if (!result.ok) throw new Error(result.error);
           const updated = await this.lobbyStore.get(roomId);
@@ -68,7 +73,14 @@ export class SocketServer {
         } catch (error) { ackError(acknowledge, error); }
       });
       socket.on(PROTOCOL.LOBBY_UPDATE_PROFILE, async ({ roomId, userId, name, color } = {}, acknowledge) => {
-        try { const room = await this.lobbyStore.updateProfile(roomId,userId,name,color); publishLobby(room); acknowledge?.({ok:true}); }
+        try {
+          const normalizedName = String(name || '').trim();
+          if (!normalizedName || [...normalizedName].length > MAX_PLAYER_NAME_LENGTH) {
+            throw new Error(`El nombre debe tener entre 1 y ${MAX_PLAYER_NAME_LENGTH} caracteres.`);
+          }
+          const room = await this.lobbyStore.updateProfile(roomId,userId,normalizedName,color);
+          publishLobby(room); acknowledge?.({ok:true});
+        }
         catch(error) { ackError(acknowledge,error); }
       });
       socket.on(PROTOCOL.LOBBY_TOGGLE_READY, async ({ roomId, userId } = {}, acknowledge) => {
@@ -93,7 +105,7 @@ export class SocketServer {
           const room=await this.lobbyStore.get(roomId);
           const player=room?.slots.find((entry)=>entry?.id===userId);
           if(!player || socket.data.lobbyRoomCode!==roomId || socket.data.lobbyUserId!==userId) throw new Error('Debes estar en la sala para enviar mensajes.');
-          const text=String(message?.text || '').trim().slice(0,240);
+          const text=String(message?.text || '').trim().slice(0,MAX_CHAT_MESSAGE_LENGTH);
           if(!text) throw new Error('El mensaje está vacío.');
           const entry={id:`${Date.now()}-${socket.id}`,playerId:userId,nationName:player.nombre,nationColor:player.color,text,createdAt:Date.now()};
           await this.lobbyStore.addChat(roomId,entry); this.io.to(`lobby:${roomId}`).emit(PROTOCOL.LOBBY_CHAT_MESSAGE,entry); acknowledge?.({ok:true});
@@ -300,9 +312,6 @@ export class SocketServer {
             socket.emit(PROTOCOL.ACTION_ERROR, 'Los impuestos solo se pueden ajustar durante la planificación y dentro del rango permitido.');
             return;
           }
-          const player = Array.from(room.gameState.players.values())
-            .find((entry) => entry.socketId === socket.id);
-          if (player) room.gameState.recordEvent(`${player.name} ajustó sus impuestos al ${Math.round(taxRate * 100)}%.`);
           this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
         }
       });

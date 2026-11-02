@@ -4,12 +4,26 @@
  * Compartido entre Servidor y Cliente para garantizar sincronización.
  */
 
+export const NATIONS = [
+  { id: 'nation-0', nationId: 0, name: 'alpha', color: '#FDE047' },
+  { id: 'nation-1', nationId: 1, name: 'beta', color: '#FB7185' },
+  { id: 'nation-2', nationId: 2, name: 'gamma', color: '#34D399' },
+  { id: 'nation-3', nationId: 3, name: 'delta', color: '#A78BFA' }
+];
+
+export const MAX_PLAYERS = NATIONS.length;
+export const MAX_PLAYER_NAME_LENGTH = 24;
+export const MAX_CHAT_MESSAGE_LENGTH = 240;
+
+const GRID_WIDTH = 30;
+const GRID_HEIGHT = 30;
+
 export const MAP_CONFIG = {
-  GRID_WIDTH: 30,
-  GRID_HEIGHT: 30,
-  TOTAL_TILES: 900,
+  GRID_WIDTH,
+  GRID_HEIGHT,
+  TOTAL_TILES: GRID_WIDTH * GRID_HEIGHT,
   TILE_SIZE: 32,
-  MAX_PLAYERS: 4,  // Escalable a más jugadores en futuras versiones
+  MAX_PLAYERS
 };
 
 export const ACTION_SLOT_COUNT = 3;
@@ -68,13 +82,6 @@ export const SPAWN_POSITIONS = [
   { x: 23, y: 23 }
 ];
 
-export const NATIONS = [
-  { id: 'nation-0', nationId: 0, name: 'alpha', color: '#FDE047' },
-  { id: 'nation-1', nationId: 1, name: 'beta', color: '#FB7185' },
-  { id: 'nation-2', nationId: 2, name: 'gamma', color: '#34D399' },
-  { id: 'nation-3', nationId: 3, name: 'delta', color: '#A78BFA' }
-];
-
 export const NATION_COLORS = NATIONS.map((nation) => nation.color);
 export const AVAILABLE_NATION_COLORS = [
   '#FDE047',
@@ -93,12 +100,6 @@ export const LEGACY_NATION_NAMES = new Map([
   ['Nación Roja', 'gamma'],
   ['Nación Verde', 'delta']
 ]);
-
-export const GAME_CONFIG = {
-  DEFAULT_TAX_RATE: 0.15,
-  PHASE_DURATION_SECONDS: 60,
-  TOTAL_PHASES: 5
-};
 
 export const PROTOCOL = {
   CONNECT: 'connect',
@@ -165,8 +166,7 @@ export const INITIAL_STATE = {
 export const TIMINGS = {
   // Duraciones de fase en segundos
   DECISION_PHASE_DURATION: 60, // Duración de la etapa de planificación
-  AUTOMATIC_PHASE_DURATION: 5,  // Tiempo de procesamiento para fases automáticas
-  TOTAL_PHASES: 5
+  AUTOMATIC_PHASE_DURATION: 5  // Tiempo de procesamiento para fases automáticas
 };
 
 export const ECONOMIC_POLICY = {

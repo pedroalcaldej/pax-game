@@ -1,4 +1,4 @@
-import { PROTOCOL } from '../../../shared/Constants.js';
+import { MAX_PLAYERS, PROTOCOL } from '../../../shared/Constants.js';
 import { socket } from './SocketClient.js';
 
 export class SocketLobby {
@@ -20,7 +20,7 @@ export class SocketLobby {
         const players = room.jugadores || {};
         this.onChange?.({
           ...room,
-          slots: room.slots || Array.from({ length: 4 }, (_, index) => players[`slot_${index + 1}`] || null),
+          slots: room.slots || Array.from({ length: MAX_PLAYERS }, (_, index) => players[`slot_${index + 1}`] || null),
           isHost: room.creador === this.playerId
         });
       }

@@ -20,21 +20,21 @@ Juego de estrategia geopolítica para cuatro países. Combina economía, expansi
 
 ## Instalación y ejecución
 
-Desde la raíz del repositorio, instala las dependencias e inicia el cliente y el servidor juntos:
+Desde la raíz del repositorio, instala las dependencias y crea los archivos de configuración locales:
 
 ```sh
 npm install
-npm run dev
+cp server/.env.example server/.env
+cp client/.env.example client/.env
 ```
 
-El servidor carga la configuración local desde `server/.env`. Copia el ejemplo y edita la URL si es necesario:
+Configura `REDIS_URL` en `server/.env` y asegúrate de que Redis esté iniciado. Los puertos y orígenes permitidos también se leen de esos archivos. Para probar desde otro dispositivo en la red local, agrega el origen del cliente —incluida su IP y puerto— a `CLIENT_ORIGINS` en `server/.env`. Los archivos `.env` están ignorados por Git.
+
+Inicia el cliente y el servidor juntos:
 
 ```sh
-cp server/.env.example server/.env
 npm run dev
 ```
-
-El valor inicial conecta a Redis en `127.0.0.1:6379`; Redis debe estar iniciado antes de arrancar el servidor. El archivo `server/.env` está ignorado por Git. En Render, define `REDIS_URL` en el entorno del servicio del servidor.
 
 Abre [http://localhost:5173](http://localhost:5173). El cliente Vite usa el puerto `5173` y el servidor Socket.IO el `3000`. Ambos procesos aparecen identificados por color en la terminal. Deténlos con `Ctrl + C`.
 
@@ -77,13 +77,18 @@ Configura `REDIS_URL` en el entorno del servidor. Acepta URLs `redis://` y `redi
 
 ## Publicación
 
-El backend de referencia está en `https://pax-game.onrender.com`. La URL raíz muestra el estado del servicio; el cliente se publica por separado. En producción, el cliente usa esa URL automáticamente. Para definir otra URL durante la compilación:
+Publica el backend y el cliente por separado. Configura estas variables en Render:
+
+- En el servicio Node del backend, define `REDIS_URL`, `CLIENT_ORIGINS` y `HOST=0.0.0.0`. Render proporciona `PORT` automáticamente. `CLIENT_ORIGINS` debe contener el origen del sitio del cliente, por ejemplo `https://tu-cliente.onrender.com`.
+- En el servicio estático del cliente, define `VITE_SERVER_URL` con la URL HTTPS del backend. Vite incorpora esta URL durante la compilación; no es un secreto.
+
+Para compilar manualmente con otra URL de backend:
 
 ```sh
 VITE_SERVER_URL=https://tu-servidor.example npm run build --workspace=client
 ```
 
-Publica el contenido de `client/dist` en un servicio de hosting estático. Mantén accesible el backend por HTTPS y configura `REDIS_URL` en el servicio del servidor.
+Publica el contenido de `client/dist` en un servicio de hosting estático y mantén accesible el backend por HTTPS.
 
 ## Estructura del proyecto
 

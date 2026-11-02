@@ -11,7 +11,6 @@ import {
 } from '../../../../shared/Constants.js';
 import { generateInitialGrid } from '../../../../shared/MapGenerator.js';
 
-const NATION_BORDER_COLORS = ['#FFD21F', '#FF4B55', '#35E879', '#C16BFF'];
 const GRID_BORDER_WIDTH = 1.5;
 
 export class Map {
@@ -634,5 +633,11 @@ export class Map {
     } finally {
       this.selectionFromUser = false;
     }
+  }
+
+  clearSelection() {
+    this.selectedPosition = null;
+    if (this.grid) this.render(this.grid, false);
+    this.onTileSelected(null);
   }
 }

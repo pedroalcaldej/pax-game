@@ -1,4 +1,9 @@
-import { AVAILABLE_NATION_COLORS, NATIONS } from '../../../../shared/Constants.js';
+import {
+  AVAILABLE_NATION_COLORS,
+  MAX_PLAYER_NAME_LENGTH,
+  MAX_PLAYERS,
+  NATIONS
+} from '../../../../shared/Constants.js';
 
 function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -25,7 +30,7 @@ export class LobbyScreen {
                 <h2>Un jugador</h2>
                 <p>Juega una partida contra países controlados por la IA.</p>
                 <div class="pax-profile-fields">
-                  <label>Nombre <input id="single-player-name" maxlength="24" value="alpha" autocomplete="off" /></label>
+                  <label>Nombre <input id="single-player-name" maxlength="${MAX_PLAYER_NAME_LENGTH}" value="alpha" autocomplete="off" /></label>
                   <label>Color <div class="pax-color-picker" id="single-player-color" role="radiogroup" aria-label="Color del país"></div></label>
                 </div>
                 <button class="pax-start-button" id="single-player-button" type="button">Nueva partida</button>
@@ -51,10 +56,10 @@ export class LobbyScreen {
             <h1 id="lobby-title">Sala <strong id="lobby-code"></strong></h1>
             <div class="pax-lobby-code-row">
               <button class="pax-lobby-copy" id="copy-room-code" type="button">Copiar código</button>
-              <span id="lobby-count">Jugadores en la sala: 0 / 4</span>
+              <span id="lobby-count">Jugadores en la sala: 0 / ${MAX_PLAYERS}</span>
             </div>
             <div class="pax-lobby-profile">
-              <label>Nombre <input id="lobby-player-name" maxlength="24" autocomplete="off" /></label>
+              <label>Nombre <input id="lobby-player-name" maxlength="${MAX_PLAYER_NAME_LENGTH}" autocomplete="off" /></label>
               <label>Color <div class="pax-color-picker" id="lobby-player-color" role="radiogroup" aria-label="Color del país"></div></label>
             </div>
             <div class="pax-lobby-slots" id="lobby-slots"></div>
@@ -129,12 +134,19 @@ export class LobbyScreen {
 
   setRoomControlsEnabled(enabled) {
     this.mount.querySelectorAll('#create-room-button, #quick-match-button, #join-room-button')
-      .forEach((button) => { button.disabled = !enabled; });
+      .forEach((button) => {
+        button.disabled = !enabled;
+        if (enabled) button.removeAttribute('data-tooltip');
+        else button.dataset.tooltip = 'El servidor no está disponible';
+      });
   }
 
   setSinglePlayerEnabled(enabled) {
     const button = this.query('#single-player-button');
-    if (button) button.disabled = !enabled;
+    if (!button) return;
+    button.disabled = !enabled;
+    if (enabled) button.removeAttribute('data-tooltip');
+    else button.dataset.tooltip = 'Esperando conexión con la partida';
   }
 
   showMainMenu() {
@@ -153,7 +165,7 @@ export class LobbyScreen {
     this.query('#lobby-code').textContent = room.code;
     this.query('#lobby-code').hidden = !privateRoom;
     this.query('#copy-room-code').hidden = !privateRoom;
-    this.query('#lobby-count').textContent = `Jugadores en la sala: ${humanCount} / 4`;
+    this.query('#lobby-count').textContent = `Jugadores en la sala: ${humanCount} / ${MAX_PLAYERS}`;
 
     const ownSlot = room.slots.find((player) => player?.id === playerId);
     if (ownSlot) {

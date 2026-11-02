@@ -2,9 +2,7 @@
  * Chat de texto de la sala sincronizado mediante el servidor.
  */
 
-import { NATIONS } from '../../../../shared/Constants.js';
-
-const MAX_MESSAGE_LENGTH = 240;
+import { MAX_CHAT_MESSAGE_LENGTH, NATIONS } from '../../../../shared/Constants.js';
 
 function formatTime(timestamp) {
   const date = new Date(Number(timestamp) || Date.now());
@@ -43,7 +41,7 @@ export class Chat {
         </button>
         <div class="pax-chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
         <form class="pax-chat-form">
-          <input type="text" maxlength="${MAX_MESSAGE_LENGTH}" placeholder="Escribe un mensaje…" aria-label="Mensaje" autocomplete="off" />
+          <input type="text" maxlength="${MAX_CHAT_MESSAGE_LENGTH}" placeholder="Escribe un mensaje…" aria-label="Mensaje" autocomplete="off" />
           <button type="submit">Enviar</button>
         </form>
       </section>
@@ -108,7 +106,7 @@ export class Chat {
     this.input.value = '';
     Promise.resolve(this.onSend?.({
       ...this.identity,
-      text: text.slice(0, MAX_MESSAGE_LENGTH)
+      text: text.slice(0, MAX_CHAT_MESSAGE_LENGTH)
     })).catch((error) => {
       this.input.value = text;
       this.container.dispatchEvent(new CustomEvent('chaterror', { detail: error }));

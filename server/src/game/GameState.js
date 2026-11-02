@@ -3,7 +3,7 @@
  */
 
 import { generateInitialGrid } from '../../../shared/MapGenerator.js';
-import { MAP_CONFIG, GAME_STAGES } from '../../../shared/Constants.js';
+import { MAP_CONFIG, GAME_STAGES, TIMINGS } from '../../../shared/Constants.js';
 import { DiplomacyEngine } from './DiplomacyEngine.js';
 import { FinanceEngine } from './FinanceEngine.js';
 import { PlayerManager } from './PlayerManager.js';
@@ -18,7 +18,7 @@ export class GameState {
     this.gameOver = false;
     this.currentPhase = 1;
     this.currentStage = GAME_STAGES.ROUND_START;
-    this.timeRemaining = 60;
+    this.timeRemaining = TIMINGS.DECISION_PHASE_DURATION;
     this.isPaused = false;
     this.currentRound = 1;
     this.seed = Date.now();
@@ -45,9 +45,13 @@ export class GameState {
     this.conflicts = [];
     this.aggressions = [];
     this.casusBelli = [];
+    this.taxRatesAtLastRoundEnd = new Map();
 
     this.grid = generateInitialGrid(this.seed);
     this.createNations();
+    for (const player of this.players.values()) {
+      this.taxRatesAtLastRoundEnd.set(player.id, player.taxRate);
+    }
   }
 
   createNations(...args) {
@@ -69,6 +73,18 @@ export class GameState {
     this.nextEventId += 1;
     this.eventHistory.push(event);
     return event;
+  }
+
+  recordTaxRateChangesAtRoundEnd() {
+    for (const player of this.players.values()) {
+      const previousTaxRate = this.taxRatesAtLastRoundEnd.get(player.id);
+      if (previousTaxRate !== undefined && previousTaxRate !== player.taxRate) {
+        this.recordEvent(
+          `${player.name} cambió su tasa de impuestos a ${Math.round(player.taxRate * 100)}%.`
+        );
+      }
+      this.taxRatesAtLastRoundEnd.set(player.id, player.taxRate);
+    }
   }
 
   proposeTreaty(...args) {

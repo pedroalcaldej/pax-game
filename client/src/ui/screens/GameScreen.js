@@ -12,13 +12,15 @@ import { SocketLobby } from '../../network/SocketLobby.js';
 import {
   ACTION_SLOT_COUNT,
   GAME_STAGES,
+  MAX_PLAYERS,
   MAX_ROUNDS,
   MAP_CONFIG,
   NATIONS,
   LEGACY_NATION_NAMES,
   OI_RESOLUTIONS,
   PROTOCOL,
-  STAGE_TIMINGS
+  STAGE_TIMINGS,
+  TIMINGS
 } from '../../../../shared/Constants.js';
 import { getPlayerRankings } from '../components/PlayerRankings.js';
 import { Chat } from '../components/Chat.js';
@@ -459,7 +461,7 @@ export class GameScreen {
     const connectedHumans = players.filter((player) => !player.isBot && player.socketId).length;
     if (
       this.gameState?.gameStarted
-      && players.length === 4
+      && players.length === MAX_PLAYERS
       && connectedHumans === 1
       && socket.connected
     ) {
@@ -524,6 +526,9 @@ export class GameScreen {
 
   updateGameState(gameState) {
     if (!gameState) return;
+    if (gameState.gameStarted && (!this.gameState?.gameStarted || this.gameState?.gameOver)) {
+      this.map.clearSelection();
+    }
     this.gameState = gameState;
     const phase = gameState.currentPhase || 1;
     const stage = gameState.currentStage || this.getStageFromLegacyPhase(phase);
@@ -572,7 +577,7 @@ export class GameScreen {
       : gameState.currentRound || 1;
     const roundEl = this.container.querySelector('#round-value');
     roundEl.textContent = `${round}/${MAX_ROUNDS}`;
-    this.container.querySelector('#timer-value').textContent = `${gameState.timeRemaining ?? 60}s${gameState.isPaused ? ' · Pausado' : ''}`;
+    this.container.querySelector('#timer-value').textContent = `${gameState.timeRemaining ?? TIMINGS.DECISION_PHASE_DURATION}s${gameState.isPaused ? ' · Pausado' : ''}`;
     this.container.querySelector('#phase-value').textContent = STAGE_LABELS[stage] || 'En curso';
     this.updateStageOverlay(stage);
     const nextMeetingRound = Math.max(5, Math.ceil(round / 5) * 5);
@@ -1193,7 +1198,7 @@ export class GameScreen {
         this.setStartStatus(error.message);
       }
     });
-    this.lobbyScreen.setRoomControlsEnabled(this.lobby.enabled);
+    this.setRoomControlsEnabled(Boolean(this.lobby.enabled && socket.connected));
     this.lobbyScreen.setSinglePlayerEnabled(socket.connected);
     if (!socket.connected) {
       this.setStartStatus('Conéctate al servidor para crear o unirte a salas.');

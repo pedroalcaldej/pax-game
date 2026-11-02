@@ -4,6 +4,7 @@
 
 import { GameState } from '../game/GameState.js';
 import { PhaseManager } from '../game/PhaseManager.js';
+import { MAX_PLAYERS } from '../../../shared/Constants.js';
 
 export class Room {
   constructor(id, publishState) {
@@ -55,7 +56,7 @@ export class Room {
     if (!caller || !this.gameState.gameStarted) {
       return { ok: false, message: 'No puedes pausar esta partida.' };
     }
-    if (players.length !== 4 || humans.length !== 1) {
+    if (players.length !== MAX_PLAYERS || humans.length !== 1) {
       return { ok: true, paused: this.gameState.isPaused, eligible: false };
     }
     const changed = this.phaseManager.setPaused(Boolean(paused));

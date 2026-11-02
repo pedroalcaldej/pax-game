@@ -6,12 +6,15 @@
 import { io } from 'socket.io-client';
 import { CLIENT_EVENTS, SERVER_EVENTS } from '../../../shared/Protocol.js';
 
-const DEFAULT_SERVER_URL = import.meta.env.PROD
-  ? 'https://pax-game.onrender.com'
-  : typeof window === 'undefined'
-    ? 'http://localhost:3000'
-    : `${window.location.protocol}//${window.location.hostname}:3000`;
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || DEFAULT_SERVER_URL;
+const localServerPort = import.meta.env.VITE_SERVER_PORT;
+const localServerUrl = import.meta.env.DEV && typeof window !== 'undefined' && localServerPort
+  ? `${window.location.protocol}//${window.location.hostname}:${localServerPort}`
+  : '';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || localServerUrl;
+
+if (!SERVER_URL) {
+  throw new Error('Define VITE_SERVER_URL para producción o VITE_SERVER_PORT para desarrollo.');
+}
 
 export const socket = io(SERVER_URL, {
   autoConnect: true
@@ -19,7 +22,7 @@ export const socket = io(SERVER_URL, {
 
 export class SocketClient {
   /**
-   * @param {string} serverUrl - URL del servidor (ej: 'http://localhost:3000')
+   * @param {string} serverUrl - URL del servidor de juego.
    */
   constructor(serverUrl = SERVER_URL) {
     this.socket = io(serverUrl, { autoConnect: true });

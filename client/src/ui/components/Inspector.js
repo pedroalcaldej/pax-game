@@ -47,6 +47,7 @@ export class Inspector {
   constructor(container) {
     this.container = container;
     this.nationColors = [];
+    this.nationPlayers = [];
     this.player = null;
     this.phase = 1;
     this.onAction = () => {};
@@ -59,6 +60,7 @@ export class Inspector {
   }
 
   setNationColors(players = []) {
+    this.nationPlayers = players;
     this.nationColors = players.map((player) => player.color);
   }
 
@@ -179,10 +181,15 @@ export class Inspector {
       activeSlot: this.activeSlot,
       tile
     });
-    const nation = tile?.nationId == null ? null : {
-      ...NATIONS[tile.nationId],
-      color: this.nationColors[tile.nationId] || NATIONS[tile.nationId]?.color
-    };
+    const owner = tile?.ownerId == null
+      ? null
+      : this.nationPlayers.find((player) => player.id === tile.ownerId);
+    const baseNation = tile?.nationId == null ? null : NATIONS[tile.nationId];
+    const nation = owner || baseNation ? {
+      ...baseNation,
+      name: owner?.name || baseNation?.name,
+      color: owner?.color || this.nationColors[tile.nationId] || baseNation?.color
+    } : null;
     const status = tile?.status || TILE_STATUS.NORMAL;
     const statusColor = TILE_STATUS_COLORS[status] || '#64748b';
 
@@ -197,7 +204,9 @@ export class Inspector {
     }
 
     const type = escapeHtml(TILE_TYPE_NAMES[tile.type] || tile.type || '—');
-    const label = nation ? escapeHtml(nation.name) : 'Territorio neutral';
+    const label = owner?.name || nation?.name
+      ? escapeHtml(owner?.name || nation.name)
+      : 'Territorio neutral';
     const building = tile.building ? escapeHtml(tile.building) : 'Sin edificio';
     const feature = tile.waterFeature === 'RIVER'
       ? 'Río'
