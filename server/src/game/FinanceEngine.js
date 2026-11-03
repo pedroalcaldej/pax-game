@@ -90,8 +90,8 @@ export const FinanceEngine = {
     if (action.type === 'PROPOSE_TRADE') {
       const recipient = this.players.get(action.recipientId);
       const { offerResource, offerAmount, requestResource, requestAmount } = action;
-      if (!recipient || recipient.id === player.id || recipient.isBot) {
-        return { ok: false, message: 'Selecciona otro jugador humano de la partida.' };
+      if (!recipient || recipient.id === player.id) {
+        return { ok: false, message: 'Selecciona otro país de la partida.' };
       }
       if (
         !VALID_TRADE_RESOURCES.has(offerResource)
@@ -144,6 +144,18 @@ export const FinanceEngine = {
       this.recordEvent(
         `${player.name} propuso a ${recipient.name} intercambiar ${offerAmount} ${offerResource === 'SILVER' ? 'de Plata' : 'Materiales'} por ${requestAmount} ${requestResource === 'SILVER' ? 'de Plata' : 'Materiales'}.`
       );
+      if (recipient.isBot) {
+        const netReceived = offerAmount - (tariffExempt ? 0 : Math.ceil(offerAmount * BANK_TARIFF_RATE));
+        const value = (resource, amount) => amount * (resource === 'MATERIALS'
+          ? (ECONOMY.COSTS.MARKET_BUY_MATERIAL_SILVER + ECONOMY.COSTS.MARKET_SELL_MATERIAL_SILVER) / 2 : 1);
+        const accepted = value(offerResource, netReceived) >= value(requestResource, requestAmount);
+        const result = this.performFinancialAction(recipient.id, {
+          type: 'RESPOND_TO_TRADE', playerId: recipient.id, offerId: offer.id, accepted
+        });
+        return { ...result, accepted, message: result.ok
+          ? `${recipient.name} ${accepted ? 'aceptó el intercambio; operación completada' : 'rechazó el intercambio: no le resulta conveniente'}.`
+          : result.message };
+      }
       return { ok: true, message: `Propuesta de intercambio enviada a ${recipient.name}.` };
     }
 
@@ -176,6 +188,9 @@ export const FinanceEngine = {
         player.id,
         TREATY_TYPES.FREE_TRADE
       ) && !this.isPlayersAtWar(proposer.id, player.id);
+      if (tariffExempt && offer.offerAmount !== offer.requestAmount) {
+        return { ok: false, message: 'Con un TLC activo, el intercambio debe ser 1:1.' };
+      }
       const proposerTariff = tariffExempt ? 0 : Math.ceil(offer.offerAmount * BANK_TARIFF_RATE);
       const recipientTariff = tariffExempt ? 0 : Math.ceil(offer.requestAmount * BANK_TARIFF_RATE);
       const receivedByRecipient = offer.offerAmount - proposerTariff;

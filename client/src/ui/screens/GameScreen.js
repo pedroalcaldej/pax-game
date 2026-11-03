@@ -1,3 +1,5 @@
+import { roundMapOptions, roundMapStep } from '../components/RoundMapNavigation.js';
+import { mergeGameEvents } from '../components/GameEventHistory.js';
 /**
  * Pantalla principal de PAX: panel de nación, mapa e inspector territorial.
  */
@@ -90,6 +92,10 @@ export class GameScreen {
     this.playerId = null;
     this.player = null;
     this.events = [];
+    this.historyRound = null;
+    this.historySnapshot = null;
+    this.historyCache = {};
+    this.historyToken = 0;
     this.localEvents = [];
     this.seenBondEventKeys = null;
     this.pendingMoveSource = null;
@@ -152,7 +158,13 @@ export class GameScreen {
 
     const taxEl = this.container.querySelector('#tax-container');
     this.inspector = new Inspector(this.container.querySelector('#inspector-container'));
-    this.map = new Map(this.container.querySelector('#map-container'), (tile) => this.handleTileSelection(tile));
+    this.map = new Map(this.container.querySelector('#map-container'), (tile) => this.handleTileSelection(tile), {
+      controlsContainer: this.container.querySelector('#map-zoom-controls')
+    });
+    this.container.querySelector('#map-history-back').addEventListener('click', () =>
+      this.selectMapRound(roundMapStep(this.gameState, this.historyRound, -1)));
+    this.container.querySelector('#map-history-forward').addEventListener('click', () =>
+      this.selectMapRound(roundMapStep(this.gameState, this.historyRound, 1)));
     requestAnimationFrame(() => this.map.fitToPanel());
     this.chat = new Chat(this.container.querySelector('#chat-container'), {
       onSend: (message) => this.lobby?.sendChatMessage(message)
@@ -360,6 +372,10 @@ export class GameScreen {
     this.container.querySelector('#global-panel-close').addEventListener('click', () => {
       this.container.querySelector('#global-panel-dialog').close();
     });
+    this.container.querySelector('#game-summary-view-map').addEventListener('click', () => {
+      this.dismissedSummaryId = this.gameState?.mapHistoryId;
+      this.container.querySelector('#game-summary-dialog').close();
+    });
     this.container.querySelector('#game-summary-replay').addEventListener('click', () => {
       this.replayGame();
     });
@@ -566,16 +582,22 @@ export class GameScreen {
     if (gameState.gameStarted && (!this.gameState?.gameStarted || this.gameState?.gameOver)) {
       this.map.clearSelection();
     }
+    if (this.gameState?.mapHistoryId !== gameState.mapHistoryId) {
+      this.historyRound = null;
+      this.historySnapshot = null;
+      this.historyCache = {};
+      this.historyToken += 1;
+    }
     this.gameState = gameState;
     const phase = gameState.currentPhase || 1;
     const stage = gameState.currentStage || this.getStageFromLegacyPhase(phase);
     if (stage !== GAME_STAGES.PLANNING) this.pendingMoveSource = null;
-    this.map.setDemilitarizedZones(gameState.activeDmzZones || [], false);
+
 
     const players = Array.isArray(gameState.players) ? gameState.players : [];
     this.map.setNationColors(players);
     this.inspector.setNationColors(players);
-    this.map.render(gameState.grid);
+
     this.player = players.find((player) => (
       player.boundPlayerId === this.playerId || player.socketId === socket.id
     )) || null;
@@ -613,7 +635,7 @@ export class GameScreen {
       ? gameState.oiSession.meetingAfterRound
       : gameState.currentRound || 1;
     const roundEl = this.container.querySelector('#round-value');
-    roundEl.textContent = `${round}/${MAX_ROUNDS}`;
+    roundEl.textContent = `${round}/${gameState.settings?.maxRounds ?? MAX_ROUNDS}`;
     this.container.querySelector('#timer-value').textContent = `${gameState.timeRemaining ?? TIMINGS.DECISION_PHASE_DURATION}s${gameState.isPaused ? ' · Pausado' : ''}`;
     this.container.querySelector('#phase-value').textContent = STAGE_LABELS[stage] || 'En curso';
     this.updateStageOverlay(stage);
@@ -641,13 +663,66 @@ export class GameScreen {
     }
 
     if (
-      stage === GAME_STAGES.CLOSING
+      this.historyRound === null && stage === GAME_STAGES.CLOSING
       && gameState.actionResolutionId !== this.lastAnimatedResolutionId
     ) {
       this.lastAnimatedResolutionId = gameState.actionResolutionId;
       this.map.animateTroopMovements(gameState.lastActionResolutions || []);
       this.map.animateShipMovements(gameState.lastActionResolutions || []);
     }
+    this.renderViewedMap();
+  }
+
+  selectMapRound(round) {
+    if (!roundMapOptions(this.gameState).includes(round)) round = null;
+    const token = ++this.historyToken;
+    this.historyRound = round;
+    this.historySnapshot = round === null ? null : this.historyCache[round] || null;
+    this.pendingMoveSource = null;
+    this.oiTargetSelection = false;
+    this.map.setTargetSelectionMode(false);
+    this.map.animationVersion = (this.map.animationVersion || 0) + 1;
+    this.map.clearSelection();
+    this.renderViewedMap();
+    this.updateActionSlots();
+    this.updateActionHighlights();
+    if (round === null || this.historySnapshot) return;
+    socket.timeout(5000).emit(PROTOCOL.GET_ROUND_MAP, { roomId: this.roomCode, round }, (error, result) => {
+      if (this.isLeaving || token !== this.historyToken) return;
+      if (error || !result?.ok || result.snapshot?.round !== round) {
+        this.showToast(result?.message || 'No se pudo cargar esa ronda.', 'error');
+        this.selectMapRound(null);
+        return;
+      }
+      this.historyCache[round] = result.snapshot;
+      this.historySnapshot = result.snapshot;
+      this.renderViewedMap();
+    });
+  }
+
+  renderViewedMap() {
+    const historical = this.historyRound !== null;
+    const state = historical ? this.historySnapshot : this.gameState;
+    const options = roundMapOptions(this.gameState);
+    const index = options.indexOf(this.historyRound);
+    this.container.querySelector('#map-history-back').disabled = index <= 0;
+    this.container.querySelector('#map-history-forward').disabled = !historical;
+    const label = this.container.querySelector('#map-history-label');
+    label.textContent = `Ronda ${historical ? this.historyRound : this.gameState?.currentRound || 1}`;
+    label.setAttribute('aria-busy', String(historical && !state));
+    if (historical) {
+      this.lastAnimatedResolutionId = this.gameState?.actionResolutionId;
+      this.inspector.setContext(null, 0, (action) => this.handleInspectorAction(action), this.activeActionSlot, state?.grid);
+    }
+    this.map.canvas.style.visibility = historical && !state?.grid ? 'hidden' : 'visible';
+    if (!state?.grid) return;
+    this.map.setNationColors(state.players || []);
+    this.inspector.setNationColors(state.players || []);
+    this.map.setDemilitarizedZones(state.activeDmzZones || [], false);
+    this.inspector.setContext(historical ? null : this.player,
+      historical ? 0 : this.gameState.currentPhase,
+      (action) => this.handleInspectorAction(action), this.activeActionSlot, state.grid);
+    this.map.render(state.grid);
   }
 
   getStageFromLegacyPhase(phase) {
@@ -836,6 +911,7 @@ export class GameScreen {
   }
 
   beginOITargetSelection() {
+    if (this.historyRound !== null) this.selectMapRound(null);
     if (!socket.connected || !this.container.querySelector('#oi-resolution-type')) return;
     this.oiTargetSelection = true;
     this.map.setTargetSelectionMode(true);
@@ -884,6 +960,7 @@ export class GameScreen {
     const plannedActions = this.player?.plannedActions || Array(ACTION_SLOT_COUNT).fill(null);
     const canPlan = Boolean(
       this.player
+      && this.historyRound === null
       && !this.gameState?.gameOver
       && (this.gameState?.currentStage || this.getStageFromLegacyPhase(this.gameState?.currentPhase || 1))
         === GAME_STAGES.PLANNING
@@ -946,6 +1023,7 @@ export class GameScreen {
   }
 
   updateActionHighlights(provisionalDestination = null) {
+    if (this.historyRound !== null) { this.map.setActionHighlights([]); return; }
     const highlights = [];
     const plannedActions = this.player?.plannedActions || [];
     for (const action of plannedActions) {
@@ -967,7 +1045,7 @@ export class GameScreen {
   }
 
   emitPlannedAction(slot, plannedAction) {
-    if (!this.player) return;
+    if (!this.player || this.historyRound !== null) return;
     this.player.plannedActions ||= Array(ACTION_SLOT_COUNT).fill(null);
     this.player.plannedActions[slot] = plannedAction ? { ...plannedAction } : null;
     if (plannedAction) {
@@ -993,6 +1071,7 @@ export class GameScreen {
   }
 
   updateStartMenu(gameStarted = this.gameState?.gameStarted) {
+    this.container.querySelector('#map-controls').hidden = !(gameStarted && socket.connected && !this.isLeaving);
     const menu = this.container.querySelector('#start-menu');
     if (!menu) return;
     menu.hidden = Boolean(gameStarted && socket.connected);
@@ -1036,7 +1115,7 @@ export class GameScreen {
     const winner = rankings[0]?.player;
     this.container.querySelector('#game-summary-content').innerHTML = `
       <h2 id="game-summary-title">Partida finalizada</h2>
-      <p>Ronda ${gameState.currentRound} de ${MAX_ROUNDS}${winner ? ` · País ganador: <strong>${escapeHTML(winner.name)}</strong>` : ''}</p>
+      <p>Ronda ${gameState.currentRound} de ${gameState.settings?.maxRounds ?? MAX_ROUNDS}${winner ? ` · País ganador: <strong>${escapeHTML(winner.name)}</strong>` : ''}</p>
     `;
     this.container.querySelector('#game-summary-rankings').innerHTML = rankings.map((entry, index) => {
       const { player } = entry;
@@ -1058,7 +1137,7 @@ export class GameScreen {
         </tr>
       `;
     }).join('');
-    if (!dialog.open) dialog.showModal();
+    if (!dialog.open && this.dismissedSummaryId !== gameState.mapHistoryId) dialog.showModal();
   }
 
   updateNationPanel() {
@@ -1073,6 +1152,7 @@ export class GameScreen {
   }
 
   handleInspectorAction(action) {
+    if (this.historyRound !== null) return;
     if (this.gameState?.currentStage !== GAME_STAGES.PLANNING || !this.player) return;
     if (['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)) {
       this.pendingMoveSource = { ...action, slot: this.activeActionSlot };
@@ -1084,6 +1164,7 @@ export class GameScreen {
   }
 
   handleTileSelection(tile) {
+    if (this.historyRound !== null) { this.inspector.render(tile); return; }
     if (this.oiTargetSelection && this.map.selectionFromUser && tile) {
       const type = this.container.querySelector('#oi-resolution-type')?.value;
       this.oiTargetSelection = false;
@@ -1183,20 +1264,14 @@ export class GameScreen {
     }
     this.seenBondEventKeys = bondEventKeys;
     const savedScrollTop = this.eventLog?.element?.scrollTop || 0;
-    this.events = [
-      ...this.localEvents,
-      ...history.slice().reverse().map((event) => ({
-        message: event.message,
-        timestamp: event.timestamp
-      }))
-    ];
+    this.events = mergeGameEvents(history, this.localEvents);
     this.eventLog.render(this.events, this.gameState?.players, savedScrollTop);
   }
 
   addEvent(message) {
     const event = { message, timestamp: Date.now() };
     this.localEvents.unshift(event);
-    this.events.unshift(event);
+    this.events = mergeGameEvents(this.gameState?.eventHistory || [], this.localEvents);
     this.eventLog.render(this.events, this.gameState?.players, 0);
   }
 
@@ -1473,6 +1548,7 @@ export class GameScreen {
   async returnToMainMenu() {
     if (this.isLeaving) return;
     this.isLeaving = true;
+    this.container.querySelector('#map-controls').hidden = true;
     const roomCode = this.roomCode;
     const userId = this.playerId;
     this.lobby?.leaveRoom().catch((error) => {

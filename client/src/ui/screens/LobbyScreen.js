@@ -187,7 +187,7 @@ export class LobbyScreen {
     const prefix = scope === 'single' ? 'single-settings' : 'settings';
     const value = (id) => Number(this.query(`#${id}`)?.value);
     return {
-      preset: this.query(`#${prefix}-preset`).value,
+      preset: this.query(scope === 'single' ? '#single-settings-preset' : '#lobby-settings-preset').value,
       maxRounds: value(`${prefix}-rounds`),
       planningDuration: value(`${prefix}-planning`),
       actionSlotCount: value(`${prefix}-actions`),
@@ -203,7 +203,7 @@ export class LobbyScreen {
       const element = this.query(`#${id}`);
       if (element) element.value = value;
     };
-    setValue(`${prefix}-preset`, settings.preset || 'normal');
+    setValue(scope === 'single' ? 'single-settings-preset' : 'lobby-settings-preset', settings.preset || 'normal');
     setValue(`${prefix}-rounds`, settings.maxRounds);
     setValue(`${prefix}-planning`, settings.planningDuration);
     setValue(`${prefix}-actions`, settings.actionSlotCount);

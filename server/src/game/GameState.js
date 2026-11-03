@@ -1,16 +1,18 @@
+import { randomUUID } from 'node:crypto';
 /**
  * server/src/game/GameState.js
  */
 
 import { generateInitialGrid } from '../../../shared/MapGenerator.js';
-import { MAP_CONFIG, GAME_STAGES, TIMINGS, normalizeGameSettings } from '../../../shared/Constants.js';
+import { GAME_STAGES, normalizeGameSettings } from '../../../shared/Constants.js';
 import { DiplomacyEngine } from './DiplomacyEngine.js';
 import { EconomyEngine } from './EconomyEngine.js';
 import { FinanceEngine } from './FinanceEngine.js';
 import { PlayerManager } from './PlayerManager.js';
 import { ActionEngine } from './ActionEngine.js';
-import { BotController } from './BotController.js';
-import { BotDecisionTable } from './BotDecisionTable.js';
+import { BotController } from './bots/BotController.js';
+import { BotDecisionTable } from './bots/BotDecisionTable.js';
+import { recordHumanExperience } from '../training/BotMemoryStore.js';
 export class GameState {
   constructor(settings = {}, botDecisionTables = null) {
     this.settings = normalizeGameSettings(settings);
@@ -28,6 +30,8 @@ export class GameState {
     this.actionResolutionId = 0;
     this.lastActionResolutions = [];
     this.eventHistory = [];
+    this.roundMapHistory = new Map();
+    this.mapHistoryId = randomUUID();
     this.nextEventId = 1;
     this.oiProposals = [];
     this.nextOIProposalId = 1;
@@ -54,6 +58,9 @@ export class GameState {
     this.botDecisionTables = botDecisionTables || new Map();
     this.trainingMode = false;
     this.botExplorationRate = 0.05;
+    this.botSearchWidth = 3;
+    this.botDirectedExploration = true;
+    this.botIntermediateRewards = true;
     this.botStrategicActionsEnabled = true;
 
     const numericSeed = typeof this.seed === 'number'
@@ -77,13 +84,14 @@ export class GameState {
     return PlayerManager.refreshBotColors.apply(this, args);
   }
 
-  recordEvent(message) {
+  recordEvent(message, details = {}) {
     const event = {
       id: this.nextEventId,
       timestamp: Date.now(),
       round: this.currentRound,
       phase: this.currentPhase,
-      message
+      message,
+      ...details
     };
     this.nextEventId += 1;
     this.eventHistory.push(event);
@@ -258,6 +266,14 @@ export class GameState {
     return BotController.runBotDecisions.apply(this, args);
   }
 
+  chooseBotCandidate(...args) {
+    return BotController.chooseBotCandidate.apply(this, args);
+  }
+
+  findBotCandidates(...args) {
+    return BotController.findBotCandidates.apply(this, args);
+  }
+
   chooseBotTaxRate(...args) {
     return BotController.chooseBotTaxRate.apply(this, args);
   }
@@ -282,36 +298,25 @@ export class GameState {
     return BotController.findBotOIProposals.apply(this, args);
   }
 
-  findBotNavalAction(...args) {
-    return BotController.findBotNavalAction.apply(this, args);
-  }
-
-  findBotCapitalAction(...args) {
-    return BotController.findBotCapitalAction.apply(this, args);
-  }
-
-  findBotExpansion(...args) {
-    return BotController.findBotExpansion.apply(this, args);
-  }
-
-  findBotAttack(...args) {
-    return BotController.findBotAttack.apply(this, args);
-  }
-
-  findBotBuildAction(...args) {
-    return BotController.findBotBuildAction.apply(this, args);
-  }
-
-  findBotRecruitment(...args) {
-    return BotController.findBotRecruitment.apply(this, args);
-  }
-
   planBotAction(...args) {
     return BotController.planBotAction.apply(this, args);
   }
 
   rememberBotActionResult(...args) {
     return BotController.rememberBotActionResult.apply(this, args);
+  }
+
+  recordHumanExperience(action, successful, contextKey) {
+    if (this.trainingMode || !action?.type) return;
+    recordHumanExperience({
+      contextKey: contextKey || BotDecisionTable.getContext(
+        this,
+        [...this.players.values()].find((player) => player.id === action.playerId)
+      ),
+      actionType: action.type,
+      action,
+      successful
+    });
   }
 
   awardBotFinalRewards(...args) {
@@ -350,7 +355,7 @@ export class GameState {
     return {
       grid: this.grid,
       players: Array.from(this.players.values(), (player) => {
-        const { botDecisionContext, ...publicPlayer } = player;
+        const { botDecisionContext, botDecisionHistory, ...publicPlayer } = player;
         return { ...publicPlayer, gdiPoints: this.calculateGDI(player) };
       }),
       gameStarted: this.gameStarted,
@@ -359,6 +364,8 @@ export class GameState {
       actionResolutionId: this.actionResolutionId,
       lastActionResolutions: this.lastActionResolutions,
       eventHistory: this.eventHistory,
+      mapHistoryId: this.mapHistoryId,
+      mapHistoryRounds: [...this.roundMapHistory.keys()],
       currentPhase: this.currentPhase,
       currentStage: this.currentStage,
       timeRemaining: this.timeRemaining,

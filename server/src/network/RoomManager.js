@@ -5,7 +5,7 @@
 import { GameState } from '../game/GameState.js';
 import { PhaseManager } from '../game/PhaseManager.js';
 import { MAX_PLAYERS } from '../../../shared/Constants.js';
-import { loadBotDecisionTables, saveBotDecisionTables } from '../training/BotMemoryStore.js';
+import { loadBotDecisionTables } from '../training/BotMemoryStore.js';
 
 export class Room {
   constructor(id, publishState, settings = {}) {

@@ -181,7 +181,7 @@ export class FinancePanel {
       ));
     }
     const tradeRecipient = root.querySelector('#trade-proposal-recipient');
-    const tradePlayers = players.filter((player) => player.id !== localPlayerId && !player.isBot);
+    const tradePlayers = players.filter((player) => player.id !== localPlayerId);
     const recipientSignature = tradePlayers.map((player) => `${player.id}:${player.name}`).join('|');
     if (tradeRecipient && recipientSignature !== this.tradeRecipientSignature) {
       const selectedRecipient = tradeRecipient.value;
@@ -189,7 +189,7 @@ export class FinancePanel {
         ? tradePlayers.map((player) => (
           `<option value="${escapeHtml(player.id)}">${escapeHtml(player.name || 'País')}</option>`
         )).join('')
-        : '<option value="">No hay otros jugadores humanos</option>';
+        : '<option value="">No hay otros países</option>';
       if (tradePlayers.some((player) => player.id === selectedRecipient)) {
         tradeRecipient.value = selectedRecipient;
       }
@@ -261,7 +261,7 @@ export class FinancePanel {
           </article>
         `;
       }).join('')
-      : `<p class="pax-peer-trade-empty">${tradePlayers.length ? 'No hay propuestas pendientes.' : 'Conéctate a una partida multijugador para comerciar con otros jugadores.'}</p>`;
+      : `<p class="pax-peer-trade-empty">${tradePlayers.length ? 'No hay propuestas pendientes.' : 'No hay otros países disponibles para comerciar.'}</p>`;
   }
 
   setStatus(message) {

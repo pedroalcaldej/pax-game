@@ -38,9 +38,9 @@ export const GAME_SETTINGS_LIMITS = {
 };
 
 export const GAME_SETTINGS_PRESETS = {
-  quick: { maxRounds: 15, planningDuration: 30, actionSlotCount: 2 },
-  normal: { maxRounds: 30, planningDuration: 60, actionSlotCount: 3 },
-  strategic: { maxRounds: 40, planningDuration: 120, actionSlotCount: 4 }
+  quick: { maxRounds: 15, planningDuration: 30, actionSlotCount: 3, mapSize: 20 },
+  normal: { maxRounds: 30, planningDuration: 60, actionSlotCount: 3, mapSize: GRID_SIZE },
+  strategic: { maxRounds: 40, planningDuration: 120, actionSlotCount: 3, mapSize: GRID_SIZE }
 };
 
 export const DEFAULT_GAME_SETTINGS = {
@@ -167,6 +167,7 @@ export const LEGACY_NATION_NAMES = new Map([
 export const PROTOCOL = {
   CONNECT: 'connect',
   DISCONNECT: 'disconnect',
+  GET_ROUND_MAP: 'get_round_map',
   JOIN_GAME: 'join_game',
   REJOIN_ROOM: 'rejoin_room',
   LEAVE_ROOM: 'leave_room',

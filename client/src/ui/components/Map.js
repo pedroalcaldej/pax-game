@@ -18,8 +18,9 @@ export class Map {
    * @param {HTMLElement} container - Contenedor DOM (#map-container) donde se insertará el Canvas.
    * @param {(tile: object | null) => void} onTileSelected - Notifica la casilla seleccionada.
    */
-  constructor(container, onTileSelected = () => {}) {
+  constructor(container, onTileSelected = () => {}, { controlsContainer = null } = {}) {
     this.viewport = container;
+    this.controlsContainer = controlsContainer;
     this.container = document.createElement('div');
     this.container.style.cssText = [
       'position:absolute',
@@ -113,21 +114,9 @@ export class Map {
 
   createZoomControls() {
     this.controls = document.createElement('div');
-    this.controls.style.cssText = [
-      'position:absolute',
-      'top:12px',
-      'right:12px',
-      'z-index:2',
-      'display:flex',
-      'align-items:center',
-      'gap:6px',
-      'padding:6px',
-      'border:1px solid #475569',
-      'border-radius:8px',
-      'background:rgba(15, 23, 42, 0.92)',
-      'color:#f8fafc',
-      'font:12px system-ui, sans-serif'
-    ].join(';');
+    this.controls.className = 'pax-map-zoom';
+    this.controls.setAttribute('role', 'group');
+    this.controls.setAttribute('aria-label', 'Zoom del mapa');
     this.controls.innerHTML = `
       <button type="button" aria-label="Alejar" title="Alejar" data-zoom="out">−</button>
       <span aria-live="polite" data-zoom-label></span>
@@ -136,16 +125,6 @@ export class Map {
     `;
 
     for (const button of this.controls.querySelectorAll('button')) {
-      button.style.cssText = [
-        'min-width:30px',
-        'height:28px',
-        'border:1px solid #475569',
-        'border-radius:5px',
-        'background:#1e293b',
-        'color:#f8fafc',
-        'cursor:pointer',
-        'font:inherit'
-      ].join(';');
       button.addEventListener('click', () => {
         if (button.dataset.zoom === 'in') this.zoomAt(this.zoom * 1.2);
         if (button.dataset.zoom === 'out') this.zoomAt(this.zoom / 1.2);
@@ -154,7 +133,7 @@ export class Map {
     }
 
     this.zoomLabel = this.controls.querySelector('[data-zoom-label]');
-    this.viewport.appendChild(this.controls);
+    (this.controlsContainer || this.viewport).appendChild(this.controls);
   }
 
   getFitZoom() {
@@ -404,8 +383,10 @@ export class Map {
         }));
       if (!movements.length) return;
 
+      const version = this.animationVersion || 0;
       const startedAt = performance.now();
       const draw = (now) => {
+        if (version !== (this.animationVersion || 0)) return;
         const progress = Math.min(1, (now - startedAt) / duration);
         this.redrawOverlay();
         const eased = 1 - ((1 - progress) ** 3);
@@ -454,8 +435,10 @@ export class Map {
         }));
       if (!movements.length) return;
 
+      const version = this.animationVersion || 0;
       const startedAt = performance.now();
       const draw = (now) => {
+        if (version !== (this.animationVersion || 0)) return;
         const progress = Math.min(1, (now - startedAt) / duration);
         this.render(this.grid, false);
         const eased = 1 - ((1 - progress) ** 3);

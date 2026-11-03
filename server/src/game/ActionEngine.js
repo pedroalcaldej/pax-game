@@ -1,7 +1,9 @@
+import { resolveLandMovements } from './LandMovementResolver.js';
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
-import { ACTION_SLOT_COUNT, ECONOMY, GAME_PHASES, LAND_TERRAIN, TREATY_TYPES, TERRAIN_TYPES, WATER_TERRAIN } from '../../../shared/Constants.js';
+import { ACTION_SLOT_COUNT, ECONOMY, LAND_TERRAIN, TERRAIN_TYPES, WATER_TERRAIN } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
 import { createEmptyActionSlots } from './GameStateUtils.js';
+import { BotDecisionTable } from './bots/BotDecisionTable.js';
 
 function isDiagonalOrOrthogonalStep(source, destination) {
   const deltaX = Math.abs(source.x - destination.x);
@@ -30,6 +32,7 @@ export const ActionEngine = {
     );
     if (plannedAction == null) {
       player.plannedActions[slot] = null;
+      if (player.humanDecisionContext) delete player.humanDecisionContext[slot];
       return { ok: true, message: `Espacio ${slot + 1} de acción vaciado.` };
     }
     if (typeof plannedAction.type !== 'string') {
@@ -40,6 +43,8 @@ export const ActionEngine = {
     if (!validation.ok) return validation;
 
     player.plannedActions[slot] = { ...plannedAction };
+    player.humanDecisionContext ||= {};
+    player.humanDecisionContext[slot] = BotDecisionTable.getContext(this, player);
     const name = this.getActionName(plannedAction.type);
     return {
       ok: true,
@@ -397,6 +402,16 @@ export const ActionEngine = {
 
   resolvePlannedActions() {
     const results = [];
+    const landOrders = [...this.players.values()].flatMap((player) =>
+      (player.plannedActions || []).flatMap((action, slot) => {
+        if (action?.type !== 'MOVE_TROOPS') return [];
+        const source = this.grid[action.y]?.[action.x];
+        const target = this.grid[action.targetY]?.[action.targetX];
+        return WATER_TERRAIN.has(source?.type) || WATER_TERRAIN.has(target?.type)
+          ? [] : [{ player, action, slot }];
+      }));
+    const landResults = new Map([...resolveLandMovements(this, landOrders)]
+      .map(([order, result]) => [`${order.player.id}:${order.slot}`, result]));
     for (const player of this.players.values()) {
       const plannedActions = player.plannedActions || createEmptyActionSlots(this.settings?.actionSlotCount);
       for (let slot = 0; slot < plannedActions.length; slot += 1) {
@@ -404,7 +419,9 @@ export const ActionEngine = {
         if (!action) continue;
 
         let result;
-        if (action.type === 'MOVE_TROOPS') {
+        if (landResults.has(`${player.id}:${slot}`)) {
+          result = landResults.get(`${player.id}:${slot}`);
+        } else if (action.type === 'MOVE_TROOPS') {
           const destination = this.grid[action.targetY]?.[action.targetX];
           const source = this.grid[action.y]?.[action.x];
           result = destination && WATER_TERRAIN.has(destination.type)
@@ -433,14 +450,26 @@ export const ActionEngine = {
         });
         if (player.isBot) {
           this.rememberBotActionResult(player.id, { ...action, slot }, result.ok);
+        } else {
+          this.recordHumanExperience(
+            action,
+            result.ok,
+            player.humanDecisionContext?.[slot]
+          );
+          if (player.humanDecisionContext) delete player.humanDecisionContext[slot];
         }
         if (action.type !== 'HOLD_POSITION') {
           const coordinates = ['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)
             ? ` desde (${action.x}, ${action.y}) hasta (${action.targetX}, ${action.targetY})`
             : ` en (${action.x}, ${action.y})`;
-          this.recordEvent(result.ok
-            ? `${player.name}: ${this.getActionName(action.type)}${coordinates}.`
-            : `${player.name}: ${this.getActionName(action.type)}${coordinates} no realizada: ${result.message || 'No se pudo realizar la acción.'}`);
+          const quantity = action.type === 'MOVE_SHIPS' ? ` (${action.ships} ${action.ships === 1 ? 'barco' : 'barcos'})`
+            : ['MOVE_TROOPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)
+              ? ` (${action.troops} ${action.troops === 1 ? 'tropa' : 'tropas'})` : '';
+          this.recordEvent(`${player.name}: ${this.getActionName(action.type)}${quantity}${coordinates}.`,
+            { category: 'action', playerId: player.id, success: result.ok });
+          if (!result.ok) this.recordEvent(
+            `${player.name}: acción no realizada. ${result.message || 'No se pudo realizar la acción.'}`,
+            { category: 'action-error', playerId: player.id });
         }
       }
       player.plannedActions = createEmptyActionSlots(this.settings?.actionSlotCount);
@@ -449,118 +478,8 @@ export const ActionEngine = {
   },
 
   resolveTroopMovement(player, action) {
-    const source = this.grid[action.y]?.[action.x];
-    const destination = this.grid[action.targetY]?.[action.targetX];
-    if (
-      !source
-      || !destination
-      || this.getTroopsForPlayerOnTile(source, player.id) < action.troops
-      || !LAND_TERRAIN.has(destination.type)
-      || !isDiagonalOrOrthogonalStep(source, destination)
-      || InternationalOrganizationEngine.isInActiveDmz(this, source?.x, source?.y)
-      || InternationalOrganizationEngine.isInActiveDmz(this, destination?.x, destination?.y)
-    ) {
-      return { ok: false, message: 'El movimiento ya no es válido o atraviesa una Zona Desmilitarizada.' };
-    }
-    const enteredRivalTerritory = (
-      (source.ownerId != null && source.ownerId !== player.id)
-      || (destination.ownerId != null && destination.ownerId !== player.id)
-    );
-    if (enteredRivalTerritory) {
-      this.registerMilitaryConflict(
-        player,
-        destination.ownerId !== player.id ? destination.ownerId : source.ownerId
-      );
-    }
-    const hostilePlayers = new Set(
-      Object.entries(destination.visitingTroops || {})
-        .filter(([visitorId, count]) => visitorId !== player.id && count > 0)
-        .map(([visitorId]) => visitorId)
-    );
-    if (destination.ownerId != null && destination.ownerId !== player.id) {
-      hostilePlayers.add(destination.ownerId);
-    }
-    const brokePacts = [];
-    for (const defenderId of hostilePlayers) {
-      this.registerMilitaryConflict(player, defenderId);
-      if (this.breakNonAggressionPact(player, defenderId)) brokePacts.push(defenderId);
-    }
-    if (destination.ownerId != null && destination.ownerId !== player.id) {
-      const defenderId = destination.ownerId;
-      const defenderTroops = this.getTroopsForPlayerOnTile(destination, defenderId);
-      const attackerWins = action.troops > defenderTroops;
-      if (!attackerWins) {
-        const attackerSurvivors = Math.floor(action.troops / 2);
-        this.removeTroopsFromPlayerOnTile(source, player.id, action.troops - attackerSurvivors);
-        return {
-          ok: true,
-          message: `${brokePacts.length ? 'PNA roto: perdió Influencia Política. ' : ''}${attackerSurvivors
-            ? `Ataque rechazado: ${player.name} pierde ${action.troops - attackerSurvivors} tropas y se retira.`
-            : `Ataque rechazado: ${player.name} pierde todas sus tropas y se retira.`}`,
-          combat: {
-            attackerId: player.id,
-            defenderId,
-            attackerTroops: action.troops,
-            defenderTroops,
-            winnerId: defenderId,
-            attackerSurvivors,
-            defenderSurvivors: defenderTroops
-          }
-        };
-      }
-
-      const defenderSurvivors = Math.floor(defenderTroops / 2);
-      this.removeTroopsFromPlayerOnTile(source, player.id, action.troops);
-      destination.troops = Math.max(0, (destination.troops || 0) - defenderTroops + defenderSurvivors);
-      if (defenderSurvivors > 0) {
-        destination.visitingTroops ||= {};
-        destination.visitingTroops[defenderId] = (
-          destination.visitingTroops[defenderId] || 0
-        ) + defenderSurvivors;
-      }
-      destination.ownerId = player.id;
-      destination.nationId = player.nationId;
-      destination.troops += action.troops;
-      return {
-        ok: true,
-        message: `${brokePacts.length ? 'PNA roto: perdió Influencia Política. ' : ''}${defenderSurvivors
-          ? `Victoria de ${player.name}: territorio conquistado; ${defenderSurvivors} tropas enemigas supervivientes permanecen en la casilla.`
-          : `Victoria de ${player.name}: territorio conquistado; la guarnición fue derrotada.`}`,
-        claimed: true,
-        combat: {
-          attackerId: player.id,
-          defenderId,
-          attackerTroops: action.troops,
-          defenderTroops,
-          winnerId: player.id,
-          attackerSurvivors: action.troops,
-          defenderSurvivors
-        }
-      };
-    }
-
-    if (source.ownerId === player.id) {
-      source.troops -= action.troops;
-    } else {
-      source.visitingTroops[player.id] -= action.troops;
-      source.troops -= action.troops;
-      if (source.visitingTroops[player.id] === 0) delete source.visitingTroops[player.id];
-      if (Object.keys(source.visitingTroops).length === 0) delete source.visitingTroops;
-    }
-    destination.troops = (destination.troops || 0) + action.troops;
-    const claimed = destination.ownerId == null;
-    if (claimed) {
-      destination.ownerId = player.id;
-      destination.nationId = player.nationId;
-    } else if (destination.ownerId !== player.id) {
-      destination.visitingTroops ||= {};
-      destination.visitingTroops[player.id] = (destination.visitingTroops[player.id] || 0) + action.troops;
-    }
-    return {
-      ok: true,
-      message: claimed ? 'Territorio neutral reclamado.' : 'Tropas trasladadas.',
-      claimed
-    };
+    const order = { player, action, slot: 0 };
+    return resolveLandMovements(this, [order]).get(order);
   },
 
   resolveShipMovement(player, action) {

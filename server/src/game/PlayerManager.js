@@ -1,5 +1,5 @@
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
-import { ECONOMY, ECONOMIC_POLICY, AVAILABLE_NATION_COLORS, LEGACY_NATION_NAMES, ACTION_SLOT_COUNT, NATIONS } from '../../../shared/Constants.js';
+import { ECONOMY, ECONOMIC_POLICY, AVAILABLE_NATION_COLORS, LEGACY_NATION_NAMES, NATIONS } from '../../../shared/Constants.js';
 import { createEmptyActionSlots } from './GameStateUtils.js';
 
 export const PlayerManager = {

@@ -9,7 +9,12 @@ import { Room } from '../src/network/RoomManager.js';
 
 function createHumanGame() {
   const gameState = new GameState();
+  // Engine fixtures must not write synthetic actions into the user's experience file.
+  gameState.recordHumanExperience = () => {};
   gameState.gameStarted = true;
+  gameState.botExplorationRate = 0;
+  gameState.botSearchWidth = 0;
+  gameState.botDirectedExploration = false;
   gameState.currentPhase = 2;
   const player = gameState.players.get('nation-0');
   player.socketId = 'human-socket';
@@ -206,7 +211,10 @@ test('approved limits prevent recruitment and factory construction above ten', (
 test('a demilitarized zone evacuates troops and remains active for five rounds', () => {
   const { gameState, player } = createHumanGame();
   for (const tile of gameState.grid.flat()) {
-    if (tile.ownerId === player.id) tile.troops = 0;
+    if (tile.ownerId === player.id) {
+      tile.troops = 0;
+      tile.ownerId = null;
+    }
   }
   const source = gameState.grid[10][10];
   const destination = gameState.grid[10][7];
@@ -883,6 +891,7 @@ test('bots plan troop movements that claim adjacent neutral land', () => {
   target.building = null;
   target.troops = 0;
 
+  gameState.botExplorationRate = 0;
   gameState.runBotDecisions();
   const movement = bot.plannedActions.find((action) => action?.type === 'MOVE_TROOPS');
 
@@ -890,9 +899,13 @@ test('bots plan troop movements that claim adjacent neutral land', () => {
     [movement.x, movement.y, movement.targetX, movement.targetY, movement.troops],
     [source.x, source.y, target.x, target.y, 2]
   );
+  const sentTroops = bot.plannedActions.filter((action) => action?.type === 'MOVE_TROOPS'
+    && action.targetX === target.x && action.targetY === target.y)
+    .reduce((total, action) => total + action.troops, 0);
+  assert.ok(sentTroops <= source.troops);
   gameState.resolvePlannedActions();
   assert.equal(target.ownerId, bot.id);
-  assert.equal(target.troops, 2);
+  assert.equal(target.troops, sentTroops);
 });
 
 test('bots fill all three action slots with beneficial actions and are ready for planning', () => {
@@ -1072,7 +1085,7 @@ test('planning an action does not add it to the performed event history', () => 
   assert.equal(gameState.eventHistory.length, 0);
 });
 
-test('resolved action logs show only the country and action', () => {
+test('resolved troop movement logs include country, quantity and coordinates', () => {
   const { gameState, player } = createHumanGame();
   const source = gameState.grid.flat().find((tile) => (
     tile.ownerId === player.id && tile.x < gameState.gridWidth - 1
@@ -1099,49 +1112,27 @@ test('resolved action logs show only the country and action', () => {
   gameState.resolvePlannedActions();
 
   assert.deepEqual(gameState.eventHistory.map((event) => event.message), [
-    `${player.name}: Mover tropas desde (${source.x}, ${source.y}) hasta (${destination.x}, ${destination.y}).`
+    `${player.name}: Mover tropas (1 tropa) desde (${source.x}, ${source.y}) hasta (${destination.x}, ${destination.y}).`
   ]);
 });
 
-test('a stronger attack captures enemy territory and preserves the defeated garrison as visitors', () => {
+test('a stronger attack captures territory with the difference in troops and no defeated visitors', () => {
   const { gameState, player } = createHumanGame();
-  const source = gameState.grid.flat().find((tile) => (
-    tile.ownerId === player.id && tile.x < gameState.gridWidth - 1 && tile.troops > 0
-  ));
+  const source = gameState.grid.flat().find((tile) => tile.ownerId === player.id && tile.x < gameState.gridWidth - 1);
   source.troops = 4;
   const destination = gameState.grid[source.y][source.x + 1];
-  destination.ownerId = 'nation-1';
-  destination.nationId = 1;
-  destination.type = TERRAIN_TYPES.CIU;
-  destination.troops = 2;
-
-  const attack = {
-    type: 'MOVE_TROOPS',
-    x: source.x,
-    y: source.y,
-    targetX: destination.x,
-    targetY: destination.y,
-    troops: 4
-  };
-  assert.equal(gameState.validatePlannedAction(player, attack, 0).ok, true);
-  const result = gameState.resolveTroopMovement(player, attack);
+  Object.assign(destination, { ownerId: 'nation-1', nationId: 1, type: TERRAIN_TYPES.CIU, troops: 2 });
+  const result = gameState.resolveTroopMovement(player, {
+    type: 'MOVE_TROOPS', x: source.x, y: source.y,
+    targetX: destination.x, targetY: destination.y, troops: 4
+  });
   assert.equal(result.combat.winnerId, player.id);
-  assert.equal(result.combat.defenderSurvivors, 1);
+  assert.equal(result.combat.defenderSurvivors, 0);
+  assert.equal(result.combat.attackerSurvivors, 2);
   assert.equal(destination.ownerId, player.id);
-  assert.equal(destination.troops, 5);
-  assert.equal(destination.visitingTroops['nation-1'], 1);
-
-  const withdraw = {
-    type: 'MOVE_TROOPS',
-    x: destination.x, y: destination.y,
-    targetX: source.x, targetY: source.y,
-    troops: 4
-  };
-  assert.equal(gameState.validatePlannedAction(player, withdraw, 0).ok, true);
-  assert.equal(gameState.resolveTroopMovement(player, withdraw).ok, true);
-  assert.equal(destination.ownerId, player.id);
-  assert.equal(destination.troops, 1);
-  assert.equal(destination.visitingTroops['nation-1'], 1);
+  assert.equal(destination.troops, 2);
+  assert.equal(destination.visitingTroops, undefined);
+  assert.equal(source.troops, 0);
 });
 
 test('troop movement accepts every land terrain and rejects water', () => {
@@ -1211,7 +1202,7 @@ test('troop movement accepts every land terrain and rejects water', () => {
   }, 0).ok, false);
 });
 
-test('a tie favors the defender and the attacking force loses half its troops', () => {
+test('a tie eliminates both armies and preserves the previous owner', () => {
   const { gameState, player } = createHumanGame();
   const source = gameState.grid.flat().find((tile) => (
     tile.ownerId === player.id && tile.x < gameState.gridWidth - 1 && tile.troops > 0
@@ -1231,11 +1222,11 @@ test('a tie favors the defender and the attacking force loses half its troops', 
 
   const result = gameState.resolveTroopMovement(player, attack);
 
-  assert.equal(result.combat.winnerId, 'nation-1');
-  assert.equal(result.combat.attackerSurvivors, 1);
-  assert.equal(source.troops, 2);
+  assert.equal(result.combat.winnerId, null);
+  assert.equal(result.combat.attackerSurvivors, 0);
+  assert.equal(source.troops, 1);
   assert.equal(destination.ownerId, 'nation-1');
-  assert.equal(destination.troops, 3);
+  assert.equal(destination.troops, 0);
 });
 
 test('attacking a PNA signatory breaks the pact and applies the influence penalty', () => {
@@ -1247,6 +1238,7 @@ test('attacking a PNA signatory breaks the pact and applies the influence penalt
   destination.ownerId = 'nation-1';
   destination.nationId = 1;
   destination.type = TERRAIN_TYPES.TR;
+  destination.troops = 1;
   gameState.nonAggressionPacts.push({
     playerIds: [player.id, 'nation-1'].sort(),
     expiresAfterRound: 5
@@ -1271,7 +1263,7 @@ test('attacking a PNA signatory breaks the pact and applies the influence penalt
   assert.equal(result.combat.defenderId, 'nation-1');
   assert.equal(player.resources.INFLUENCE, 0);
   assert.equal(gameState.nonAggressionPacts.length, 0);
-  assert.match(gameState.eventHistory.at(-1).message, /traicionó el Pacto de No Agresión/);
+  assert.ok(gameState.eventHistory.some((event) => /traicionó el Pacto de No Agresión/.test(event.message)));
 });
 
 test('moving into a TLC signatory’s territory breaks the treaty and records the conflict', () => {

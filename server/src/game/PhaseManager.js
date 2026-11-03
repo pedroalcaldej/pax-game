@@ -1,3 +1,4 @@
+import { captureRoundMap } from './RoundMapHistory.js';
 /**
  * Controla el reloj y la transición automática de rondas.
  */
@@ -46,6 +47,7 @@ export class PhaseManager {
         if (this.gameState.currentRound > 1) {
           EconomyEngine.processRoundEconomy(this.gameState);
         }
+        captureRoundMap(this.gameState);
         this.gameState.timeRemaining = 0;
         this.notifyState();
         this.schedulePhase(GAME_PHASES.PHASE_2_DECISIONS, STAGE_TIMINGS.ROUND_START_MS);

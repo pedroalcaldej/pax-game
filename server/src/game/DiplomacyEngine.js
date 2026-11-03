@@ -181,8 +181,8 @@ export const DiplomacyEngine = {
     }
   },
 
-  breakNonAggressionPact(attacker, defenderId) {
-    const hadActivePact = this.nonAggressionPacts.some((pact) => (
+  breakNonAggressionPact(attacker, defenderId, pactsAtStart = this.nonAggressionPacts) {
+    const hadActivePact = pactsAtStart.some((pact) => (
       pact.expiresAfterRound >= this.currentRound
       && pact.playerIds.includes(attacker.id)
       && pact.playerIds.includes(defenderId)
@@ -203,7 +203,9 @@ export const DiplomacyEngine = {
     );
     const defender = this.players.get(defenderId);
     this.recordEvent(
-      `${attacker.name} traicionó el Pacto de No Agresión con ${defender?.name || defenderId}: el pacto se rompió y perdió ${ECONOMY.COSTS.BROKEN_PACT_INFLUENCE_PENALTY} de Influencia Política.`
+      `${attacker.name} traicionó el Pacto de No Agresión con ${defender?.name || defenderId}: el pacto se rompió y perdió ${ECONOMY.COSTS.BROKEN_PACT_INFLUENCE_PENALTY} de Influencia Política.`,
+      { category: 'treaty-breach', treatyType: TREATY_TYPES.NON_AGGRESSION_PACT,
+        attackerId: attacker.id, defenderId }
     );
     return true;
   },
@@ -281,7 +283,9 @@ export const DiplomacyEngine = {
       ));
       const defender = this.players.get(defenderId);
       this.recordEvent(
-        `La acción militar de ${attacker.name} contra ${defender?.name || defenderId} rompió el Tratado de Libre Comercio; se restablece el arancel del Banco Mundial.`
+        `La acción militar de ${attacker.name} contra ${defender?.name || defenderId} rompió el Tratado de Libre Comercio; se restablece el arancel del Banco Mundial.`,
+        { category: 'treaty-breach', treatyType: TREATY_TYPES.FREE_TRADE,
+          attackerId: attacker.id, defenderId }
       );
     }
   },

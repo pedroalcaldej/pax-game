@@ -7,7 +7,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node --test",
-    "train:bots": "node src/training/runBotTraining.js"
+    "train:bots": "node src/training/runBotTraining.js",
+    "benchmark:bots": "node src/training/runBotTraining.js --benchmark"
   },
   "dependencies": {
     "@upstash/redis": "^1.41.0",

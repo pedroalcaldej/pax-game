@@ -1,3 +1,4 @@
+import { readRoundMap } from '../game/RoundMapHistory.js';
 /**
  * server/src/network/SocketServer.js
  */
@@ -9,6 +10,7 @@ import {
   PROTOCOL
 } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from '../game/InternationalOrganizationEngine.js';
+import { BotDecisionTable } from '../game/bots/BotDecisionTable.js';
 
 export class SocketServer {
   constructor(io, roomManager, lobbyStore) {
@@ -122,6 +124,11 @@ export class SocketServer {
           const entry={id:`${Date.now()}-${socket.id}`,playerId:userId,nationName:player.nombre,nationColor:player.color,text,createdAt:Date.now()};
           await this.lobbyStore.addChat(roomId,entry); this.io.to(`lobby:${roomId}`).emit(PROTOCOL.LOBBY_CHAT_MESSAGE,entry); acknowledge?.({ok:true});
         } catch(error) { ackError(acknowledge,error); }
+      });
+
+      socket.on(PROTOCOL.GET_ROUND_MAP, ({ roomId, round } = {}, acknowledge) => {
+        if (typeof acknowledge !== 'function') return;
+        acknowledge(readRoundMap(this.roomManager.getRoom(roomId), socket, round));
       });
 
       // Recibir datos de unión incluyendo playerId
@@ -322,7 +329,17 @@ export class SocketServer {
         const room = this.roomManager.getRoom(targetRoomId);
 
         if (room) {
+          const player = [...room.gameState.players.values()]
+            .find((entry) => entry.socketId === socket.id);
+          const contextKey = player
+            ? BotDecisionTable.getContext(room.gameState, player)
+            : null;
           const accepted = room.gameState.setPlayerTaxRate(socket.id, taxRate);
+          if (accepted) room.gameState.recordHumanExperience(
+            { type: 'SET_TAX_RATE', taxRate },
+            true,
+            contextKey
+          );
           if (!accepted) {
             socket.emit(PROTOCOL.ACTION_ERROR, 'Los impuestos solo se pueden ajustar durante la planificación y dentro del rango permitido.');
             return;
@@ -351,11 +368,23 @@ export class SocketServer {
           socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la sala antes de proponer una resolución.');
           return;
         }
+        const player = [...room.gameState.players.values()]
+          .find((entry) => entry.socketId === socket.id);
+        const contextKey = player
+          ? BotDecisionTable.getContext(room.gameState, player)
+          : null;
         const result = InternationalOrganizationEngine.propose(
           room.gameState,
           socket.id,
           proposal
         );
+        if (player) {
+          room.gameState.recordHumanExperience(
+            { type: 'PROPOSE_OI_RESOLUTION', resolutionType: proposal?.type },
+            result.ok,
+            contextKey
+          );
+        }
         socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
         if (result.ok) {
           this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
@@ -368,11 +397,23 @@ export class SocketServer {
           socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la sala antes de votar en la OI.');
           return;
         }
+        const player = [...room.gameState.players.values()]
+          .find((entry) => entry.socketId === socket.id);
+        const contextKey = player
+          ? BotDecisionTable.getContext(room.gameState, player)
+          : null;
         const result = InternationalOrganizationEngine.submitVote(
           room.gameState,
           socket.id,
           ballot
         );
+        if (player) {
+          room.gameState.recordHumanExperience(
+            { type: 'VOTE_OI' },
+            result.ok,
+            contextKey
+          );
+        }
         socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
         if (result.ok) {
           room.phaseManager.checkOIVotes();
@@ -386,7 +427,19 @@ export class SocketServer {
           socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la partida antes de proponer un tratado.');
           return;
         }
+        const player = [...room.gameState.players.values()]
+          .find((entry) => entry.socketId === socket.id);
+        const contextKey = player
+          ? BotDecisionTable.getContext(room.gameState, player)
+          : null;
         const result = room.gameState.proposeTreaty(socket.id, treaty);
+        if (player) {
+          room.gameState.recordHumanExperience(
+            { type: 'PROPOSE_TREATY', treatyType: treaty?.type },
+            result.ok,
+            contextKey
+          );
+        }
         socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
         if (result.ok) this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });
@@ -397,7 +450,19 @@ export class SocketServer {
           socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la partida antes de responder a un tratado.');
           return;
         }
+        const player = [...room.gameState.players.values()]
+          .find((entry) => entry.socketId === socket.id);
+        const contextKey = player
+          ? BotDecisionTable.getContext(room.gameState, player)
+          : null;
         const result = room.gameState.respondToTreaty(socket.id, offerId, accepted);
+        if (player) {
+          room.gameState.recordHumanExperience(
+            { type: 'RESPOND_TREATY' },
+            result.ok,
+            contextKey
+          );
+        }
         socket.emit(result.ok ? PROTOCOL.ACTION_RESULT : PROTOCOL.ACTION_ERROR, result.message);
         if (result.ok) this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });
@@ -420,7 +485,19 @@ export class SocketServer {
           acknowledge({ ok: false, message });
           return;
         }
+        const player = [...room.gameState.players.values()]
+          .find((entry) => entry.socketId === socket.id);
+        const contextKey = player
+          ? BotDecisionTable.getContext(room.gameState, player)
+          : null;
         const result = room.gameState.performFinancialAction(socket.id, action);
+        if (player && action?.type) {
+          room.gameState.recordHumanExperience(
+            action,
+            result.ok,
+            contextKey
+          );
+        }
         acknowledge(result);
         if (result.ok) this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });

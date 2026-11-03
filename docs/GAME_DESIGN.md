@@ -90,15 +90,31 @@ La escolta comercial y el bloqueo costero aún no están activos.
 
 ### Combate terrestre
 
-Las tropas terrestres pueden atacar una casilla terrestre adyacente que pertenezca a otro país. El combate se resuelve al finalizar la fase de planificación; la cantidad de tropas que se envía es la fuerza atacante y se compara con las tropas del país propietario en la casilla defensora. La defensa de la casilla no modifica el cálculo.
+Las órdenes de movimiento terrestre se resuelven simultáneamente al terminar la
+planificación. Primero se validan todas y se descuentan las salidas; después se
+agrupan todas las llegadas por casilla. Las unidades que salieron legalmente ya no
+defienden su origen, aunque la orden esté en otro espacio de acción. Una salida
+inválida no escapa: sus tropas permanecen en el origen.
 
-- El atacante gana solo si envía **más tropas** que las que defienden la casilla. En un empate, gana el defensor.
-- El bando perdedor pierde la mitad de sus tropas, redondeada hacia arriba; las tropas supervivientes permanecen en la casilla donde estaban. Si el bando perdedor tenía una sola tropa, la pierde.
-- Si el atacante pierde, sus supervivientes permanecen en la casilla de origen. Si gana, conquista la casilla y mueve allí todas sus tropas atacantes. Las tropas defensoras supervivientes permanecen en ella como fuerzas visitantes; pueden retirarse con una orden de movimiento posterior.
-- Atacar a un firmante de un Pacto de No Agresión vigente rompe inmediatamente el
-  pacto y descuenta hasta 10 puntos de Influencia Política al atacante. Por ahora no se
-  requiere Casus Belli.
-- No se aplica la antigua mecánica de bloqueo en dos etapas; el combate y la captura se resuelven en la misma ronda.
+- Las fuerzas del mismo país que permanecen o llegan se suman antes del combate.
+- Dos países enfrentados pierden una tropa por cada tropa enemiga. El vencedor
+  ocupa la casilla con la diferencia: 2 contra 1 deja 1 tropa del vencedor.
+- Si las fuerzas son iguales, ambas se eliminan. La casilla conserva su dueño
+  anterior con cero tropas; si era neutral, sigue neutral.
+- Si el defensor sale antes de la llegada enemiga y no queda otra fuerza, el
+  atacante conquista sin combate y conserva todas las tropas enviadas.
+- Si participan más de dos países, un vencedor debe superar la suma de todas
+  las fuerzas contrarias: conserva esa diferencia. Si ninguno la supera,
+  se eliminan todas las fuerzas y se conserva el propietario anterior.
+- No hay retirada automática ni tropas derrotadas supervivientes como visitantes.
+  Las tropas que llegan no pueden financiar otra salida en la misma resolución.
+- Los movimientos terrestres se resuelven antes de las demás órdenes de construcción,
+  reclutamiento y operaciones navales. Estas conservan su resolución por órdenes.
+- Entrar en territorio de otro país rompe los tratados correspondientes aunque la
+  guarnición haya escapado. Romper un PNA descuenta hasta 10 puntos de Influencia;
+  el log conserva el país afectado, el infractor y el tratado roto.
+- En el log, la orden y un eventual aviso de que no pudo realizarse son entradas
+  separadas. Cada combate registra sus fuerzas y el resultado en la casilla.
 
 ### Operaciones navales
 

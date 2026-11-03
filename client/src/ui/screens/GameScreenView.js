@@ -26,7 +26,17 @@ export function renderGameScreen(container) {
             <span class="pax-timer" id="timer-value">60s</span>
             <button class="pax-ready-button" id="phase-ready-button" type="button" disabled title="Pulsa para marcarte listo; puedes pulsar de nuevo para retirar tu confirmación">Listo (0/0)</button>
           </div>
-          <div class="pax-phase"><span class="pax-label">Estado:</span><strong id="phase-value">Inicio de ronda</strong></div>
+          <div class="pax-round-state">
+            <div class="pax-phase"><span class="pax-label">Estado:</span><strong id="phase-value">Inicio de ronda</strong></div>
+            <div class="pax-map-controls" id="map-controls" hidden>
+            <nav class="pax-map-history" aria-label="Historial del mapa">
+              <button id="map-history-back" type="button" aria-label="Ver ronda anterior" title="Ronda anterior" disabled>←</button>
+              <span id="map-history-label" role="status" aria-live="polite">Ronda 1</span>
+              <button id="map-history-forward" type="button" aria-label="Ver ronda siguiente" title="Ronda siguiente" disabled>→</button>
+            </nav>
+              <div id="map-zoom-controls"></div>
+            </div>
+          </div>
           <div class="pax-resources" aria-label="Recursos nacionales">
             <span class="pax-resource"><i class="pax-resource-icon" data-tooltip="Plata" tabindex="0" aria-label="Plata">◉</i><span id="silver-value">—</span></span>
             <span class="pax-resource"><i class="pax-resource-icon" data-tooltip="Desde la ronda 2, al inicio: +${ECONOMY.ROUND_PRODUCTION.MATERIALS_PER_FACTORY} por fábrica" tabindex="0" aria-label="Materiales; desde la ronda 2 se producen al inicio de cada ronda">▣</i><span id="materials-value">—</span></span>
@@ -84,6 +94,7 @@ export function renderGameScreen(container) {
             </div>
           </aside>
           <section class="pax-center">
+
             <div class="pax-map-viewport" id="map-container"><div class="pax-toasts" id="toast-container" aria-live="polite" aria-atomic="true"></div></div>
             <section class="pax-action-slots" id="action-slots" aria-label="Acciones de este turno"></section>
             <footer class="pax-map-footer">
@@ -117,6 +128,7 @@ export function renderGameScreen(container) {
             <p class="pax-scoreboard-note">GDI: Plata + Materiales + Influencia + Población.</p>
           </div>
           <div class="pax-end-actions">
+            <button id="game-summary-view-map" type="button">Ver mapa e historial</button>
             <button id="game-summary-replay" type="button">🔄 Jugar de nuevo</button>
             <button id="game-summary-menu" type="button">🏠 Menú principal</button>
           </div>

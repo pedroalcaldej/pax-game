@@ -81,7 +81,7 @@ export class EventLog {
     const signature = [
       events.map((entry) => {
         const event = typeof entry === 'string' ? { message: entry } : entry;
-        return `${event.timestamp || ''}:${event.message || ''}`;
+        return `${event.timestamp || ''}:${event.category || ''}:${event.message || ''}`;
       }).join('|'),
       players.map((player) => `${player.id}:${player.name}:${player.color}`).join('|')
     ].join('||');
@@ -89,8 +89,8 @@ export class EventLog {
     this.renderSignature = signature;
     this.element.innerHTML = events.map((entry) => {
       const event = typeof entry === 'string' ? { message: entry } : entry;
-      const message = renderEventMessage(event.message, players);
-      return `<div class="pax-event-entry"><time>${formatEventTime(event.timestamp)}</time> › ${message}</div>`;
+      const message = `${event.category === 'treaty-breach' ? '<strong>Tratado incumplido · </strong>' : ''}${renderEventMessage(event.message, players)}`;
+      return `<div class="pax-event-entry${event.category === 'action-error' ? ' is-action-error' : ''}"><time>${formatEventTime(event.timestamp)}</time> › ${message}</div>`;
     }).join('');
     this.element.scrollTop = scrollTop;
   }

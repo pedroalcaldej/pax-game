@@ -76,7 +76,13 @@ export class InternationalOrganizationEngine {
     const selected = [...gameState.oiProposals]
       .sort((left, right) => left.sequence - right.sequence)
       .slice(0, 3)
-      .map((proposal) => ({ ...proposal, votes: [] }));
+      .map((proposal) => {
+        if (proposal.type !== OI_RESOLUTIONS.CONDITIONAL_SUBSIDY) return { ...proposal, votes: [] };
+        const beneficiary = this.getLowestGDIPlayer(gameState);
+        return { ...proposal, votes: [], beneficiaryId: beneficiary?.id,
+          beneficiaryName: beneficiary?.name,
+          name: `${OI_RESOLUTION_NAMES[proposal.type]} para ${beneficiary?.name || 'país no disponible'}` };
+      });
     gameState.oiProposals = [];
     gameState.oiSession = {
       id: `oi-session-${gameState.currentRound}`,
@@ -198,7 +204,7 @@ export class InternationalOrganizationEngine {
 
   static isBeneficialToPlayer(gameState, player, proposal) {
     if (proposal.type !== OI_RESOLUTIONS.CONDITIONAL_SUBSIDY) return false;
-    return this.getLowestGDIPlayer(gameState)?.id === player.id;
+    return (proposal.beneficiaryId || this.getLowestGDIPlayer(gameState)?.id) === player.id;
   }
 
   static finishSession(gameState) {
@@ -228,6 +234,7 @@ export class InternationalOrganizationEngine {
       const result = {
         proposalId: proposal.id,
         name: proposal.name,
+        ...(proposal.beneficiaryId ? { beneficiaryId: proposal.beneficiaryId, beneficiaryName: proposal.beneficiaryName } : {}),
         forInfluence,
         againstInfluence,
         passed,
@@ -264,9 +271,11 @@ export class InternationalOrganizationEngine {
         break;
       }
       case OI_RESOLUTIONS.CONDITIONAL_SUBSIDY: {
-        const beneficiary = this.getLowestGDIPlayer(gameState);
+        const beneficiary = proposal.beneficiaryId
+          ? gameState.players.get(proposal.beneficiaryId) : this.getLowestGDIPlayer(gameState);
         if (!beneficiary) break;
         beneficiary.resources.SILVER += ECONOMY.COSTS.OI_SUBSIDY_SILVER;
+        gameState.recordEvent(`${beneficiary.name} recibió un Subsidio Condicionado de ${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata de la OI.`);
         for (const vote of votes) {
           if (vote.choice !== 'FOR' || vote.playerId === beneficiary.id) continue;
           gameState.nonAggressionPacts.push({
