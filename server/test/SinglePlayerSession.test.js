@@ -72,6 +72,18 @@ test('solo disconnect pauses the clock and rejoining restores membership without
   } finally { f.cleanup(); }
 });
 
+test('una conexión no puede mantener dos partidas individuales simultáneas', () => {
+  const f = fixture('solo-first');
+  try {
+    const { manager, socket } = f;
+    socket.trigger(PROTOCOL.JOIN_GAME, {
+      roomId: 'solo-second', playerId: 'owner', playerName: 'País humano'
+    });
+    assert.equal(manager.getRoom('solo-first'), undefined);
+    assert.ok(manager.getRoom('solo-second'));
+  } finally { f.cleanup(); }
+});
+
 test('background pause never clears a manual pause and unknown sessions cannot resume it', async () => {
   const f = fixture();
   try {

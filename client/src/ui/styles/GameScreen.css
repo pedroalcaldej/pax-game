@@ -314,6 +314,7 @@
   .pax-development button { width: 100%; padding: 8px; font-size: 11px; }
   .pax-tile-actions { display: grid; gap: 7px; margin-top: 10px; }
   .pax-tile-action-control { display: grid; grid-template-columns: minmax(76px, 92px) minmax(0, 1fr); align-items: end; gap: 6px; }
+  .pax-tile-action-control.is-full-width { grid-template-columns: minmax(0, 1fr); }
   .pax-tile-quantity { display: grid; gap: 4px; color: #97a5ba; font-size: 9px; }
   .pax-tile-quantity input { width: 100%; min-width: 0; padding: 7px 6px; border: 1px solid #35445e; border-radius: 6px; color: #e2e8f0; background: #0b1322; font: inherit; font-size: 11px; }
   .pax-tile-quantity input:disabled { opacity: .4; }

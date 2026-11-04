@@ -874,6 +874,24 @@ test('no international meeting is scheduled after a non-fifth round', () => {
   phaseManager.stop();
 });
 
+test('no international meeting is scheduled during the final round', () => {
+  const { gameState } = createHumanGame();
+  gameState.currentRound = 5;
+  gameState.settings.maxRounds = 5;
+  const phaseManager = new PhaseManager(gameState, () => {});
+  phaseManager.running = true;
+  let scheduledPhase;
+  phaseManager.schedulePhase = (phase, delay) => {
+    scheduledPhase = { phase, delay };
+  };
+
+  phaseManager.transitionToPhase(4);
+
+  assert.deepEqual(scheduledPhase, { phase: 5, delay: 2600 });
+  assert.equal(gameState.oiSession, null);
+  phaseManager.stop();
+});
+
 test('the game ends after round thirty without advancing the displayed round', () => {
   const { gameState } = createHumanGame();
   gameState.settings.maxRounds = MAX_ROUNDS;

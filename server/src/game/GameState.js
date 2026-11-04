@@ -250,6 +250,10 @@ export class GameState {
     return ActionEngine.getShipsForPlayerOnTile.apply(this, args);
   }
 
+  getCarsForPlayerOnTile(...args) {
+    return ActionEngine.getCarsForPlayerOnTile.apply(this, args);
+  }
+
   normalizeWaterTroops(...args) {
     return ActionEngine.normalizeWaterTroops.apply(this, args);
   }

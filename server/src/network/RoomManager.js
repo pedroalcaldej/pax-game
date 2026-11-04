@@ -198,6 +198,25 @@ export class RoomManager {
     }
   }
 
+  /**
+   * Una conexión no puede mantener dos partidas individuales activas a la vez.
+   * Esto cubre doble clic, reintentos de conexión y eventos duplicados del cliente.
+   */
+  removeDuplicateSoloSessions(socketId, playerId, exceptRoomId) {
+    if (!socketId || !playerId) return;
+    for (const room of [...this.rooms.values()]) {
+      if (room.id === exceptRoomId || !room.isSinglePlayer) continue;
+      const player = [...room.gameState.players.values()]
+        .find((entry) => entry.boundPlayerId === playerId && entry.socketId === socketId);
+      if (!player) continue;
+      room.leavePlayer(socketId, playerId);
+      const hasHumanPlayers = [...room.gameState.players.values()].some((entry) => !entry.isBot);
+      if (!hasHumanPlayers) this.removeRoom(room.id);
+      else room.setPauseReason('disconnect', true);
+      console.warn(`[RoomManager] Sesión individual duplicada cerrada: ${room.id}`);
+    }
+  }
+
   saveRoom(room) {
     if (!room.isSinglePlayer) return;
     const path = join(this.saveDirectory, `${room.id}.json`);

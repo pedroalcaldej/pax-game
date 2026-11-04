@@ -366,6 +366,7 @@ export class Map {
         const troops = tile?.troops ?? 0;
         this.drawTroopMarkers(troops, posX, posY);
         this.drawShipMarkers(tile, posX, posY);
+        this.drawCarMarkers(tile, posX, posY);
       }
 
     }
@@ -383,7 +384,7 @@ export class Map {
       const movements = resolutions
         .filter((resolution) => (
           resolution?.ok
-          && resolution.action?.type === 'MOVE_TROOPS'
+          && ['MOVE_TROOPS', 'MOVE_CARS'].includes(resolution.action?.type)
           && Number.isInteger(resolution.action.x)
           && Number.isInteger(resolution.action.y)
           && Number.isInteger(resolution.action.targetX)
@@ -498,6 +499,42 @@ export class Map {
         this.drawShip(posX + this.tileSize * 0.27 + offsetX, posY + this.tileSize * 0.25 + offsetY, color, count);
       });
     }
+
+  drawCarMarkers(tile, posX, posY) {
+    const cars = Object.entries(tile?.carsByPlayer || {}).filter(([, count]) => count > 0);
+    cars.forEach(([playerId, count], index) => {
+      const color = this.nationColors[Number(playerId.split('-').pop())] || '#f8fafc';
+      this.drawCar(
+        posX + this.tileSize * 0.08 + (index % 2) * this.tileSize * 0.42,
+        posY + this.tileSize * 0.64 + Math.floor(index / 2) * this.tileSize * 0.22,
+        color,
+        count
+      );
+    });
+  }
+
+  drawCar(posX, posY, color, count) {
+    const ctx = this.ctx;
+    const width = Math.max(8, this.tileSize * 0.38);
+    const height = Math.max(4, this.tileSize * 0.16);
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1;
+    ctx.fillRect(posX, posY, width, height);
+    ctx.strokeRect(posX, posY, width, height);
+    ctx.beginPath();
+    ctx.arc(posX + width * 0.22, posY + height, height * 0.65, 0, Math.PI * 2);
+    ctx.arc(posX + width * 0.78, posY + height, height * 0.65, 0, Math.PI * 2);
+    ctx.fillStyle = '#111827';
+    ctx.fill();
+    ctx.font = `bold ${Math.max(6, this.tileSize * 0.18)}px system-ui, sans-serif`;
+    ctx.fillStyle = '#f8fafc';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(count), posX + width / 2, posY - height * 0.2);
+    ctx.restore();
+  }
 
     drawShip(posX, posY, color, count) {
       const ctx = this.ctx;
@@ -679,10 +716,11 @@ export class Map {
       const posX = highlight.x * this.tileSize;
       const posY = highlight.y * this.tileSize;
       const isTarget = highlight.role === 'target';
-      ctx.fillStyle = isTarget ? 'rgba(34, 211, 238, 0.2)' : 'rgba(250, 204, 21, 0.2)';
+      const isAvailable = highlight.role === 'available';
+      ctx.fillStyle = isTarget ? 'rgba(34, 211, 238, 0.2)' : isAvailable ? 'rgba(74, 222, 128, 0.18)' : 'rgba(250, 204, 21, 0.2)';
       ctx.fillRect(posX + 2, posY + 2, this.tileSize - 4, this.tileSize - 4);
-      ctx.strokeStyle = isTarget ? '#22d3ee' : '#facc15';
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = isTarget ? '#22d3ee' : isAvailable ? '#4ade80' : '#facc15';
+      ctx.lineWidth = isAvailable ? 2 : 3;
       ctx.setLineDash([]);
       ctx.strokeRect(posX + 2, posY + 2, this.tileSize - 4, this.tileSize - 4);
     }

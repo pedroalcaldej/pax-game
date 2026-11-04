@@ -77,6 +77,7 @@ export class PhaseManager {
         this.notifyState();
         this.schedulePhase(
           this.gameState.settings.oiFrequency > 0
+          && this.gameState.currentRound < this.gameState.settings.maxRounds
           && this.gameState.currentRound % this.gameState.settings.oiFrequency === 0
             ? GAME_PHASES.PHASE_6_OI_SESSION
             : GAME_PHASES.PHASE_5_SUMMARY,

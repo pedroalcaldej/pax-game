@@ -15,6 +15,7 @@ import { SESSION_USER_KEY, readGameSession, saveGameSession, clearGameSession, w
 import {
   ACTION_SLOT_COUNT,
   ECONOMY,
+  LAND_TERRAIN,
   GAME_STAGES,
   MAX_PLAYERS,
   MAX_ROUNDS,
@@ -24,7 +25,8 @@ import {
   OI_RESOLUTIONS,
   PROTOCOL,
   STAGE_TIMINGS,
-  TIMINGS
+  TIMINGS,
+  WATER_TERRAIN
 } from '../../../../shared/Constants.js';
 import { getPlayerRankings } from '../components/PlayerRankings.js';
 import {
@@ -1085,9 +1087,11 @@ export class GameScreen {
       BUILD_FACTORY: 'Construir fábrica',
       RECRUIT_TROOP: 'Reclutar tropa',
       BUILD_SHIP: 'Construir barco',
+      BUILD_CAR: 'Fabricar carro',
       MOVE_CAPITAL: 'Trasladar capital',
       MOVE_TROOPS: 'Mover tropas',
       MOVE_SHIPS: 'Mover barcos',
+      MOVE_CARS: 'Mover carros',
       EMBARK_TROOPS: 'Embarcar tropas',
       DISEMBARK_TROOPS: 'Desembarcar tropas'
     };
@@ -1101,12 +1105,15 @@ export class GameScreen {
       let detail = action
         ? `Casilla (${action.x}, ${action.y})`
         : 'Vacío · selecciona para editar';
-      if (['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action?.type)) {
+      if (['MOVE_TROOPS', 'MOVE_SHIPS', 'MOVE_CARS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action?.type)) {
         const quantity = action.type === 'MOVE_SHIPS' ? action.ships : action.troops;
         const unit = action.type === 'MOVE_SHIPS' ? 'barcos' : 'tropas';
         detail = `(${action.x}, ${action.y}) → (${action.targetX}, ${action.targetY}) · ${quantity} ${unit}`;
       } else if (action?.type === 'RECRUIT_TROOP') {
         detail = `Casilla (${action.x}, ${action.y}) · ${action.count || 1} tropas`;
+      } else if (action?.type === 'BUILD_SHIP' || action?.type === 'BUILD_CAR') {
+        const unit = action.type === 'BUILD_SHIP' ? 'barcos' : 'carros';
+        detail = `Casilla (${action.x}, ${action.y}) · ${action.count || 1} ${unit}`;
       }
       if (this.pendingMoveSource?.slot === slot) {
         const quantity = this.pendingMoveSource.type === 'MOVE_SHIPS'
@@ -1142,7 +1149,7 @@ export class GameScreen {
     const highlights = [];
     const plannedActions = this.player?.plannedActions || [];
     for (const action of plannedActions) {
-      if (!['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action?.type)) continue;
+      if (!['MOVE_TROOPS', 'MOVE_SHIPS', 'MOVE_CARS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action?.type)) continue;
       highlights.push({ x: action.x, y: action.y, role: 'source' });
       highlights.push({ x: action.targetX, y: action.targetY, role: 'target' });
     }
@@ -1152,11 +1159,55 @@ export class GameScreen {
         y: this.pendingMoveSource.y,
         role: 'source'
       });
+      for (const target of this.getAvailableMoveTargets(this.pendingMoveSource)) {
+        highlights.push({ ...target, role: 'available' });
+      }
     }
     if (provisionalDestination) {
       highlights.push({ ...provisionalDestination, role: 'target' });
     }
     this.map.setActionHighlights(highlights);
+  }
+
+  getAvailableMoveTargets(sourceAction) {
+    const source = this.gameState?.grid?.[sourceAction.y]?.[sourceAction.x];
+    if (!source) return [];
+    const type = sourceAction.type;
+    const sourceIsWater = WATER_TERRAIN.has(source.type);
+    const range = type === 'MOVE_SHIPS' || type === 'MOVE_CARS' ? 2 : 1;
+    const targets = [];
+    for (let dy = -range; dy <= range; dy += 1) {
+      for (let dx = -range; dx <= range; dx += 1) {
+        if (dx === 0 && dy === 0 || Math.max(Math.abs(dx), Math.abs(dy)) > range) continue;
+        const target = this.gameState.grid[source.y + dy]?.[source.x + dx];
+        if (!target) continue;
+        const targetIsWater = WATER_TERRAIN.has(target.type);
+        const allowedTerrain = type === 'MOVE_SHIPS' ? targetIsWater
+          : type === 'MOVE_CARS' ? !targetIsWater && LAND_TERRAIN.has(target.type)
+            : type === 'EMBARK_TROOPS' ? targetIsWater
+              : type === 'DISEMBARK_TROOPS' ? !targetIsWater && LAND_TERRAIN.has(target.type)
+                : sourceIsWater ? targetIsWater || LAND_TERRAIN.has(target.type)
+                : (targetIsWater
+                  ? (target.shipsByPlayer?.[this.player?.id] || 0) > 0
+                  : LAND_TERRAIN.has(target.type));
+        if (!allowedTerrain) continue;
+        const stepCount = Math.max(Math.abs(dx), Math.abs(dy));
+        const stepX = Math.sign(dx);
+        const stepY = Math.sign(dy);
+        let routeClear = true;
+        if (stepCount > 1) {
+          for (let step = 1; step <= stepCount; step += 1) {
+            const waypoint = this.gameState.grid[source.y + stepY * step]?.[source.x + stepX * step];
+            if (!waypoint || (type === 'MOVE_SHIPS' ? !WATER_TERRAIN.has(waypoint.type) : !LAND_TERRAIN.has(waypoint.type))) {
+              routeClear = false;
+              break;
+            }
+          }
+        }
+        if (routeClear) targets.push({ x: target.x, y: target.y });
+      }
+    }
+    return targets;
   }
 
   emitPlannedAction(slot, plannedAction) {
@@ -1270,7 +1321,7 @@ export class GameScreen {
     if (!this.canInteract()) return;
     if (this.historyRound !== null) return;
     if (this.gameState?.currentStage !== GAME_STAGES.PLANNING || !this.player) return;
-    if (['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)) {
+    if (['MOVE_TROOPS', 'MOVE_SHIPS', 'MOVE_CARS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)) {
       this.pendingMoveSource = { ...action, slot: this.activeActionSlot };
       this.updateActionSlots();
       this.updateActionHighlights();
@@ -1297,6 +1348,7 @@ export class GameScreen {
 
     const source = this.pendingMoveSource;
     if (tile.x === source.x && tile.y === source.y) return;
+    if (!this.getAvailableMoveTargets(source).some((target) => target.x === tile.x && target.y === tile.y)) return;
     this.updateActionHighlights({ x: tile.x, y: tile.y });
     this.pendingMoveSource = null;
     this.updateActionSlots();
@@ -1520,7 +1572,8 @@ export class GameScreen {
   }
 
   startSinglePlayer() {
-    if (!socket.connected) return;
+    // Evita que un doble clic o una reconexión rápida cree dos salas individuales.
+    if (!socket.connected || this.startPending || this.gameState?.gameStarted) return;
     this.sessionRequest += 1;
     this.isRejoining = false;
     this.lastBackgroundPause = null;

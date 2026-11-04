@@ -107,19 +107,41 @@ export const BotController = {
     const count = Math.min(Math.floor(silver / ECONOMY.COSTS.RECRUIT_TROOP_SILVER),
       Math.floor(materials / ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS));
     for (const source of this.grid.flat()) {
-      if (source.ownerId !== player.id && this.getShipsForPlayerOnTile(source, player.id) < 1
-        && this.getTroopsForPlayerOnTile(source, player.id) < 1) continue;
+      const hasUnits = this.getShipsForPlayerOnTile(source, player.id) > 0
+        || this.getTroopsForPlayerOnTile(source, player.id) > 0;
+      // El desarrollo no depende de que haya tropas en la casilla. Antes de esta
+      // separación los bots solo evaluaban edificios en capitales/territorios con
+      // unidades, dejando fuera casi todas las casillas aptas para una ciudad.
+      const canDevelop = source.ownerId === player.id;
+      if (!canDevelop && !hasUnits) continue;
       for (const type of ['BUILD_FACTORY', 'BUILD_CITY', 'MOVE_CAPITAL']) {
-        add({ type, x: source.x, y: source.y });
+        if (canDevelop) add({ type, x: source.x, y: source.y });
       }
-      if (count > 0 && ['CAP', 'CIU'].includes(source.type)) add({ type: 'RECRUIT_TROOP', x: source.x, y: source.y, count });
-      add({ type: 'BUILD_SHIP', x: source.x, y: source.y, count: 1 });
+      if (!hasUnits) continue;
+      if (count > 0 && canDevelop && ['CAP', 'CIU', 'PUE'].includes(source.type)) {
+        add({ type: 'RECRUIT_TROOP', x: source.x, y: source.y, count });
+      }
+      if (canDevelop) add({ type: 'BUILD_SHIP', x: source.x, y: source.y, count: 1 });
+      if (canDevelop && source.type === 'FT' && source.building === 'FACTORY') {
+        add({ type: 'BUILD_CAR', x: source.x, y: source.y, count: 1 });
+      }
       const available = this.getTroopsForPlayerOnTile(source, player.id) - reserved
         .filter((a) => a.type === 'MOVE_TROOPS' && a.x === source.x && a.y === source.y)
         .reduce((sum, a) => sum + a.troops, 0);
-      for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0], [-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      for (let dy = -2; dy <= 2; dy += 1) for (let dx = -2; dx <= 2; dx += 1) {
+        if (dx === 0 && dy === 0 || Math.max(Math.abs(dx), Math.abs(dy)) > 2) continue;
         const target = this.grid[source.y + dy]?.[source.x + dx];
         if (!target) continue;
+        const recentMoves = player.botMoveHistory || [];
+        const repeatsRecentRoute = recentMoves.some((move) => move.round >= this.currentRound - 2
+          && move.x === target.x && move.y === target.y
+          && move.targetX === source.x && move.targetY === source.y);
+        const repeatsSameRoute = recentMoves.some((move) => move.round >= this.currentRound - 2
+          && move.x === source.x && move.y === source.y
+          && move.targetX === target.x && move.targetY === target.y);
+        // No repetir ida y vuelta dentro de tres rondas salvo que sea una
+        // conquista/avance sobre territorio neutral o enemigo.
+        if ((repeatsRecentRoute || repeatsSameRoute) && target.ownerId === player.id) continue;
         const base = { x: source.x, y: source.y, targetX: target.x, targetY: target.y };
         const defenders = target.ownerId && target.ownerId !== player.id
           ? this.getTroopsForPlayerOnTile(target, target.ownerId) + (target.defense || 0) : 0;
@@ -129,6 +151,9 @@ export const BotController = {
         const ships = Math.min(this.getShipsForPlayerOnTile(source, player.id),
           source.transportedTroopsByPlayer?.[player.id] || 0);
         if (ships > 0) add({ ...base, type: 'MOVE_SHIPS', ships });
+        const cars = this.getCarsForPlayerOnTile(source, player.id);
+        const carTroops = Math.min(available, cars * ECONOMY.GROUND_TRANSPORT.TROOPS_PER_CAR);
+        if (carTroops > 0) add({ ...base, type: 'MOVE_CARS', troops: carTroops });
         const capacity = this.getShipsForPlayerOnTile(target, player.id) * ECONOMY.NAVAL.TROOPS_PER_SHIP
           - (target.transportedTroopsByPlayer?.[player.id] || 0);
         const embark = Math.min(available, capacity);
@@ -289,6 +314,15 @@ export const BotController = {
     player.botDecisionHistory ||= [];
     player.botDecisionContext[slot] = { contextKey, actionType };
     player.botDecisionHistory.push({ contextKey, actionType, slot, round: this.currentRound, features: action.features });
+    if (['MOVE_TROOPS', 'MOVE_CARS', 'MOVE_SHIPS'].includes(action.type)) {
+      player.botMoveHistory ||= [];
+      player.botMoveHistory.push({
+        x: action.x, y: action.y,
+        targetX: action.targetX, targetY: action.targetY,
+        round: this.currentRound
+      });
+      if (player.botMoveHistory.length > 12) player.botMoveHistory.shift();
+    }
     player.plannedActions[slot] = action;
     return true;
   },

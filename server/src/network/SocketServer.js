@@ -138,6 +138,7 @@ export class SocketServer {
           return;
         }
         const targetRoomId = roomId;
+        this.roomManager.removeDuplicateSoloSessions(socket.id, playerId, targetRoomId);
         const room = this.roomManager.getOrCreateRoom(
           targetRoomId,
           settings || socket.data.lobbySettings || {}

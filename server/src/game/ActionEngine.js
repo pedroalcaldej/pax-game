@@ -1,4 +1,4 @@
-import { applyCapitalConquest, awardNeutralResourceCapture, resolveLandMovements } from './LandMovementResolver.js';
+import { applyCapitalConquest, awardNeutralResourceCapture, claimNeutralTransitTiles, resolveLandMovements } from './LandMovementResolver.js';
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
 import { ACTION_SLOT_COUNT, ECONOMY, LAND_TERRAIN, TERRAIN_TYPES, WATER_TERRAIN } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
@@ -9,6 +9,28 @@ function isDiagonalOrOrthogonalStep(source, destination) {
   const deltaX = Math.abs(source.x - destination.x);
   const deltaY = Math.abs(source.y - destination.y);
   return Math.max(deltaX, deltaY) === 1;
+}
+
+function hasLandRoute(grid, source, destination, maxDistance = 2) {
+  const distance = Math.max(Math.abs(source.x - destination.x), Math.abs(source.y - destination.y));
+  if (distance < 1 || distance > maxDistance) return false;
+  const dx = Math.sign(destination.x - source.x);
+  const dy = Math.sign(destination.y - source.y);
+  for (let step = 1; step <= distance; step += 1) {
+    if (!LAND_TERRAIN.has(grid[source.y + dy * step]?.[source.x + dx * step]?.type)) return false;
+  }
+  return true;
+}
+
+function hasWaterRoute(grid, source, destination, maxDistance = 2) {
+  const distance = Math.max(Math.abs(source.x - destination.x), Math.abs(source.y - destination.y));
+  if (distance < 1 || distance > maxDistance) return false;
+  const dx = Math.sign(destination.x - source.x);
+  const dy = Math.sign(destination.y - source.y);
+  for (let step = 1; step <= distance; step += 1) {
+    if (!WATER_TERRAIN.has(grid[source.y + dy * step]?.[source.x + dx * step]?.type)) return false;
+  }
+  return true;
 }
 
 export const ActionEngine = {
@@ -59,9 +81,11 @@ export const ActionEngine = {
       BUILD_FACTORY: 'Construir fábrica',
       RECRUIT_TROOP: 'Reclutar tropa',
       BUILD_SHIP: 'Construir barco',
+      BUILD_CAR: 'Construir carro',
       MOVE_CAPITAL: 'Trasladar capital',
       MOVE_TROOPS: 'Mover tropas',
       MOVE_SHIPS: 'Mover barcos',
+      MOVE_CARS: 'Mover carros',
       EMBARK_TROOPS: 'Embarcar tropas',
       DISEMBARK_TROOPS: 'Desembarcar tropas',
       HOLD_POSITION: 'Mantener posición'
@@ -92,7 +116,7 @@ export const ActionEngine = {
 
     const otherActions = (player.plannedActions || [])
       .filter((planned, index) => planned && index !== slot);
-    const structureActions = ['BUILD_CITY', 'BUILD_FACTORY', 'BUILD_SHIP', 'MOVE_CAPITAL'];
+    const structureActions = ['BUILD_CITY', 'BUILD_FACTORY', 'BUILD_SHIP', 'BUILD_CAR', 'MOVE_CAPITAL'];
     const usesStructureSlot = structureActions.includes(action.type);
     if (otherActions.some((planned) => (
       planned.x === action.x
@@ -149,14 +173,27 @@ export const ActionEngine = {
         materialCost = ECONOMY.COSTS.BUILD_SHIP_MATERIALS * count;
         break;
       }
+      case 'BUILD_CAR': {
+        const count = action.count ?? 1;
+        if (!Number.isInteger(count) || count < 1) {
+          return { ok: false, message: 'La cantidad de carros no es válida.' };
+        }
+        if (tile.type !== TERRAIN_TYPES.FT || tile.building !== 'FACTORY') {
+          return { ok: false, message: 'Los carros solo pueden fabricarse en fábricas terrestres.' };
+        }
+        action.count = count;
+        silverCost = ECONOMY.COSTS.BUILD_CAR_SILVER * count;
+        materialCost = ECONOMY.COSTS.BUILD_CAR_MATERIALS * count;
+        break;
+      }
       case 'RECRUIT_TROOP':
         {
           const count = action.count ?? 1;
           if (!Number.isInteger(count) || count < 1) {
             return { ok: false, message: 'La cantidad de tropas a reclutar no es válida.' };
           }
-          if (![TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU].includes(tile.type)) {
-            return { ok: false, message: 'Las tropas solo pueden reclutarse en ciudades o capitales propias.' };
+          if (![TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU, TERRAIN_TYPES.PUE].includes(tile.type)) {
+            return { ok: false, message: 'Las tropas solo pueden reclutarse en pueblos, ciudades o capitales propias.' };
           }
           if (InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)) {
             return { ok: false, message: 'No puedes reclutar tropas dentro de una Zona Desmilitarizada.' };
@@ -245,8 +282,8 @@ export const ActionEngine = {
         if (!destination || !WATER_TERRAIN.has(destination.type)) {
           return { ok: false, message: 'Los barcos solo pueden navegar hacia casillas de agua.' };
         }
-        if (!isDiagonalOrOrthogonalStep(tile, destination)) {
-          return { ok: false, message: 'El destino debe ser una casilla de agua adyacente, incluso en diagonal.' };
+        if (!hasWaterRoute(this.grid, tile, destination, ECONOMY.NAVAL.MAX_MOVE_DISTANCE)) {
+          return { ok: false, message: 'Los barcos pueden moverse entre una y dos casillas de agua.' };
         }
         if (
           InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)
@@ -269,6 +306,24 @@ export const ActionEngine = {
           return { ok: false, message: 'Ya tienes un movimiento de barcos planificado hacia esa casilla.' };
         }
         action.ships = movedShips;
+        return { ok: true };
+      }
+      case 'MOVE_CARS': {
+        const destination = this.grid[action.targetY]?.[action.targetX];
+        const cars = this.getCarsForPlayerOnTile(tile, player.id);
+        const troops = action.troops ?? this.getTroopsForPlayerOnTile(tile, player.id);
+        const distance = destination
+          ? Math.max(Math.abs(tile.x - destination.x), Math.abs(tile.y - destination.y)) : 0;
+        if (!destination || !LAND_TERRAIN.has(destination.type)
+          || !hasLandRoute(this.grid, tile, destination, ECONOMY.GROUND_TRANSPORT.MAX_MOVE_DISTANCE)) {
+          return { ok: false, message: 'Los carros solo pueden moverse entre una y dos casillas terrestres.' };
+        }
+        if (!Number.isInteger(troops) || troops < 1 || troops > this.getTroopsForPlayerOnTile(tile, player.id)
+          || cars < Math.ceil(troops / ECONOMY.GROUND_TRANSPORT.TROOPS_PER_CAR)) {
+          return { ok: false, message: 'No hay suficientes tropas o carros para ese movimiento.' };
+        }
+        action.troops = troops;
+        action.cars = Math.ceil(troops / ECONOMY.GROUND_TRANSPORT.TROOPS_PER_CAR);
         return { ok: true };
       }
       case 'EMBARK_TROOPS': {
@@ -348,6 +403,7 @@ export const ActionEngine = {
     }
     if (action.type === 'RECRUIT_TROOP') return ECONOMY.COSTS.RECRUIT_TROOP_SILVER * (action.count ?? 1);
     if (action.type === 'BUILD_SHIP') return ECONOMY.COSTS.BUILD_SHIP_SILVER * (action.count ?? 1);
+    if (action.type === 'BUILD_CAR') return ECONOMY.COSTS.BUILD_CAR_SILVER * (action.count ?? 1);
     if (action.type === 'MOVE_CAPITAL') return ECONOMY.COSTS.MOVE_CAPITAL_SILVER;
     return 0;
   },
@@ -357,6 +413,8 @@ export const ActionEngine = {
       ? ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * (action.count ?? 1)
       : action.type === 'BUILD_SHIP'
         ? ECONOMY.COSTS.BUILD_SHIP_MATERIALS * (action.count ?? 1)
+      : action.type === 'BUILD_CAR'
+        ? ECONOMY.COSTS.BUILD_CAR_MATERIALS * (action.count ?? 1)
       : action.type === 'MOVE_CAPITAL'
         ? ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS
       : action.type === 'BUILD_CITY'
@@ -373,6 +431,10 @@ export const ActionEngine = {
 
   getShipsForPlayerOnTile(tile, playerId) {
     return tile?.shipsByPlayer?.[playerId] || 0;
+  },
+
+  getCarsForPlayerOnTile(tile, playerId) {
+    return tile?.carsByPlayer?.[playerId] || 0;
   },
 
   normalizeWaterTroops() {
@@ -423,7 +485,7 @@ export const ActionEngine = {
     const results = [];
     const landOrders = [...this.players.values()].flatMap((player) =>
       (player.plannedActions || []).flatMap((action, slot) => {
-        if (action?.type !== 'MOVE_TROOPS') return [];
+        if (!['MOVE_TROOPS', 'MOVE_CARS'].includes(action?.type)) return [];
         const source = this.grid[action.y]?.[action.x];
         const target = this.grid[action.targetY]?.[action.targetX];
         if (WATER_TERRAIN.has(target?.type)) return [];
@@ -431,7 +493,8 @@ export const ActionEngine = {
           player,
           action,
           slot,
-          movementType: WATER_TERRAIN.has(source?.type) ? 'disembark' : 'land'
+          movementType: action.type === 'MOVE_CARS' ? 'car'
+            : WATER_TERRAIN.has(source?.type) ? 'disembark' : 'land'
         }];
       }));
     const disembarkOrders = [...this.players.values()].flatMap((player) =>
@@ -464,6 +527,10 @@ export const ActionEngine = {
               : this.resolveTroopMovement(player, action);
         } else if (action.type === 'MOVE_SHIPS') {
           result = this.resolveShipMovement(player, action);
+        } else if (action.type === 'MOVE_CARS') {
+          const order = { player, action, slot, movementType: 'car' };
+          result = resolveLandMovements(this, [order]).get(order)
+            || { ok: false, message: 'El movimiento de carros ya no es válido.' };
         } else if (action.type === 'EMBARK_TROOPS') {
           result = this.resolveEmbarkTroops(player, action);
         } else if (action.type === 'DISEMBARK_TROOPS') {
@@ -492,10 +559,11 @@ export const ActionEngine = {
           if (player.humanDecisionContext) delete player.humanDecisionContext[slot];
         }
         if (action.type !== 'HOLD_POSITION') {
-          const coordinates = ['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)
+          const coordinates = ['MOVE_TROOPS', 'MOVE_SHIPS', 'MOVE_CARS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)
             ? ` desde (${action.x}, ${action.y}) hasta (${action.targetX}, ${action.targetY})`
             : ` en (${action.x}, ${action.y})`;
           const quantity = action.type === 'MOVE_SHIPS' ? ` (${action.ships} ${action.ships === 1 ? 'barco' : 'barcos'})`
+            : action.type === 'MOVE_CARS' ? ` (${action.troops} ${action.troops === 1 ? 'tropa' : 'tropas'})`
             : ['MOVE_TROOPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)
               ? ` (${action.troops} ${action.troops === 1 ? 'tropa' : 'tropas'})` : '';
           this.recordEvent(`${player.name}: ${this.getActionName(action.type)}${quantity}${coordinates}.`,
@@ -523,7 +591,7 @@ export const ActionEngine = {
     if (
       !source || !destination || !WATER_TERRAIN.has(source.type) || !WATER_TERRAIN.has(destination.type)
       || !Number.isInteger(action.ships) || action.ships < 1 || ships < action.ships
-      || !isDiagonalOrOrthogonalStep(source, destination)
+      || !hasWaterRoute(this.grid, source, destination, ECONOMY.NAVAL.MAX_MOVE_DISTANCE)
       || InternationalOrganizationEngine.isInActiveDmz(this, source.x, source.y)
       || InternationalOrganizationEngine.isInActiveDmz(this, destination.x, destination.y)
     ) {
@@ -593,6 +661,7 @@ export const ActionEngine = {
     }
     destination.ownerId = player.id;
     destination.nationId = player.nationId;
+    claimNeutralTransitTiles(this, player.id, source, destination, WATER_TERRAIN);
     awardNeutralResourceCapture(this, player.id, destination, ownerBefore);
     return {
       ok: true,
@@ -816,10 +885,26 @@ export const ActionEngine = {
         }
         return { ok: true, message: `${count} ${count === 1 ? 'barco construido' : 'barcos construidos'} en el puerto.` };
       }
+      case 'BUILD_CAR': {
+        const count = action.count ?? 1;
+        const silverCost = ECONOMY.COSTS.BUILD_CAR_SILVER * count;
+        const materialCost = ECONOMY.COSTS.BUILD_CAR_MATERIALS * count;
+        if (tile.type !== TERRAIN_TYPES.FT || tile.building !== 'FACTORY') {
+          return { ok: false, message: 'Los carros solo pueden fabricarse en fábricas terrestres.' };
+        }
+        if (resources.SILVER < silverCost || resources.MATERIALS < materialCost) {
+          return { ok: false, message: `Necesitas ${silverCost} de Plata y ${materialCost} Materiales para fabricar carros.` };
+        }
+        resources.SILVER -= silverCost;
+        resources.MATERIALS -= materialCost;
+        tile.carsByPlayer ||= {};
+        tile.carsByPlayer[player.id] = (tile.carsByPlayer[player.id] || 0) + count;
+        return { ok: true, message: `${count} ${count === 1 ? 'carro fabricado' : 'carros fabricados'} en la fábrica.` };
+      }
       case 'RECRUIT_TROOP': {
         const count = action.count ?? 1;
-        if (![TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU].includes(tile.type)) {
-          return { ok: false, message: 'Las tropas solo pueden reclutarse en ciudades o capitales propias.' };
+        if (![TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU, TERRAIN_TYPES.PUE].includes(tile.type)) {
+          return { ok: false, message: 'Las tropas solo pueden reclutarse en pueblos, ciudades o capitales propias.' };
         }
         const silverCost = ECONOMY.COSTS.RECRUIT_TROOP_SILVER * count;
         const materialCost = ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * count;

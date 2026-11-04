@@ -55,6 +55,7 @@ El Mercado Global tiene precios fijos por Material: comprar uno cuesta **3 de Pl
 Los Materiales son indispensables para construir defensas y entrenar fuerzas armadas. Se producen mediante:
 
 - **Fábricas (`FT` / `FA`):** Edificaciones industriales construibles tanto en tierra (`FT`) como en agua (`FA`). Desde el inicio de la ronda 2 aportan **+5 Materiales al comienzo de cada ronda** y tienen un costo de **30 de Plata y 30 de Materiales**.
+- **Transporte:** Los barcos y carros cuestan lo mismo al fabricarse (**15 de Plata y 15 de Materiales**), transportan hasta 5 tropas por unidad y pueden moverse hasta dos casillas. Los barcos navegan por agua; los carros se fabrican en fábricas terrestres y recorren rutas terrestres.
 - **Materia Prima (`MPT` / `MPA`):** Yacimientos naturales en tierra (`MPT`) o agua (`MPA`). No producen recursos por sí solas; construir una fábrica allí cuesta **20 de Plata y 20 de Materiales**.
 - Ocupar una materia prima neutral entrega inmediatamente **20 Materiales** al país que la controla.
 - **Costos de acción:** construir una ciudad cuesta **50 de Plata y 50 de Materiales**; una fábrica cuesta **30 de Plata y 30 de Materiales**, o **20 y 20** sobre un yacimiento. Reclutar una tropa cuesta **10 de Plata y 10 de Materiales**. Estos costos comparten la misma configuración que valida el servidor y muestra la interfaz.
@@ -157,7 +158,7 @@ Los países controlados por bots votan automáticamente: si una resolución los 
 
 ### Resoluciones Oficiales de la OI
 - **Multas del Banco Mundial:** Resolución oficial reservada para una versión futura; no se puede proponer ni aprobar actualmente.
-- **Reclutamiento:** solo se pueden reclutar tropas en ciudades o capitales propias.
+- **Reclutamiento:** solo se pueden reclutar tropas en pueblos, ciudades o capitales propias.
   Se pagan los recursos de cada unidad y se respetan los límites de armamento y las ZDM.
 - **Límites de Industria:** Fija un máximo de **10 fábricas por país**. Una vez aprobada, permanece activa hasta el final de la partida.
 - **Zonas Desmilitarizadas (ZDM):** El proponente elige una casilla central al redactar su propuesta. La ZDM cubre esa casilla y las casillas situadas hasta dos posiciones en cada dirección (un área de 5×5, 25 casillas en el interior del mapa; se recorta en los bordes). No se pueden reclutar, estacionar ni mover tropas hacia, desde o a través de una ZDM. Al aprobarse, las tropas que ya están dentro se desplazan a la casilla propia válida más cercana. La zona permanece activa hasta la siguiente reunión de la OI.
@@ -213,7 +214,7 @@ Cada casilla del tablero está codificada mediante un color de fondo según su c
 | **Gris Urbano (`#718096`)** | `CIU` | Ciudad | Núcleo de concentración demográfica y recaudación fiscal de Plata. |
 | **Café Terrestre (`#8D5B4C`)** | `TR` | Tierra | Terreno llano estándar para despliegue y maniobra de tropas terrestres. |
 | **Café Terrestre (`#8D5B4C`)** | `MPT` | Materia Prima Terrestre | Yacimiento mineral con descuento para construcción de Fábrica Terrestre. |
-| **Café Pueblo (`#9A8065`)** | `PUE` | Pueblo | Asentamiento neutral con 20 habitantes y 1 de defensa. |
+| **Café Pueblo (`#9A8065`)** | `PUE` | Pueblo | Asentamiento con 20 habitantes y 1 de defensa; una vez controlado permite reclutar tropas. |
 | **Café Terrestre (`#8D5B4C`)** | `FT` | Fábrica Terrestre | Instalación industrial de alta producción pasiva de Materiales (+5/turno). |
 | **Azul Marítimo (`#3182CE`)** | `AG` | Agua | Superficie acuática para navegación, transporte de tropas y flotas. |
 | **Azul Marítimo (`#3182CE`)** | `MPA` | Materia Prima Acuática | Yacimiento marino con descuento para plataformas o fábricas navales. |

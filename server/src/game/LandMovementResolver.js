@@ -1,6 +1,17 @@
 import { ECONOMY, LAND_TERRAIN, TERRAIN_TYPES, WATER_TERRAIN } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine as OI } from './InternationalOrganizationEngine.js';
 
+function hasLandRoute(grid, source, target, maxDistance) {
+  const distance = Math.max(Math.abs(source.x - target.x), Math.abs(source.y - target.y));
+  if (distance < 1 || distance > maxDistance) return false;
+  const dx = Math.sign(target.x - source.x);
+  const dy = Math.sign(target.y - source.y);
+  for (let step = 1; step <= distance; step += 1) {
+    if (!LAND_TERRAIN.has(grid[source.y + dy * step]?.[source.x + dx * step]?.type)) return false;
+  }
+  return true;
+}
+
 export function awardNeutralResourceCapture(state, playerId, tile, previousOwnerId) {
   if (previousOwnerId != null || ![TERRAIN_TYPES.MPT, TERRAIN_TYPES.MPA].includes(tile?.type)) return false;
   const player = state.players.get(playerId);
@@ -12,6 +23,21 @@ export function awardNeutralResourceCapture(state, playerId, tile, previousOwner
     { category: 'resource-capture', playerId, x: tile.x, y: tile.y, materials: reward }
   );
   return true;
+}
+
+export function claimNeutralTransitTiles(state, playerId, source, target, terrainSet) {
+  const distance = Math.max(Math.abs(source.x - target.x), Math.abs(source.y - target.y));
+  if (distance <= 1) return;
+  const dx = Math.sign(target.x - source.x);
+  const dy = Math.sign(target.y - source.y);
+  const player = state.players.get(playerId);
+  for (let step = 1; step < distance; step += 1) {
+    const tile = state.grid[source.y + dy * step]?.[source.x + dx * step];
+    if (!tile || !terrainSet.has(tile.type) || tile.ownerId != null) continue;
+    tile.ownerId = playerId;
+    tile.nationId = player.nationId;
+    awardNeutralResourceCapture(state, playerId, tile, null);
+  }
 }
 
 export function applyCapitalConquest(state, winnerId, defeatedId, capitalTile) {
@@ -29,6 +55,10 @@ export function applyCapitalConquest(state, winnerId, defeatedId, capitalTile) {
       if (tile.visitingTroops) {
         delete tile.visitingTroops[defeatedId];
         if (!Object.keys(tile.visitingTroops).length) delete tile.visitingTroops;
+      }
+      if (tile.carsByPlayer?.[defeatedId] != null) {
+        delete tile.carsByPlayer[defeatedId];
+        if (!Object.keys(tile.carsByPlayer).length) delete tile.carsByPlayer;
       }
     }
     if (tile.visitingTroops?.[defeatedId] != null) {
@@ -68,13 +98,15 @@ export function resolveLandMovements(state, orders) {
   for (const order of orders) {
     const { player, action } = order;
     const isDisembark = order.movementType === 'disembark';
+    const isCar = order.movementType === 'car';
     const source = state.grid[action.y]?.[action.x];
     const target = state.grid[action.targetY]?.[action.targetX];
     let reason = null;
     const sourceKey = `${player.id}:${action.x}:${action.y}`;
     if (!source || !target || (!isDisembark && !LAND_TERRAIN.has(source.type))
       || (isDisembark && !WATER_TERRAIN.has(source.type)) || !LAND_TERRAIN.has(target.type)
-      || Math.max(Math.abs(source.x - target.x), Math.abs(source.y - target.y)) !== 1) {
+      || (!isCar && Math.max(Math.abs(source.x - target.x), Math.abs(source.y - target.y)) !== 1)
+      || (isCar && !hasLandRoute(state.grid, source, target, ECONOMY.GROUND_TRANSPORT.MAX_MOVE_DISTANCE))) {
       reason = 'El origen o el destino del movimiento ya no es válido.';
     } else if (OI.isInActiveDmz(state, source.x, source.y) || OI.isInActiveDmz(state, target.x, target.y)) {
       reason = 'El movimiento atraviesa una Zona Desmilitarizada.';
@@ -85,6 +117,10 @@ export function resolveLandMovements(state, orders) {
         || action.troops > cargo - (reserved.get(sourceKey) || 0)) {
         reason = 'No hay suficientes tropas embarcadas disponibles para desembarcar.';
       }
+    } else if (isCar && (!Number.isInteger(action.troops) || action.troops < 1
+        || action.troops > state.getTroopsForPlayerOnTile(source, player.id)
+        || (source.carsByPlayer?.[player.id] || 0) < Math.ceil(action.troops / ECONOMY.GROUND_TRANSPORT.TROOPS_PER_CAR))) {
+      reason = 'No hay suficientes tropas o carros disponibles para el movimiento.';
     } else if (!Number.isInteger(action.troops) || action.troops < 1
         || action.troops > state.getTroopsForPlayerOnTile(source, player.id) - (reserved.get(sourceKey) || 0)) {
         reason = 'No hay suficientes tropas disponibles en el origen.';
@@ -103,6 +139,12 @@ export function resolveLandMovements(state, orders) {
       }
     } else {
       state.removeTroopsFromPlayerOnTile(source, order.player.id, order.action.troops);
+      if (order.movementType === 'car') {
+        const cars = Math.ceil(order.action.troops / ECONOMY.GROUND_TRANSPORT.TROOPS_PER_CAR);
+        source.carsByPlayer[order.player.id] -= cars;
+        if (source.carsByPlayer[order.player.id] <= 0) delete source.carsByPlayer[order.player.id];
+        if (!Object.keys(source.carsByPlayer).length) delete source.carsByPlayer;
+      }
     }
   }
   const destinations = new Map();
@@ -203,7 +245,17 @@ export function resolveLandMovements(state, orders) {
           defenderSurvivors: winnerId && winnerId !== order.player.id ? survivors : 0
         } } : {})
       });
+      if (order.movementType === 'car' && resultForCarTransfer(order, winnerId, fought)) {
+        const cars = Math.ceil(order.action.troops / ECONOMY.GROUND_TRANSPORT.TROOPS_PER_CAR);
+        target.carsByPlayer ||= {};
+        target.carsByPlayer[order.player.id] = (target.carsByPlayer[order.player.id] || 0) + cars;
+        claimNeutralTransitTiles(state, order.player.id, movements.find((movement) => movement.order === order).source, target, LAND_TERRAIN);
+      }
     }
   }
   return results;
+}
+
+function resultForCarTransfer(order, winnerId, fought) {
+  return !fought || winnerId === order.player.id;
 }
