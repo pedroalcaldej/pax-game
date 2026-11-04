@@ -31,6 +31,12 @@ export class InternationalOrganizationEngine {
     if (!proposal || !VALID_RESOLUTIONS.has(proposal.type)) {
       return { ok: false, message: 'La resolución seleccionada no está disponible.' };
     }
+    if (gameState.oiProposals.some((entry) => entry.type === proposal.type)) {
+      return {
+        ok: false,
+        message: 'Esta resolución ya fue propuesta para la próxima reunión de la OI; solo puede votarse una vez por reunión.'
+      };
+    }
     if (player.resources.INFLUENCE < ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE) {
       return { ok: false, message: `Necesitas ${ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE} puntos de Influencia para proponer una resolución.` };
     }
@@ -73,8 +79,14 @@ export class InternationalOrganizationEngine {
       (zone) => zone.expiresAfterRound >= nextRound
     );
     gameState.expireTreatiesAfterRound(nextRound - 1);
+    const seenResolutionTypes = new Set();
     const selected = [...gameState.oiProposals]
       .sort((left, right) => left.sequence - right.sequence)
+      .filter((proposal) => {
+        if (seenResolutionTypes.has(proposal.type)) return false;
+        seenResolutionTypes.add(proposal.type);
+        return true;
+      })
       .slice(0, 3)
       .map((proposal) => {
         if (proposal.type !== OI_RESOLUTIONS.CONDITIONAL_SUBSIDY) return { ...proposal, votes: [] };

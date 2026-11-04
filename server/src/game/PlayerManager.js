@@ -15,6 +15,7 @@ export const PlayerManager = {
         boundPlayerId: null,
         isDisconnected: false,
         isBot: true,
+        isEliminated: false,
         name: nation.name,
         color: nation.color,
         gdiPoints: initialGdi,
@@ -65,7 +66,7 @@ export const PlayerManager = {
     }
 
     for (const player of this.players.values()) {
-      if (player.isBot) {
+      if (player.isBot && !player.isEliminated) {
         player.boundPlayerId = id;
         player.socketId = socketId;
         player.isDisconnected = false;
@@ -158,7 +159,7 @@ export const PlayerManager = {
     const player = playerId
       ? this.players.get(playerId)
       : Array.from(this.players.values()).find((entry) => entry.socketId === socketId);
-    if (player && (!player.isBot || playerId)) {
+    if (player && !player.isEliminated && (!player.isBot || playerId)) {
       player.taxRate = taxRate;
       return true;
     }
@@ -170,13 +171,13 @@ export const PlayerManager = {
       return { ok: false, message: 'Solo puedes marcarte listo durante la fase de planificación.' };
     }
     const player = Array.from(this.players.values()).find((entry) => entry.socketId === socketId);
-    if (!player || player.isBot) {
+    if (!player || player.isBot || player.isEliminated) {
       return { ok: false, message: 'No tienes un país activo en esta partida.' };
     }
 
     player.phaseReady = Boolean(ready);
     this.recordEvent(`${player.name} ${player.phaseReady ? 'confirmó' : 'retiró'} que está listo.`);
-    const participants = Array.from(this.players.values());
+    const participants = Array.from(this.players.values()).filter((entry) => !entry.isEliminated);
     const readyCount = participants.filter((entry) => entry.phaseReady).length;
     return {
       ok: true,
@@ -188,6 +189,8 @@ export const PlayerManager = {
   },
 
   allPlayersReady() {
-    return Array.from(this.players.values()).every((player) => player.phaseReady);
+    return Array.from(this.players.values())
+      .filter((player) => !player.isEliminated)
+      .every((player) => player.phaseReady);
   },
 };

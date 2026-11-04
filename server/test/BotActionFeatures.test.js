@@ -8,6 +8,7 @@ import { describeAction } from '../src/game/bots/BotLearning.js';
 function fixture() {
   const state = new GameState({ preset: 'quick', mapSeed: 'action-features' });
   const [player, enemy] = [...state.players.values()];
+  player.resources.INFLUENCE = 100;
   for (const tile of state.grid.flat()) {
     Object.assign(tile, { type: 'TR', ownerId: player.id, nationId: player.nationId, troops: 0, population: 0, building: null });
     delete tile.visitingTroops;
@@ -65,9 +66,9 @@ test('describes city income, resource access, factories and active treaty penalt
   assert.equal(f.targetIsCapital, 1);
   assert.equal(f.targetPopulation, 100);
   assert.ok(f.targetTaxIncome > 0);
-  assert.equal(f.targetMaterialProduction, 4);
+  assert.equal(f.targetMaterialProduction, 10);
   assert.equal(f.populationGainIfCaptured, 100);
-  assert.equal(f.materialProductionGain, 4);
+  assert.equal(f.materialProductionGain, 10);
   assert.equal(f.breaksNonAggressionPact, 1);
   assert.equal(f.breaksFreeTradeTreaty, 1);
   assert.equal(f.pactInfluencePenalty, 10);
@@ -89,18 +90,18 @@ test('never reads opponent planned actions or changes the live board while descr
 
 test('describes separate resource budgets, production and tax consequences', () => {
   const { state, player } = fixture();
-  player.resources.SILVER = 20;
-  player.resources.MATERIALS = 80;
+  player.resources.SILVER = 70;
+  player.resources.MATERIALS = 100;
   player.plannedActions[0] = { type: 'BUILD_FACTORY', x: 5, y: 5 };
   const recruit = extractActionFeatures(state, player, { type: 'RECRUIT_TROOP', x: 8, y: 4, count: 2 });
-  assert.equal(recruit.availableSilver, 10);
-  assert.equal(recruit.silverCost, 10);
-  assert.equal(recruit.materialCost, 40);
-  assert.equal(recruit.silverAfter, 0);
-  assert.equal(recruit.materialsAfter, 40);
+  assert.equal(recruit.availableSilver, 40);
+  assert.equal(recruit.silverCost, 20);
+  assert.equal(recruit.materialCost, 20);
+  assert.equal(recruit.silverAfter, 20);
+  assert.equal(recruit.materialsAfter, 50);
   assert.equal(recruit.sourceTroopsAfter, 8);
   const factory = extractActionFeatures(state, player, { type: 'BUILD_FACTORY', x: 6, y: 6 });
-  assert.equal(factory.materialProductionGain, 2);
+  assert.equal(factory.materialProductionGain, 5);
   Object.assign(state.grid[5][5], { type: 'CAP', population: 100 });
   const tax = describeAction(state, player, { type: 'SET_TAX_RATE', taxRate: 0.3 });
   assert.ok(tax.features.taxIncomeDelta > 0);

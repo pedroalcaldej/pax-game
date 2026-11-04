@@ -9,6 +9,9 @@ import { Room } from '../src/network/RoomManager.js';
 
 function createHumanGame() {
   const gameState = new GameState();
+  for (const country of gameState.players.values()) {
+    country.resources = { SILVER: 100, MATERIALS: 100, INFLUENCE: 100 };
+  }
   // Engine fixtures must not write synthetic actions into the user's experience file.
   gameState.recordHumanExperience = () => {};
   gameState.gameStarted = true;
@@ -38,6 +41,42 @@ test('proposing a resolution costs two influence and rejects insufficient funds'
   assert.equal(player.resources.INFLUENCE, 0);
   assert.equal(rejected.ok, false);
   assert.equal(gameState.oiProposals.length, 1);
+});
+
+test('each resolution type can only be proposed once for the same OI meeting', () => {
+  const { gameState, player } = createHumanGame();
+  const bot = gameState.players.get('nation-1');
+  player.resources.INFLUENCE = 10;
+  bot.resources.INFLUENCE = 10;
+  bot.socketId = 'bot-socket';
+  bot.isBot = false;
+
+  const first = OI.propose(gameState, player.socketId, {
+    type: OI_RESOLUTIONS.ARMAMENT_LIMIT
+  });
+  const duplicate = OI.propose(gameState, bot.socketId, {
+    type: OI_RESOLUTIONS.ARMAMENT_LIMIT
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(duplicate.ok, false);
+  assert.match(duplicate.message, /ya fue propuesta/);
+  assert.equal(bot.resources.INFLUENCE, 10);
+  assert.equal(gameState.oiProposals.filter((proposal) => proposal.type === OI_RESOLUTIONS.ARMAMENT_LIMIT).length, 1);
+});
+
+test('a legacy duplicate cannot create two votes in one OI session', () => {
+  const { gameState, player } = createHumanGame();
+  gameState.currentRound = 5;
+  gameState.oiProposals = [
+    { id: 'first', sequence: 1, type: OI_RESOLUTIONS.ARMAMENT_LIMIT, name: 'first', proposerId: player.id },
+    { id: 'duplicate', sequence: 2, type: OI_RESOLUTIONS.ARMAMENT_LIMIT, name: 'duplicate', proposerId: player.id },
+    { id: 'industry', sequence: 3, type: OI_RESOLUTIONS.INDUSTRY_LIMIT, name: 'industry', proposerId: player.id }
+  ];
+
+  const session = OI.startSession(gameState);
+
+  assert.deepEqual(session.proposals.map((proposal) => proposal.id), ['first', 'industry']);
 });
 
 test('meeting selects the first three proposals, clears the rest, and hides ballots', () => {
@@ -176,7 +215,7 @@ test('approved limits prevent recruitment and factory construction above ten', (
   }
   const troopTile = tiles[0];
   troopTile.ownerId = player.id;
-  troopTile.type = 'TR';
+  troopTile.type = 'CIU';
   troopTile.building = null;
   troopTile.troops = 9;
   gameState.oiPolicies.armamentLimit = 10;
@@ -304,6 +343,8 @@ test('players can propose and accept a five-round non-aggression pact', () => {
   assert.equal(proposal.ok, true);
   assert.equal(gameState.treatyOffers.length, 1);
   assert.equal(gameState.nonAggressionPacts.length, 0);
+  assert.equal(gameState.eventHistory.at(-1).category, 'treaty-offer');
+  assert.equal(gameState.eventHistory.at(-1).recipientId, recipient.id);
 
   const response = gameState.respondToTreaty(
     recipient.socketId,
@@ -400,6 +441,8 @@ test('treaties expire at the end of their fifth round and are logged', () => {
   assert.equal(gameState.eventHistory.length, 2);
   assert.match(gameState.eventHistory[0].message, /Pacto de No Agresión entre .* expiró/);
   assert.match(gameState.eventHistory[1].message, /Tratado de Libre Comercio entre .* expiró/);
+  assert.ok(gameState.eventHistory.every((event) => event.category === 'treaty-expired'));
+  assert.ok(gameState.eventHistory.every((event) => event.playerIds.includes(player.id)));
 });
 
 test('free-trade treaties are active for five rounds', () => {
@@ -446,7 +489,7 @@ test('the global market buys and sells materials at the fixed prices', () => {
   assert.equal(gameState.bankFund.MATERIALS, 3);
 });
 
-test('direct transfers charge the 20 percent tariff and TLC transfers are exempt', () => {
+test('direct transfers charge the 20 percent tariff, TLC transfers are exempt and war blocks transfers', () => {
   const { gameState, player } = createHumanGame();
   const recipient = gameState.players.get('nation-1');
   player.resources.SILVER = 20;
@@ -486,9 +529,10 @@ test('direct transfers charge the 20 percent tariff and TLC transfers are exempt
     resource: 'MATERIALS',
     amount: 5
   });
-  assert.equal(afterWar.ok, true);
-  assert.equal(recipient.resources.MATERIALS, 14);
-  assert.equal(gameState.bankFund.MATERIALS, 1);
+  assert.equal(afterWar.ok, false);
+  assert.match(afterWar.message, /conflicto/);
+  assert.equal(recipient.resources.MATERIALS, 10);
+  assert.equal(gameState.bankFund.MATERIALS, 0);
   assert.equal(gameState.freeTradeTreaties.length, 0);
 });
 
@@ -832,6 +876,7 @@ test('no international meeting is scheduled after a non-fifth round', () => {
 
 test('the game ends after round thirty without advancing the displayed round', () => {
   const { gameState } = createHumanGame();
+  gameState.settings.maxRounds = MAX_ROUNDS;
   gameState.currentRound = MAX_ROUNDS;
   const phaseManager = new PhaseManager(gameState, () => {});
   phaseManager.running = true;
@@ -937,9 +982,10 @@ test('bots build cities when military and factory actions are unavailable', () =
     tile.type = TERRAIN_TYPES.TR;
     tile.building = null;
   });
-  bot.resources.SILVER = 150;
-  bot.resources.MATERIALS = 0;
+  bot.resources.SILVER = 300;
+  bot.resources.MATERIALS = 300;
   gameState.oiPolicies.industryLimit = OI.countFactories(gameState, bot.id);
+  gameState.oiPolicies.armamentLimit = OI.countTroops(gameState, bot.id);
   gameState.botStrategicActionsEnabled = false;
 
   gameState.runBotDecisions();

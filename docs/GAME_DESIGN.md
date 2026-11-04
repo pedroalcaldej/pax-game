@@ -20,7 +20,7 @@ El objetivo principal de la partida es consolidar a la nación como la potencia 
 
 ## 2. Estructura de la Partida y Dinámica de Ronda
 
-Las partidas usan por defecto **30 rondas** y **60 segundos** de planificación, pero el anfitrión puede elegir antes de comenzar los presets rápida (15/30 s), normal (30/60 s) o estratégica (40/120 s). También puede ajustar rondas, acciones por ronda, frecuencia de reuniones de la OI, semilla y tamaño del mapa. Los barcos siempre están disponibles. El servidor valida y congela estos parámetros al iniciar la partida.
+Las partidas usan por defecto el preset **Corto** (**15 rondas**, **30 segundos** de planificación y mapa de 20×20). El anfitrión puede elegir también el preset **Largo** (**30 rondas**, **60 segundos** y mapa de 30×30). Ambos presets son sólo informativos y sus valores no se pueden editar; para ajustar manualmente rondas, acciones por ronda, frecuencia de reuniones de la OI, semilla o tamaño del mapa se debe elegir **Personalizado**. Los barcos siempre están disponibles. El servidor valida y congela estos parámetros al iniciar la partida.
 
 1. **Inicio de ronda:** desde la ronda 2, el servidor procesa en este orden Materiales, Influencia, crecimiento poblacional y recaudación de impuestos. La primera ronda solo usa las cantidades iniciales. Los intereses y vencimientos de bonos se procesan al comienzo de todas las rondas.
 2. **Planificación:** es la única etapa normal en la que el jugador interactúa. Aquí se gestionan impuestos, mercado, transferencias, bonos, pagos, diplomacia y las órdenes territoriales. Los jugadores pueden confirmar que están listos; si todos lo hacen, la etapa termina antes de los 60 segundos.
@@ -46,7 +46,7 @@ La población de las Ciudades (`CIU`) es el motor fiscal del Estado. Las cantida
 
 > **Regla de Jugabilidad:** A menor carga impositiva, la población crece a mayor velocidad; a mayor tasa, la recaudación por habitante aumenta de inmediato.
 
-Al comenzar, cada país recibe **100 de Plata, 100 de Materiales y 100 de Influencia**. Su Capital y Ciudad comienzan con **50 habitantes cada una**. Desde el inicio de la ronda 2, cada fábrica produce **2 de Materiales** y cada ciudad/capital genera **1 de Influencia**; después se actualiza la población y se recaudan los impuestos. Las cantidades iniciales, la producción, los precios y los costos se centralizan en `ECONOMY` dentro de `shared/Constants.js`.
+Al comenzar, cada país recibe **0 de Plata, 0 de Materiales y 0 de Influencia**. Su Capital y Ciudad comienzan con **50 habitantes cada una**. Desde el inicio de la ronda 2, cada fábrica produce **5 de Materiales** y cada ciudad/capital genera **1 de Influencia**; después se actualiza la población y se recaudan los impuestos. Las cantidades iniciales, la producción, los precios y los costos se centralizan en `ECONOMY` dentro de `shared/Constants.js`.
 
 El Mercado Global tiene precios fijos por Material: comprar uno cuesta **3 de Plata** y vender uno entrega **1 de Plata**. La cantidad elegida se expresa en Materiales.
 
@@ -54,9 +54,10 @@ El Mercado Global tiene precios fijos por Material: comprar uno cuesta **3 de Pl
 
 Los Materiales son indispensables para construir defensas y entrenar fuerzas armadas. Se producen mediante:
 
-- **Fábricas (`FT` / `FA`):** Edificaciones industriales construibles tanto en tierra (`FT`) como en agua (`FA`). Desde el inicio de la ronda 2 aportan **+2 Materiales al comienzo de cada ronda** y tienen un costo base de **$10 Plata**.
-- **Materia Prima (`MPT` / `MPA`):** Yacimientos naturales en tierra (`MPT`) o agua (`MPA`). No producen recursos por sí solas, pero otorgan un descuento especial reduciendo el costo de construcción de una Fábrica a solo **$5 Plata**.
-- **Costos de acción:** construir una ciudad cuesta **50 de Plata**; una fábrica cuesta **10 de Plata** o **5 en un yacimiento**. Reclutar una tropa cuesta **5 de Plata y 20 de Materiales**. Estos costos comparten la misma configuración que valida el servidor y muestra la interfaz.
+- **Fábricas (`FT` / `FA`):** Edificaciones industriales construibles tanto en tierra (`FT`) como en agua (`FA`). Desde el inicio de la ronda 2 aportan **+5 Materiales al comienzo de cada ronda** y tienen un costo de **30 de Plata y 30 de Materiales**.
+- **Materia Prima (`MPT` / `MPA`):** Yacimientos naturales en tierra (`MPT`) o agua (`MPA`). No producen recursos por sí solas; construir una fábrica allí cuesta **20 de Plata y 20 de Materiales**.
+- Ocupar una materia prima neutral entrega inmediatamente **20 Materiales** al país que la controla.
+- **Costos de acción:** construir una ciudad cuesta **50 de Plata y 50 de Materiales**; una fábrica cuesta **30 de Plata y 30 de Materiales**, o **20 y 20** sobre un yacimiento. Reclutar una tropa cuesta **10 de Plata y 10 de Materiales**. Estos costos comparten la misma configuración que valida el servidor y muestra la interfaz.
 
 ### 3.3. Emisión de Deuda y Comercio
 
@@ -64,9 +65,12 @@ Los Materiales son indispensables para construir defensas y entrenar fuerzas arm
   venderlos por **1 de Plata** cada uno. El sistema neutral no tiene límites de stock.
 - **Comercio entre países:** Un jugador propone entregar Plata a cambio de Materiales,
   o viceversa; el destinatario puede aceptar o rechazar y el proponente puede cancelar.
-  Sin TLC, el Banco Mundial retiene el **20%** de cada recurso transferido, redondeado
-  hacia arriba. Con un TLC activo y sin guerra, las cantidades deben ser iguales (1:1)
-  y no se cobran aranceles. El servidor vuelve a comprobar los saldos al aceptar.
+  Entre países neutrales se pagan **2 de Plata por 1 Material**: el vendedor recibe
+  **1 de Plata** y el Banco Mundial recibe **1 de Plata** por cada Material vendido.
+  Los Materiales llegan íntegros al comprador. Con un TLC activo, se paga **1 de Plata
+  por 1 Material**, sin aranceles. Los países en conflicto no comercian entre sí.
+  El servidor comprueba la relación vigente, las cantidades y los saldos tanto al
+  proponer como al aceptar; una propuesta desactualizada debe cancelarse y rehacerse.
 - **Emisión de Bonos:** Un bono entrega **20 de Plata** y crea una deuda de **25 de Plata**
   con vencimiento cinco rondas después de la emisión. El saldo se cobra
   automáticamente al vencimiento si hay fondos suficientes. El impago resta
@@ -140,6 +144,8 @@ La Organización Internacional (OI) es la mesa multilateral donde los 4 estados 
 ### Propuestas y selección
 Durante la fase de planificación entre reuniones, cada jugador puede proponer resoluciones pagando **2 puntos de Influencia Política** por propuesta. La propuesta se rechaza si no puede pagar el costo. En el primer ciclo se reciben propuestas durante las rondas 1 a 4; después de cada reunión se abre el periodo de propuestas para la siguiente.
 
+Cada tipo de resolución sólo puede proponerse una vez por reunión de la OI. Si un país ya propuso, por ejemplo, el límite de armamento, ningún otro país puede volver a proponer ese mismo tipo para esa reunión; la restricción se reinicia al abrir el siguiente periodo de propuestas.
+
 En cada reunión se seleccionan como máximo **3 propuestas**, priorizando las multas si se incorporan en el futuro y, dentro de cada prioridad, el orden de llegada. Las propuestas no seleccionadas se descartan al cerrar la selección. Por el momento, las **Multas del Banco Mundial no están implementadas ni se pueden proponer**.
 
 ### Voto Ponderado por Influencia
@@ -151,7 +157,8 @@ Los países controlados por bots votan automáticamente: si una resolución los 
 
 ### Resoluciones Oficiales de la OI
 - **Multas del Banco Mundial:** Resolución oficial reservada para una versión futura; no se puede proponer ni aprobar actualmente.
-- **Reclutamiento:** no existe un límite global de tropas; solo limitan los recursos disponibles para pagar cada reclutamiento.
+- **Reclutamiento:** solo se pueden reclutar tropas en ciudades o capitales propias.
+  Se pagan los recursos de cada unidad y se respetan los límites de armamento y las ZDM.
 - **Límites de Industria:** Fija un máximo de **10 fábricas por país**. Una vez aprobada, permanece activa hasta el final de la partida.
 - **Zonas Desmilitarizadas (ZDM):** El proponente elige una casilla central al redactar su propuesta. La ZDM cubre esa casilla y las casillas situadas hasta dos posiciones en cada dirección (un área de 5×5, 25 casillas en el interior del mapa; se recorta en los bordes). No se pueden reclutar, estacionar ni mover tropas hacia, desde o a través de una ZDM. Al aprobarse, las tropas que ya están dentro se desplazan a la casilla propia válida más cercana. La zona permanece activa hasta la siguiente reunión de la OI.
 - **Subsidios Condicionados:** Entrega **25 de Plata** al país con menor GDI en el momento de aplicar la resolución. Crea un **Pacto de No Agresión (PNA) de 5 rondas** entre el beneficiario y cada país que votó a favor. Una ruptura por ataque cancela el pacto y sanciona al atacante.
@@ -190,6 +197,8 @@ La interfaz del mapa de PAX se rige por un lenguaje de diseño estrictamente bid
 
 ### Composición Inicial y Cambio de Capital
 - **Composición Inicial:** Cada país comienza la partida con una Capital principal. Además, su territorio asignado o adyacente puede contener otra(s) ciudad(es) o zonas de recursos desde el inicio.
+- **Pueblos neutrales:** El mapa puede generar pueblos (`PUE`) en tierra neutral. Cada pueblo comienza con 20 habitantes y 1 de defensa; al ocuparlo, el conquistador conserva esos valores. La generación garantiza opciones iniciales comparables: cada país dispone de un pueblo y una materia prima dentro de un radio similar a su capital, sin eliminar la variación central del mapa. Entre pueblos y ciudades/capitales se dejan al menos dos casillas libres.
+- **Conquista de capital:** Al conquistar una capital, esta se convierte en ciudad, el país derrotado queda eliminado y todas sus casillas pasan al vencedor.
 - **Cambio de Capital:** Un participante puede reubicar su Capital hacia otra ciudad bajo su control ejecutando la acción estratégica *Trasladar Capital* (**Costo:** 10$ + 20 Materiales y 1 slot de acción). Al trasladarse, la nueva ciudad pasa a tener **4 de defensa base** y la anterior conserva **2 de defensa base**.
 
 ---
@@ -200,17 +209,18 @@ Cada casilla del tablero está codificada mediante un color de fondo según su c
 
 | Color de Fondo | Sigla | Tipo de Casilla | Descripción y Función Táctica |
 | :--- | :---: | :--- | :--- |
-| **Gris Urbano (`#718096`)** | `CAP` | Capital | Sede política inexpugnable del jugador. Centro de mando principal. |
+| **Gris Urbano (`#718096`)** | `CAP` | Capital | Sede política principal del jugador; puede ser conquistada mediante un ataque superior a su defensa. |
 | **Gris Urbano (`#718096`)** | `CIU` | Ciudad | Núcleo de concentración demográfica y recaudación fiscal de Plata. |
 | **Café Terrestre (`#8D5B4C`)** | `TR` | Tierra | Terreno llano estándar para despliegue y maniobra de tropas terrestres. |
 | **Café Terrestre (`#8D5B4C`)** | `MPT` | Materia Prima Terrestre | Yacimiento mineral con descuento para construcción de Fábrica Terrestre. |
-| **Café Terrestre (`#8D5B4C`)** | `FT` | Fábrica Terrestre | Instalación industrial de alta producción pasiva de Materiales (+2/turno). |
+| **Café Pueblo (`#9A8065`)** | `PUE` | Pueblo | Asentamiento neutral con 20 habitantes y 1 de defensa. |
+| **Café Terrestre (`#8D5B4C`)** | `FT` | Fábrica Terrestre | Instalación industrial de alta producción pasiva de Materiales (+5/turno). |
 | **Azul Marítimo (`#3182CE`)** | `AG` | Agua | Superficie acuática para navegación, transporte de tropas y flotas. |
 | **Azul Marítimo (`#3182CE`)** | `MPA` | Materia Prima Acuática | Yacimiento marino con descuento para plataformas o fábricas navales. |
-| **Azul Marítimo (`#3182CE`)** | `FA` | Fábrica Acuática | Plataforma industrial de extracción y rendimiento marítimo (+2/turno). |
+| **Azul Marítimo (`#3182CE`)** | `FA` | Fábrica Acuática | Plataforma industrial de extracción y rendimiento marítimo (+5/turno). |
 
 ### Anatomía Posicional de la Casilla
-En el mapa, cada casilla conserva el color de terreno y su icono. La información visual se limita a:
+En el mapa, cada casilla conserva el color de terreno y su icono. Las fábricas no aparecen construidas al inicio: deben levantarse durante la partida. La información visual se limita a:
 
 - **Esquina superior izquierda:** Defensa (`D`) cuando la casilla tiene defensa.
 - **Centro:** Icono del terreno o estructura.

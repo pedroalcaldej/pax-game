@@ -70,12 +70,15 @@ export function extractActionFeatures(state, player, action, context = createAct
   const enemyIds = target ? [...state.players.keys()].filter((id) => id !== player.id
     && state.getTroopsForPlayerOnTile(target, id) > 0) : [];
   const visibleDefenders = enemyIds.reduce((sum, id) => sum + state.getTroopsForPlayerOnTile(target, id), 0);
+  const targetDefense = target?.ownerId != null && target.ownerId !== player.id
+    ? number(target.defense) : 0;
   const targetKey = target ? location(target.x, target.y) : '';
   const ownTarget = target ? Math.max(0, state.getTroopsForPlayerOnTile(target, player.id)
     - (context.departing.get(targetKey) || 0)) + (context.arriving.get(targetKey) || 0) : 0;
   const landArrival = movingTroops && LAND_TERRAIN.has(target?.type);
   const arrivingForce = landArrival ? troopsSent + ownTarget : 0;
-  const canCaptureIfDefendersStay = landArrival && arrivingForce > visibleDefenders && target.ownerId !== player.id;
+  const defensiveStrength = visibleDefenders + targetDefense;
+  const canCaptureIfDefendersStay = landArrival && arrivingForce > defensiveStrength && target.ownerId !== player.id;
 
   let silverCost = state.getSilverCost(action);
   let materialCost = state.getMaterialCost(action);
@@ -109,11 +112,11 @@ export function extractActionFeatures(state, player, action, context = createAct
   const sourceShips = source ? state.getShipsForPlayerOnTile(source, player.id) : 0;
   return {
     version: 1,
-    troopsSent, visibleDefenders, ownTroopsAtTarget: ownTarget,
-    forceRatio: visibleDefenders > 0 && landArrival ? arrivingForce / visibleDefenders : 0,
-    forceAdvantage: landArrival ? arrivingForce - visibleDefenders : 0,
-    forceSurvivorsIfDefendersStay: landArrival ? Math.max(0, arrivingForce - visibleDefenders) : 0,
-    forceLossesIfDefendersStay: landArrival ? Math.min(arrivingForce, visibleDefenders) : 0,
+    troopsSent, visibleDefenders, targetDefense, defensiveStrength, ownTroopsAtTarget: ownTarget,
+    forceRatio: defensiveStrength > 0 && landArrival ? arrivingForce / defensiveStrength : 0,
+    forceAdvantage: landArrival ? arrivingForce - defensiveStrength : 0,
+    forceSurvivorsIfDefendersStay: landArrival ? Math.max(0, arrivingForce - defensiveStrength) : 0,
+    forceLossesIfDefendersStay: landArrival ? Math.min(arrivingForce, defensiveStrength) : 0,
     sourceIsCapital: Number(source?.type === 'CAP'), sourceIsCity: Number(urban(source)),
     sourceIsFactory: Number(source?.building === 'FACTORY'), sourcePopulation: number(source?.population),
     sourceTroopsBefore: sourceStock, sourceTroopsReserved: reservedTroops, sourceTroopsAfter,

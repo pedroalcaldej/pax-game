@@ -31,6 +31,7 @@ function inBounds(x, y, width, height) {
 function buildingForType(type) {
   if (type === TERRAIN_TYPES.CAP) return 'CAPITAL';
   if (type === TERRAIN_TYPES.CIU) return 'CITY';
+  if (type === TERRAIN_TYPES.PUE) return 'VILLAGE';
   if (type === TERRAIN_TYPES.FT || type === TERRAIN_TYPES.FA) return 'FACTORY';
   return null;
 }
@@ -372,35 +373,95 @@ export function generateInitialGrid(seed = Date.now(), dimensions = {}) {
     const mpt = placeNear(grid, seedPos, rng, nationId, portTile);
     if (mpt) applyType(mpt, TERRAIN_TYPES.MPT);
 
-    if (portTile) applyType(portTile, TERRAIN_TYPES.FT);
   });
 
-  const scatter = (baseType, nextType, chance) => {
+  const scatter = (baseType, nextType, chance, predicate = () => true, extra = {}) => {
     for (const row of grid) {
       for (const tile of row) {
-        if (tile.type === baseType && rng() < chance) {
-          applyType(tile, nextType);
+        if (tile.type !== baseType || !predicate(tile)) continue;
+        const centerX = (width - 1) / 2;
+        const centerY = (height - 1) / 2;
+        const radiusX = Math.max(1, width / 2);
+        const radiusY = Math.max(1, height / 2);
+        const normalizedDistance = Math.min(1, Math.sqrt(
+          ((tile.x - centerX) / radiusX) ** 2
+          + ((tile.y - centerY) / radiusY) ** 2
+        ) / Math.sqrt(2));
+        // Full probability at the center, only 5% at the outer edge.
+        const centralWeight = 0.05 + 0.95 * ((1 - normalizedDistance) ** 2);
+        if (rng() < chance * centralWeight) {
+          applyType(tile, nextType, extra);
         }
       }
     }
   };
 
-  scatter(TERRAIN_TYPES.TR, TERRAIN_TYPES.MPT, 0.08);
-  scatter(TERRAIN_TYPES.TR, TERRAIN_TYPES.FT, 0.05);
-  scatter(TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA, 0.08);
-  scatter(TERRAIN_TYPES.AG, TERRAIN_TYPES.FA, 0.04);
+  const isVillagePlacementAllowed = (tile) => {
+    if (tile.type !== TERRAIN_TYPES.TR || tile.ownerId != null) return false;
+    for (let dy = -2; dy <= 2; dy += 1) {
+      for (let dx = -2; dx <= 2; dx += 1) {
+        if (dx === 0 && dy === 0) continue;
+        const neighbor = grid[tile.y + dy]?.[tile.x + dx];
+        if (neighbor && [TERRAIN_TYPES.PUE, TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU].includes(neighbor.type)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  scatter(TERRAIN_TYPES.TR, TERRAIN_TYPES.MPT, 0.28);
+  scatter(TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA, 0.28);
+  scatter(TERRAIN_TYPES.TR, TERRAIN_TYPES.PUE, 0.18,
+    isVillagePlacementAllowed,
+    { population: 20, defense: 1 });
+
+  // Keep the opening options comparable: random central placement remains,
+  // but no country should start substantially farther from the first village
+  // or resource than the others. Existing starting MPTs count too.
+  const distanceFrom = (tile, seedPos) => Math.hypot(tile.x - seedPos.x, tile.y - seedPos.y);
+  const ensureNearbyFeature = (type, baseType, extra, maxDistance, predicate = () => true) => {
+    for (const seedPos of seeds) {
+      const nearby = grid.flat()
+        .filter((tile) => tile.type === type)
+        .some((tile) => distanceFrom(tile, seedPos) <= maxDistance);
+      if (nearby) continue;
+      const candidates = grid.flat()
+        .filter((tile) => tile.type === baseType && predicate(tile))
+        .sort((left, right) => distanceFrom(left, seedPos) - distanceFrom(right, seedPos));
+      const closest = candidates[0];
+      if (closest) applyType(closest, type, extra);
+    }
+  };
+
+  const balanceRadius = Math.max(4, Math.floor(Math.min(width, height) * 0.3));
+  ensureNearbyFeature(TERRAIN_TYPES.MPT, TERRAIN_TYPES.TR, {}, balanceRadius);
+  ensureNearbyFeature(TERRAIN_TYPES.MPA, TERRAIN_TYPES.AG, {}, balanceRadius);
+  ensureNearbyFeature(
+    TERRAIN_TYPES.PUE,
+    TERRAIN_TYPES.TR,
+    { population: 20, defense: 1 },
+    balanceRadius,
+    isVillagePlacementAllowed
+  );
 
   const ensureType = (type, predicate) => {
     const exists = grid.some((row) => row.some((tile) => tile.type === type));
     if (exists) return;
-    const tile = randomLandTile(grid, rng, predicate);
+    const candidates = grid.flat().filter(predicate);
+    const tile = candidates.length
+      ? candidates.sort((left, right) => {
+        const centerX = (grid[0].length - 1) / 2;
+        const centerY = (grid.length - 1) / 2;
+        const distance = (entry) => ((entry.x - centerX) ** 2) + ((entry.y - centerY) ** 2);
+        return distance(left) - distance(right);
+      })[Math.floor(rng() * Math.min(candidates.length, Math.max(1, Math.ceil(candidates.length * 0.35))))]
+      : null;
     if (tile) applyType(tile, type);
   };
 
   ensureType(TERRAIN_TYPES.MPA, (tile) => tile.type === TERRAIN_TYPES.AG);
-  ensureType(TERRAIN_TYPES.FA, (tile) => tile.type === TERRAIN_TYPES.AG);
   ensureType(TERRAIN_TYPES.MPT, (tile) => tile.type === TERRAIN_TYPES.TR);
-  ensureType(TERRAIN_TYPES.FT, (tile) => tile.type === TERRAIN_TYPES.TR);
 
   return grid;
 }

@@ -1,4 +1,4 @@
-import { resolveLandMovements } from './LandMovementResolver.js';
+import { applyCapitalConquest, awardNeutralResourceCapture, resolveLandMovements } from './LandMovementResolver.js';
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
 import { ACTION_SLOT_COUNT, ECONOMY, LAND_TERRAIN, TERRAIN_TYPES, WATER_TERRAIN } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
@@ -15,6 +15,7 @@ export const ActionEngine = {
   performPlayerAction(socketId, action) {
     const player = Array.from(this.players.values()).find((entry) => entry.socketId === socketId);
     if (!player) return { ok: false, message: 'No tienes un país asignado.' };
+    if (player.isEliminated) return { ok: false, message: 'Tu país ha sido eliminado de la partida.' };
     if (!this.gameStarted) return { ok: false, message: 'La partida todavía no ha comenzado.' };
     if (this.currentPhase !== 2) return { ok: false, message: 'Las acciones solo están disponibles en la fase de planificación.' };
     if (!action || action.type !== 'PLAN_ACTION') {
@@ -110,6 +111,7 @@ export const ActionEngine = {
           return { ok: false, message: 'Solo puedes construir una ciudad en tierra vacía.' };
         }
         silverCost = ECONOMY.COSTS.BUILD_CITY_SILVER;
+        materialCost = ECONOMY.COSTS.BUILD_CITY_MATERIALS;
         break;
       case 'BUILD_FACTORY':
         if (![TERRAIN_TYPES.TR, TERRAIN_TYPES.MPT, TERRAIN_TYPES.AG, TERRAIN_TYPES.MPA].includes(tile.type)
@@ -130,13 +132,16 @@ export const ActionEngine = {
         silverCost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA
           ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER
           : ECONOMY.COSTS.BUILD_FACTORY_SILVER;
+        materialCost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA
+          ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_MATERIALS
+          : ECONOMY.COSTS.BUILD_FACTORY_MATERIALS;
         break;
       case 'BUILD_SHIP': {
         const count = action.count ?? 1;
         if (!Number.isInteger(count) || count < 1) {
           return { ok: false, message: 'La cantidad de barcos no es válida.' };
         }
-        if (!this.getShipyardWaterTile(tile, player.id)) {
+        if (!this.getShipyardWaterTile(tile, player.id, action.targetX, action.targetY)) {
           return { ok: false, message: 'Necesitas una fábrica costera propia para construir barcos.' };
         }
         action.count = count;
@@ -150,8 +155,8 @@ export const ActionEngine = {
           if (!Number.isInteger(count) || count < 1) {
             return { ok: false, message: 'La cantidad de tropas a reclutar no es válida.' };
           }
-          if (!LAND_TERRAIN.has(tile.type)) {
-            return { ok: false, message: 'Las tropas solo pueden reclutarse en casillas terrestres.' };
+          if (![TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU].includes(tile.type)) {
+            return { ok: false, message: 'Las tropas solo pueden reclutarse en ciudades o capitales propias.' };
           }
           if (InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)) {
             return { ok: false, message: 'No puedes reclutar tropas dentro de una Zona Desmilitarizada.' };
@@ -354,6 +359,15 @@ export const ActionEngine = {
         ? ECONOMY.COSTS.BUILD_SHIP_MATERIALS * (action.count ?? 1)
       : action.type === 'MOVE_CAPITAL'
         ? ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS
+      : action.type === 'BUILD_CITY'
+        ? ECONOMY.COSTS.BUILD_CITY_MATERIALS
+      : action.type === 'BUILD_FACTORY'
+        ? (() => {
+          const tile = this.grid[action.y]?.[action.x];
+          return tile?.type === TERRAIN_TYPES.MPT || tile?.type === TERRAIN_TYPES.MPA
+            ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_MATERIALS
+            : ECONOMY.COSTS.BUILD_FACTORY_MATERIALS;
+        })()
         : 0;
   },
 
@@ -385,19 +399,24 @@ export const ActionEngine = {
     }
   },
 
-  getShipyardWaterTile(tile, playerId) {
-    if (!tile || tile.building !== 'FACTORY') return null;
-    if (tile.type === TERRAIN_TYPES.FA && tile.ownerId === playerId) return tile;
-    if (tile.type !== TERRAIN_TYPES.FT || tile.ownerId !== playerId) return null;
-    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
-      const waterTile = this.grid[tile.y + dy]?.[tile.x + dx];
-      if (!waterTile || !WATER_TERRAIN.has(waterTile.type)) continue;
-      if (waterTile.ownerId != null && waterTile.ownerId !== playerId) continue;
-      const hostileShips = Object.entries(waterTile.shipsByPlayer || {})
-        .some(([ownerId, count]) => ownerId !== playerId && count > 0);
-      if (!hostileShips) return waterTile;
+  getShipyardWaterTiles(tile, playerId) {
+    if (!tile || tile.building !== 'FACTORY') return [];
+    if (tile.type === TERRAIN_TYPES.FA && tile.ownerId === playerId) return [tile];
+    if (tile.type !== TERRAIN_TYPES.FT || tile.ownerId !== playerId) return [];
+    return [[0, -1], [1, 0], [0, 1], [-1, 0]]
+      .map(([dx, dy]) => this.grid[tile.y + dy]?.[tile.x + dx])
+      .filter((waterTile) => waterTile && WATER_TERRAIN.has(waterTile.type))
+      .filter((waterTile) => waterTile.ownerId == null || waterTile.ownerId === playerId)
+      .filter((waterTile) => !Object.entries(waterTile.shipsByPlayer || {})
+        .some(([ownerId, count]) => ownerId !== playerId && count > 0));
+  },
+
+  getShipyardWaterTile(tile, playerId, targetX = null, targetY = null) {
+    const candidates = this.getShipyardWaterTiles(tile, playerId);
+    if (Number.isInteger(targetX) && Number.isInteger(targetY)) {
+      return candidates.find((candidate) => candidate.x === targetX && candidate.y === targetY) || null;
     }
-    return null;
+    return candidates[0] || null;
   },
 
   resolvePlannedActions() {
@@ -407,9 +426,23 @@ export const ActionEngine = {
         if (action?.type !== 'MOVE_TROOPS') return [];
         const source = this.grid[action.y]?.[action.x];
         const target = this.grid[action.targetY]?.[action.targetX];
-        return WATER_TERRAIN.has(source?.type) || WATER_TERRAIN.has(target?.type)
-          ? [] : [{ player, action, slot }];
+        if (WATER_TERRAIN.has(target?.type)) return [];
+        return [{
+          player,
+          action,
+          slot,
+          movementType: WATER_TERRAIN.has(source?.type) ? 'disembark' : 'land'
+        }];
       }));
+    const disembarkOrders = [...this.players.values()].flatMap((player) =>
+      (player.plannedActions || []).flatMap((action, slot) => {
+        if (action?.type !== 'DISEMBARK_TROOPS') return [];
+        const source = this.grid[action.x]?.[action.y];
+        const target = this.grid[action.targetX]?.[action.targetY];
+        return source && target && WATER_TERRAIN.has(source.type) && LAND_TERRAIN.has(target.type)
+          ? [{ player, action, slot, movementType: 'disembark' }] : [];
+      }));
+    landOrders.push(...disembarkOrders);
     const landResults = new Map([...resolveLandMovements(this, landOrders)]
       .map(([order, result]) => [`${order.player.id}:${order.slot}`, result]));
     for (const player of this.players.values()) {
@@ -427,7 +460,7 @@ export const ActionEngine = {
           result = destination && WATER_TERRAIN.has(destination.type)
             ? this.resolveEmbarkTroops(player, action)
             : source && WATER_TERRAIN.has(source.type)
-              ? this.resolveDisembarkTroops(player, action)
+            ? this.resolveDisembarkTroops(player, action)
               : this.resolveTroopMovement(player, action);
         } else if (action.type === 'MOVE_SHIPS') {
           result = this.resolveShipMovement(player, action);
@@ -486,6 +519,7 @@ export const ActionEngine = {
     const source = this.grid[action.y]?.[action.x];
     const destination = this.grid[action.targetY]?.[action.targetX];
     const ships = this.getShipsForPlayerOnTile(source, player.id);
+    const ownerBefore = destination?.ownerId ?? null;
     if (
       !source || !destination || !WATER_TERRAIN.has(source.type) || !WATER_TERRAIN.has(destination.type)
       || !Number.isInteger(action.ships) || action.ships < 1 || ships < action.ships
@@ -559,6 +593,7 @@ export const ActionEngine = {
     }
     destination.ownerId = player.id;
     destination.nationId = player.nationId;
+    awardNeutralResourceCapture(this, player.id, destination, ownerBefore);
     return {
       ok: true,
       message: defendingShips > 0
@@ -620,9 +655,12 @@ export const ActionEngine = {
       this.registerMilitaryConflict(player, defenderId);
       this.breakNonAggressionPact(player, defenderId);
       const defenderTroops = this.getTroopsForPlayerOnTile(destination, defenderId);
-      const attackerWins = action.troops > defenderTroops;
+      const fixedDefense = Math.max(0, Number(destination.defense) || 0);
+      const defensiveStrength = defenderTroops + fixedDefense;
+      const attackerWins = action.troops > defensiveStrength;
       if (!attackerWins) {
-        const attackerSurvivors = Math.floor(action.troops / 2);
+        const attackerSurvivors = fixedDefense >= action.troops
+          ? 0 : Math.floor(action.troops / 2);
         const losses = action.troops - attackerSurvivors;
         source.transportedTroopsByPlayer[player.id] -= losses;
         if (source.transportedTroopsByPlayer[player.id] <= 0) delete source.transportedTroopsByPlayer[player.id];
@@ -636,6 +674,7 @@ export const ActionEngine = {
             defenderId,
             attackerTroops: action.troops,
             defenderTroops,
+            defense: fixedDefense,
             winnerId: defenderId,
             attackerSurvivors,
             defenderSurvivors: defenderTroops
@@ -655,7 +694,9 @@ export const ActionEngine = {
       }
       destination.ownerId = player.id;
       destination.nationId = player.nationId;
-      destination.troops += action.troops;
+      applyCapitalConquest(this, player.id, defenderId, destination);
+      const attackerSurvivors = action.troops - defensiveStrength;
+      destination.troops += attackerSurvivors;
       return {
         ok: true,
         message: defenderSurvivors
@@ -667,8 +708,9 @@ export const ActionEngine = {
           defenderId,
           attackerTroops: action.troops,
           defenderTroops,
+          defense: fixedDefense,
           winnerId: player.id,
-          attackerSurvivors: action.troops,
+          attackerSurvivors,
           defenderSurvivors
         }
       };
@@ -714,9 +756,13 @@ export const ActionEngine = {
           return { ok: false, message: 'Solo puedes construir una ciudad en una casilla de tierra vacía.' };
         }
         if (resources.SILVER < ECONOMY.COSTS.BUILD_CITY_SILVER) {
-          return { ok: false, message: `Necesitas ${ECONOMY.COSTS.BUILD_CITY_SILVER} de plata.` };
+          return { ok: false, message: `Necesitas ${ECONOMY.COSTS.BUILD_CITY_SILVER} de plata y ${ECONOMY.COSTS.BUILD_CITY_MATERIALS} materiales.` };
+        }
+        if (resources.MATERIALS < ECONOMY.COSTS.BUILD_CITY_MATERIALS) {
+          return { ok: false, message: `Necesitas ${ECONOMY.COSTS.BUILD_CITY_SILVER} de plata y ${ECONOMY.COSTS.BUILD_CITY_MATERIALS} materiales.` };
         }
         resources.SILVER -= ECONOMY.COSTS.BUILD_CITY_SILVER;
+        resources.MATERIALS -= ECONOMY.COSTS.BUILD_CITY_MATERIALS;
         tile.type = TERRAIN_TYPES.CIU;
         tile.building = 'CITY';
         tile.population = ECONOMY.POPULATION.NEW_CITY;
@@ -738,8 +784,14 @@ export const ActionEngine = {
         const cost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA
           ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER
           : ECONOMY.COSTS.BUILD_FACTORY_SILVER;
-        if (resources.SILVER < cost) return { ok: false, message: `Necesitas ${cost} de plata.` };
+        const materialCost = tile.type === TERRAIN_TYPES.MPT || tile.type === TERRAIN_TYPES.MPA
+          ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_MATERIALS
+          : ECONOMY.COSTS.BUILD_FACTORY_MATERIALS;
+        if (resources.SILVER < cost || resources.MATERIALS < materialCost) {
+          return { ok: false, message: `Necesitas ${cost} de plata y ${materialCost} materiales.` };
+        }
         resources.SILVER -= cost;
+        resources.MATERIALS -= materialCost;
         tile.type = isWater ? TERRAIN_TYPES.FA : TERRAIN_TYPES.FT;
         tile.building = 'FACTORY';
         tile.factoriesCount = 1;
@@ -747,7 +799,7 @@ export const ActionEngine = {
       }
       case 'BUILD_SHIP': {
         const count = action.count ?? 1;
-        const port = this.getShipyardWaterTile(tile, player.id);
+        const port = this.getShipyardWaterTile(tile, player.id, action.targetX, action.targetY);
         const silverCost = ECONOMY.COSTS.BUILD_SHIP_SILVER * count;
         const materialCost = ECONOMY.COSTS.BUILD_SHIP_MATERIALS * count;
         if (!port) return { ok: false, message: 'La fábrica ya no tiene acceso a un puerto seguro.' };
@@ -766,8 +818,8 @@ export const ActionEngine = {
       }
       case 'RECRUIT_TROOP': {
         const count = action.count ?? 1;
-        if (!LAND_TERRAIN.has(tile.type)) {
-          return { ok: false, message: 'Las tropas solo pueden reclutarse en casillas terrestres.' };
+        if (![TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU].includes(tile.type)) {
+          return { ok: false, message: 'Las tropas solo pueden reclutarse en ciudades o capitales propias.' };
         }
         const silverCost = ECONOMY.COSTS.RECRUIT_TROOP_SILVER * count;
         const materialCost = ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * count;

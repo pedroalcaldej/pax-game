@@ -39,15 +39,15 @@ export class LobbyScreen {
                 <div class="pax-single-settings" id="single-settings" hidden>
                   <label>Preset
                     <select id="single-settings-preset">
-                      <option value="quick">Rápida</option><option value="normal" selected>Normal</option><option value="strategic">Estratégica</option>
+                      <option value="short" selected>Corto</option><option value="long">Largo</option><option value="custom">Personalizado</option>
                     </select>
                   </label>
                   <div class="pax-settings-grid">
-                    <label>Rondas <input id="single-settings-rounds" type="number" min="5" max="100" value="30"></label>
-                    <label>Planificación (s) <input id="single-settings-planning" type="number" min="15" max="300" value="60"></label>
+                    <label>Rondas <input id="single-settings-rounds" type="number" min="5" max="100" value="15"></label>
+                    <label>Planificación (s) <input id="single-settings-planning" type="number" min="15" max="300" value="30"></label>
                     <label>Acciones <input id="single-settings-actions" type="number" min="1" max="6" value="3"></label>
                     <label>Frecuencia OI <input id="single-settings-oi-frequency" type="number" min="0" max="20" value="5"></label>
-                    <label>Tamaño del mapa <input id="single-settings-map-size" type="number" min="12" max="50" value="30"></label>
+                    <label>Tamaño del mapa <input id="single-settings-map-size" type="number" min="12" max="50" value="20"></label>
                   </div>
                   <label>Semilla <input id="single-settings-seed" maxlength="40" placeholder="Aleatoria"></label>
                 </div>
@@ -85,9 +85,9 @@ export class LobbyScreen {
               <h2>Configuración de partida</h2>
               <label>Preset
                 <select id="lobby-settings-preset">
-                  <option value="quick">Rápida</option>
-                  <option value="normal">Normal</option>
-                  <option value="strategic">Estratégica</option>
+                  <option value="short" selected>Corto</option>
+                  <option value="long">Largo</option>
+                  <option value="custom">Personalizado</option>
                 </select>
               </label>
               <div class="pax-settings-grid">
@@ -203,13 +203,18 @@ export class LobbyScreen {
       const element = this.query(`#${id}`);
       if (element) element.value = value;
     };
-    setValue(scope === 'single' ? 'single-settings-preset' : 'lobby-settings-preset', settings.preset || 'normal');
+    setValue(scope === 'single' ? 'single-settings-preset' : 'lobby-settings-preset', settings.preset || 'short');
     setValue(`${prefix}-rounds`, settings.maxRounds);
     setValue(`${prefix}-planning`, settings.planningDuration);
     setValue(`${prefix}-actions`, settings.actionSlotCount);
     setValue(`${prefix}-oi-frequency`, settings.oiFrequency);
     setValue(`${prefix}-map-size`, settings.mapSize);
     setValue(`${prefix}-seed`, settings.mapSeed || '');
+    const editable = settings.preset === 'custom';
+    for (const suffix of ['rounds', 'planning', 'actions', 'oi-frequency', 'map-size', 'seed']) {
+      const field = this.query(`#${prefix}-${suffix}`);
+      if (field) field.disabled = !editable;
+    }
     const summary = this.query('#lobby-settings-summary');
     if (summary) {
       summary.textContent =

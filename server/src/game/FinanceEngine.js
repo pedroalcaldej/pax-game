@@ -1,6 +1,14 @@
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
 import { ECONOMY, GAME_PHASES, TREATY_TYPES } from '../../../shared/Constants.js';
 import { BANK_TARIFF_RATE, TREATY_DURATION_ROUNDS, VALID_TRADE_RESOURCES } from './GameStateUtils.js';
+import { calculateCountryTrade } from '../../../shared/EconomyFormulas.js';
+
+function quoteTrade(state, proposerId, recipientId, offer) {
+  return calculateCountryTrade(offer, {
+    atWar: state.isPlayersAtWar(proposerId, recipientId),
+    freeTrade: state.areTreatyPartners(proposerId, recipientId, TREATY_TYPES.FREE_TRADE)
+  });
+}
 
 export const FinanceEngine = {
   performFinancialAction(socketId, action = {}) {
@@ -30,6 +38,9 @@ export const FinanceEngine = {
       const { resource, amount } = action;
       if (!recipient || recipient.id === player.id) {
         return { ok: false, message: 'Selecciona otro país como destinatario.' };
+      }
+      if (this.isPlayersAtWar(player.id, recipient.id)) {
+        return { ok: false, message: 'Los países en conflicto no pueden transferirse recursos.' };
       }
       if (!VALID_TRADE_RESOURCES.has(resource)) {
         return { ok: false, message: 'Solo puedes transferir Plata o Materiales.' };
@@ -93,39 +104,10 @@ export const FinanceEngine = {
       if (!recipient || recipient.id === player.id) {
         return { ok: false, message: 'Selecciona otro país de la partida.' };
       }
-      if (
-        !VALID_TRADE_RESOURCES.has(offerResource)
-        || !VALID_TRADE_RESOURCES.has(requestResource)
-        || offerResource === requestResource
-      ) {
-        return { ok: false, message: 'El intercambio debe combinar Plata y Materiales.' };
-      }
-      if (
-        !Number.isSafeInteger(offerAmount) || offerAmount < 1
-        || !Number.isSafeInteger(requestAmount) || requestAmount < 1
-      ) {
-        return { ok: false, message: 'Indica cantidades enteras mayores que cero.' };
-      }
-      if (
-        player.resources[offerResource] < offerAmount
-        || recipient.resources[requestResource] < requestAmount
-      ) {
+      const terms = quoteTrade(this, player.id, recipient.id, action);
+      if (!terms.ok) return terms;
+      if (player.resources[offerResource] < offerAmount || recipient.resources[requestResource] < requestAmount) {
         return { ok: false, message: 'Uno de los países no tiene los recursos ofrecidos.' };
-      }
-
-      const tariffExempt = this.areTreatyPartners(
-        player.id,
-        recipient.id,
-        TREATY_TYPES.FREE_TRADE
-      ) && !this.isPlayersAtWar(player.id, recipient.id);
-      if (tariffExempt && offerAmount !== requestAmount) {
-        return { ok: false, message: 'Con un TLC activo, el intercambio debe ser 1:1.' };
-      }
-      if (!tariffExempt && (
-        offerAmount - Math.ceil(offerAmount * BANK_TARIFF_RATE) < 1
-        || requestAmount - Math.ceil(requestAmount * BANK_TARIFF_RATE) < 1
-      )) {
-        return { ok: false, message: 'Sin TLC, cada cantidad debe ser suficiente para que el arancel no consuma todo el recurso.' };
       }
 
       const offer = {
@@ -142,18 +124,21 @@ export const FinanceEngine = {
       };
       this.tradeOffers.push(offer);
       this.recordEvent(
-        `${player.name} propuso a ${recipient.name} intercambiar ${offerAmount} ${offerResource === 'SILVER' ? 'de Plata' : 'Materiales'} por ${requestAmount} ${requestResource === 'SILVER' ? 'de Plata' : 'Materiales'}.`
+        `${player.name} propuso a ${recipient.name} intercambiar ${offerAmount} ${offerResource === 'SILVER' ? 'de Plata' : 'Materiales'} por ${requestAmount} ${requestResource === 'SILVER' ? 'de Plata' : 'Materiales'}.`,
+        {
+          category: 'trade-offer',
+          offerId: offer.id,
+          proposerId: player.id,
+          recipientId: recipient.id
+        }
       );
       if (recipient.isBot) {
-        const netReceived = offerAmount - (tariffExempt ? 0 : Math.ceil(offerAmount * BANK_TARIFF_RATE));
-        const value = (resource, amount) => amount * (resource === 'MATERIALS'
-          ? (ECONOMY.COSTS.MARKET_BUY_MATERIAL_SILVER + ECONOMY.COSTS.MARKET_SELL_MATERIAL_SILVER) / 2 : 1);
-        const accepted = value(offerResource, netReceived) >= value(requestResource, requestAmount);
+        // Legal fixed-rate trades give each side one unit net per unit exchanged.
         const result = this.performFinancialAction(recipient.id, {
-          type: 'RESPOND_TO_TRADE', playerId: recipient.id, offerId: offer.id, accepted
+          type: 'RESPOND_TO_TRADE', playerId: recipient.id, offerId: offer.id, accepted: true
         });
-        return { ...result, accepted, message: result.ok
-          ? `${recipient.name} ${accepted ? 'aceptó el intercambio; operación completada' : 'rechazó el intercambio: no le resulta conveniente'}.`
+        return { ...result, accepted: result.ok, message: result.ok
+          ? `${recipient.name} aceptó el intercambio. ${result.message}`
           : result.message };
       }
       return { ok: true, message: `Propuesta de intercambio enviada a ${recipient.name}.` };
@@ -183,21 +168,9 @@ export const FinanceEngine = {
         return { ok: false, message: 'Uno de los países ya no tiene los recursos necesarios; la propuesta sigue pendiente.' };
       }
 
-      const tariffExempt = this.areTreatyPartners(
-        proposer.id,
-        player.id,
-        TREATY_TYPES.FREE_TRADE
-      ) && !this.isPlayersAtWar(proposer.id, player.id);
-      if (tariffExempt && offer.offerAmount !== offer.requestAmount) {
-        return { ok: false, message: 'Con un TLC activo, el intercambio debe ser 1:1.' };
-      }
-      const proposerTariff = tariffExempt ? 0 : Math.ceil(offer.offerAmount * BANK_TARIFF_RATE);
-      const recipientTariff = tariffExempt ? 0 : Math.ceil(offer.requestAmount * BANK_TARIFF_RATE);
-      const receivedByRecipient = offer.offerAmount - proposerTariff;
-      const receivedByProposer = offer.requestAmount - recipientTariff;
-      if (receivedByRecipient < 1 || receivedByProposer < 1) {
-        return { ok: false, message: 'Las cantidades son demasiado pequeñas para cubrir el arancel; la propuesta sigue pendiente.' };
-      }
+      const terms = quoteTrade(this, proposer.id, player.id, offer);
+      if (!terms.ok) return terms;
+      const { freeTrade, proposerTariff, recipientTariff, receivedByRecipient, receivedByProposer } = terms;
 
       proposer.resources[offer.offerResource] -= offer.offerAmount;
       player.resources[offer.requestResource] -= offer.requestAmount;
@@ -207,13 +180,13 @@ export const FinanceEngine = {
       this.bankFund[offer.requestResource] += recipientTariff;
       this.tradeOffers.splice(offerIndex, 1);
       this.recordEvent(
-        `${player.name} aceptó el intercambio de ${proposer.name}; ${tariffExempt ? 'el TLC permitió el cambio 1:1 sin aranceles' : `el Banco Mundial recaudó ${proposerTariff} ${offer.offerResource} y ${recipientTariff} ${offer.requestResource} de arancel`}.`
+        `${player.name} aceptó el intercambio de ${proposer.name}; ${freeTrade ? 'el TLC permitió el cambio 1:1 sin aranceles' : `el cambio fue 2 de Plata por 1 Material y el Banco Mundial recibió ${terms.silverTariff} de Plata`}.`
       );
       return {
         ok: true,
-        message: tariffExempt
+        message: freeTrade
           ? `Intercambio completado 1:1 con ${proposer.name}; no se cobraron aranceles.`
-          : `Intercambio completado con ${proposer.name}; se aplicaron los aranceles de importación.`
+          : `Intercambio completado con ${proposer.name}; el Banco Mundial recibió ${terms.silverTariff} de Plata.`
       };
     }
 

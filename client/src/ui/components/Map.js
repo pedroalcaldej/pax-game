@@ -12,6 +12,7 @@ import {
 import { generateInitialGrid } from '../../../../shared/MapGenerator.js';
 
 const GRID_BORDER_WIDTH = 1.5;
+const TERRITORY_TINT_ALPHA = 0.14;
 
 export class Map {
   /**
@@ -338,6 +339,17 @@ export class Map {
         this.ctx.fillStyle = this.getTerrainColor(type);
         this.ctx.fillRect(posX, posY, this.tileSize, this.tileSize);
 
+        // Tint owned territory very lightly with the nation's color while
+        // preserving the underlying land/water terrain color.
+        const nationColor = this.getNationColor(tile);
+        if (nationColor) {
+          this.ctx.save();
+          this.ctx.globalAlpha = TERRITORY_TINT_ALPHA;
+          this.ctx.fillStyle = nationColor;
+          this.ctx.fillRect(posX, posY, this.tileSize, this.tileSize);
+          this.ctx.restore();
+        }
+
         this.drawTileIcon(type, posX, posY);
 
         this.ctx.fillStyle = '#ffffff';
@@ -548,7 +560,7 @@ export class Map {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    if (type === TERRAIN_TYPES.AG || type === TERRAIN_TYPES.MPA) {
+    if (type === TERRAIN_TYPES.AG) {
       for (let line = -1; line <= 1; line++) {
         const y = centerY + line * iconSize * 0.65;
         ctx.beginPath();
@@ -557,6 +569,15 @@ export class Map {
         ctx.quadraticCurveTo(centerX + iconSize / 2, y + iconSize * 0.4, centerX + iconSize, y);
         ctx.stroke();
       }
+    } else if (type === TERRAIN_TYPES.MPT || type === TERRAIN_TYPES.MPA) {
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY - iconSize * 0.8);
+      ctx.lineTo(centerX + iconSize * 0.8, centerY);
+      ctx.lineTo(centerX, centerY + iconSize * 0.8);
+      ctx.lineTo(centerX - iconSize * 0.8, centerY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     } else if (type === TERRAIN_TYPES.CAP || type === TERRAIN_TYPES.CIU
       || type === TERRAIN_TYPES.FT || type === TERRAIN_TYPES.FA) {
       const width = iconSize * 1.8;
@@ -571,6 +592,18 @@ export class Map {
       }
       ctx.fillStyle = this.getTerrainColor(type);
       ctx.fillRect(centerX - iconSize * 0.3, centerY + iconSize * 0.1, iconSize * 0.6, iconSize * 0.9);
+    } else if (type === TERRAIN_TYPES.PUE) {
+      ctx.beginPath();
+      ctx.moveTo(centerX - iconSize, centerY - iconSize * 0.05);
+      ctx.lineTo(centerX, centerY - iconSize * 0.85);
+      ctx.lineTo(centerX + iconSize, centerY - iconSize * 0.05);
+      ctx.lineTo(centerX + iconSize * 0.75, centerY - iconSize * 0.05);
+      ctx.lineTo(centerX + iconSize * 0.75, centerY + iconSize * 0.85);
+      ctx.lineTo(centerX - iconSize * 0.75, centerY + iconSize * 0.85);
+      ctx.lineTo(centerX - iconSize * 0.75, centerY - iconSize * 0.05);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
     } else {
       ctx.beginPath();
       ctx.moveTo(centerX - iconSize, centerY + iconSize * 0.7);

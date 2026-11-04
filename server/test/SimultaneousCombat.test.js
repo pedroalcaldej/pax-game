@@ -14,7 +14,7 @@ function fixture(reverse = false) {
   }
   const tile = (x, y, player, troops) => {
     const result = state.grid[y][x];
-    Object.assign(result, { type: 'TR', ownerId: player?.id ?? null, nationId: player?.nationId ?? null, troops });
+    Object.assign(result, { type: 'TR', ownerId: player?.id ?? null, nationId: player?.nationId ?? null, troops, defense: 0 });
     return result;
   };
   const move = (player, x, y, targetX, targetY, troops, slot = 0) => {
@@ -116,6 +116,64 @@ test('simultaneous ties leave no troops and preserve the previous owner', () => 
   state.resolvePlannedActions();
   assert.equal(target.troops, 0);
   assert.equal(target.ownerId, beta.id);
+});
+
+test('fixed capital defense stops an equal attack without being consumed', () => {
+  const { state, alpha, beta, tile, move } = fixture();
+  const destination = tile(9, 4, beta, 0);
+  destination.type = 'CAP';
+  destination.defense = 4;
+  tile(8, 4, alpha, 4);
+  move(alpha, 8, 4, 9, 4, 4);
+  state.resolvePlannedActions();
+  assert.equal(destination.ownerId, beta.id);
+  assert.equal(destination.troops, 0);
+  assert.equal(destination.defense, 4);
+});
+
+test('five troops overcome four fixed defense with one survivor', () => {
+  const { state, alpha, beta, tile, move } = fixture();
+  const destination = tile(9, 4, beta, 0);
+  destination.type = 'CAP';
+  destination.defense = 4;
+  tile(8, 4, alpha, 5);
+  move(alpha, 8, 4, 9, 4, 5);
+  state.resolvePlannedActions();
+  assert.equal(destination.ownerId, alpha.id);
+  assert.equal(destination.troops, 1);
+  assert.equal(destination.defense, 2);
+});
+
+test('occupying a neutral resource node grants twenty materials', () => {
+  const { state, alpha, tile, move } = fixture();
+  const destination = tile(9, 4, null, 0);
+  destination.type = 'MPT';
+  tile(8, 4, alpha, 1);
+  alpha.resources.MATERIALS = 0;
+  move(alpha, 8, 4, 9, 4, 1);
+  state.resolvePlannedActions();
+  assert.equal(alpha.resources.MATERIALS, 20);
+  assert.equal(state.eventHistory.filter((event) => event.category === 'resource-capture').length, 1);
+});
+
+test('land and disembark arrivals fight simultaneously on a neutral resource', () => {
+  const { state, alpha, beta, tile, move } = fixture();
+  const water = tile(12, 5, null, 0);
+  water.type = 'AG';
+  water.shipsByPlayer = { [alpha.id]: 1 };
+  water.transportedTroopsByPlayer = { [alpha.id]: 5 };
+  const destination = tile(11, 5, null, 0);
+  destination.type = 'MPT';
+  tile(10, 6, beta, 1);
+  move(alpha, 12, 5, 11, 5, 5);
+  move(beta, 10, 6, 11, 5, 1);
+  alpha.resources.MATERIALS = 0;
+  const results = state.resolvePlannedActions();
+  assert.ok(results.every((result) => result.ok));
+  assert.equal(destination.ownerId, alpha.id);
+  assert.equal(destination.troops, 4);
+  assert.equal(alpha.resources.MATERIALS, 20);
+  assert.equal(water.transportedTroopsByPlayer[alpha.id], undefined);
 });
 
 test('crossing armies escape each other and do not fight on the border', () => {

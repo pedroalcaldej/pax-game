@@ -72,7 +72,13 @@ export const DiplomacyEngine = {
     }
 
     this.treatyOffers.push(offer);
-    this.recordEvent(`${proposer.name} propuso ${this.getTreatyName(type)} a ${recipient.name}.`);
+    this.recordEvent(`${proposer.name} propuso ${this.getTreatyName(type)} a ${recipient.name}.`, {
+      category: 'treaty-offer',
+      offerId: offer.id,
+      proposerId: proposer.id,
+      recipientId: recipient.id,
+      treatyType: type
+    });
     return { ok: true, accepted: null, message: `Propuesta de ${this.getTreatyName(type)} enviada a ${recipient.name}.` };
   },
 
@@ -172,7 +178,12 @@ export const DiplomacyEngine = {
     ]) {
       const expired = treaties.filter((treaty) => treaty.expiresAfterRound <= round);
       for (const treaty of expired) {
-        this.recordEvent(`${this.getTreatyName(type)} entre ${playerNames(treaty.playerIds)} expiró.`);
+        this.recordEvent(`${this.getTreatyName(type)} entre ${playerNames(treaty.playerIds)} expiró.`, {
+          category: 'treaty-expired',
+          playerIds: [...treaty.playerIds],
+          treatyType: type,
+          expiresAfterRound: treaty.expiresAfterRound
+        });
       }
       const expiredTreaties = new Set(expired);
       const remaining = treaties.filter((treaty) => !expiredTreaties.has(treaty));

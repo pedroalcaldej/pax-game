@@ -11,6 +11,7 @@ import { GlobalPanel } from '../components/GlobalPanel.js';
 import { FinancePanel } from '../components/FinancePanel.js';
 import { socket } from '../../network/SocketClient.js';
 import { SocketLobby } from '../../network/SocketLobby.js';
+import { SESSION_USER_KEY, readGameSession, saveGameSession, clearGameSession, watchGameVisibility } from '../../network/GameSession.js';
 import {
   ACTION_SLOT_COUNT,
   ECONOMY,
@@ -38,8 +39,6 @@ import { LobbyScreen } from './LobbyScreen.js';
 import { renderGameScreen } from './GameScreenView.js';
 import '../styles/GameScreen.css';
 
-const SESSION_ROOM_KEY = 'pax_room_id';
-const SESSION_USER_KEY = 'pax_user_id';
 const createPlayerId = () => {
   const id = globalThis.crypto?.randomUUID?.()
     || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -98,6 +97,9 @@ export class GameScreen {
     this.historyToken = 0;
     this.localEvents = [];
     this.seenBondEventKeys = null;
+    this.seenTreatyExpiryEventKeys = null;
+    // `Map` está importado arriba como el componente visual del tablero.
+    this.persistentToasts = new globalThis.Map();
     this.pendingMoveSource = null;
     this.activeActionSlot = 0;
     this.startPending = false;
@@ -119,6 +121,8 @@ export class GameScreen {
     this.serverJoinedRoom = null;
     this.autoStartPending = false;
     this.isLeaving = false;
+    this.sessionRequest = 0;
+    this.isRejoining = false;
 
     this.init();
   }
@@ -148,7 +152,7 @@ export class GameScreen {
     this.phaseReadyButton = new PhaseReadyButton(
       this.container.querySelector('#phase-ready-button'),
       () => {
-        if (!socket.connected || this.gameState?.currentStage !== GAME_STAGES.PLANNING) return;
+        if (!this.canInteract() || this.gameState?.currentStage !== GAME_STAGES.PLANNING) return;
         socket.emit(PROTOCOL.READY_PHASE_END, {
           roomId: this.roomCode,
           ready: !this.player?.phaseReady
@@ -185,18 +189,19 @@ export class GameScreen {
     document.body.appendChild(this.tooltipLayer);
     this.globalPanel = new GlobalPanel(this.container.querySelector('#global-panel-container'), {
       onProposeTreaty: (treaty) => {
+        if (!this.canInteract()) return;
         socket.emit(PROTOCOL.PROPOSE_TREATY, {
           roomId: this.roomCode,
           treaty
         });
         this.showToast('Propuesta diplomática enviada.', 'info');
       },
-      onRespondToTreaty: ({ offerId, accepted }) => socket.emit(PROTOCOL.RESPOND_TO_TREATY, {
+      onRespondToTreaty: ({ offerId, accepted }) => this.canInteract() && socket.emit(PROTOCOL.RESPOND_TO_TREATY, {
         roomId: this.roomCode,
         offerId,
         accepted
       }),
-      onCancelTreatyOffer: (offerId) => socket.emit(PROTOCOL.CANCEL_TREATY_OFFER, {
+      onCancelTreatyOffer: (offerId) => this.canInteract() && socket.emit(PROTOCOL.CANCEL_TREATY_OFFER, {
         roomId: this.roomCode,
         offerId
       })
@@ -204,6 +209,7 @@ export class GameScreen {
     this.financePanel = new FinancePanel(
       this.container.querySelector('#finance-panel'),
       (action) => {
+        if (!this.canInteract()) return;
         socket.timeout(5000).emit(
           PROTOCOL.FINANCIAL_ACTION,
           { roomId: this.roomCode, action },
@@ -225,6 +231,7 @@ export class GameScreen {
       this.container.querySelector('#finance-debt-content')
     );
     this.taxSlider = new TaxSlider(taxEl, (newTaxRate) => {
+      if (!this.canInteract()) return;
       this.updateTaxMetrics(newTaxRate);
       socket.emit(PROTOCOL.SET_TAX_RATE, { roomId: this.roomCode, taxRate: newTaxRate });
     });
@@ -236,6 +243,7 @@ export class GameScreen {
   }
 
   bindEvents() {
+    this.gameVisibility = watchGameVisibility(() => this.syncBackgroundPause());
     this.container.addEventListener('pointerover', (event) => {
       const target = event.target.closest?.('[data-tooltip]');
       if (target) this.showTooltip(target);
@@ -251,8 +259,8 @@ export class GameScreen {
       if (event.target.matches?.('[data-tooltip]')) this.hideTooltip();
     });
     this.tooltipPointerMove = (event) => {
-      const target = document.elementFromPoint(event.clientX, event.clientY);
-      if (target?.matches?.('[data-tooltip]')) {
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('[data-tooltip]');
+      if (target) {
         if (target !== this.tooltipTarget) this.showTooltip(target);
       } else if (this.tooltipTarget && !this.tooltipTarget.matches(':focus')) {
         this.hideTooltip();
@@ -284,6 +292,8 @@ export class GameScreen {
     }, true);
 
     this.onConnect = () => {
+      this.serverJoinedRoom = null;
+      this.lastBackgroundPause = null;
       this.startPending = false;
       this.startError = '';
       this.connectionError = '';
@@ -293,11 +303,15 @@ export class GameScreen {
       this.updateStartMenu();
     };
     this.onDisconnect = () => {
+      this.sessionRequest += 1;
+      this.isRejoining = false;
+      this.serverJoinedRoom = null;
       this.startPending = false;
       this.startError = 'Se perdió la conexión con el servidor. Reconectando…';
       this.connectionError = '';
       this.lobbyScreen.setSinglePlayerEnabled(false);
       this.setRoomControlsEnabled(false);
+      if (this.gameState) this.updateGameState(this.gameState);
       this.updateStartMenu();
     };
     this.onConnectError = () => {
@@ -436,6 +450,65 @@ export class GameScreen {
     }, 3000);
   }
 
+  showPersistentToast(key, message, type = 'info') {
+    if (!key || !message || !this.toastContainer) return;
+    const existing = this.persistentToasts.get(key);
+    if (existing) {
+      existing.classList.remove('is-leaving');
+      if (existing.firstChild) existing.firstChild.textContent = message;
+      existing.dataset.type = type;
+      return;
+    }
+    const toast = document.createElement('div');
+    toast.className = 'pax-toast pax-toast-persistent';
+    toast.dataset.type = type;
+    toast.dataset.notificationKey = key;
+    const text = document.createElement('span');
+    text.textContent = message;
+    toast.appendChild(text);
+    this.toastContainer.appendChild(toast);
+    this.persistentToasts.set(key, toast);
+  }
+
+  removePersistentToast(key) {
+    const toast = this.persistentToasts.get(key);
+    if (!toast) return;
+    this.persistentToasts.delete(key);
+    toast.classList.add('is-leaving');
+    window.setTimeout(() => toast.remove(), 240);
+  }
+
+  syncDiplomacyNotifications(gameState, localPlayerId) {
+    const pendingKeys = new Set();
+    const localTreatyOffers = (gameState?.treatyOffers || []).filter((offer) => (
+      offer.recipientId === localPlayerId
+    ));
+    for (const offer of localTreatyOffers) {
+      const key = `treaty-offer:${offer.id}`;
+      pendingKeys.add(key);
+      this.showPersistentToast(
+        key,
+        `Nuevo tratado de ${offer.proposerName || 'otro país'}. Responde en Diplomacia.`,
+        'info'
+      );
+    }
+    const localTradeOffers = (gameState?.tradeOffers || []).filter((offer) => (
+      offer.recipientId === localPlayerId
+    ));
+    for (const offer of localTradeOffers) {
+      const key = `trade-offer:${offer.id}`;
+      pendingKeys.add(key);
+      this.showPersistentToast(
+        key,
+        `Nuevo intercambio de ${offer.proposerName || 'otro país'}. Responde en Finanzas.`,
+        'info'
+      );
+    }
+    for (const key of this.persistentToasts.keys()) {
+      if (!pendingKeys.has(key)) this.removePersistentToast(key);
+    }
+  }
+
   showTooltip(target) {
     const text = target?.dataset.tooltip;
     if (!text || !this.tooltipLayer) return;
@@ -501,12 +574,37 @@ export class GameScreen {
       && players.length === MAX_PLAYERS
       && connectedHumans === 1
       && socket.connected
+      && !this.isRejoining && this.serverJoinedRoom === this.roomCode
     ) {
       socket.emit(PROTOCOL.SET_GAME_PAUSED, {
         roomId: this.roomCode,
-        paused: shouldOpen
+        paused: shouldOpen,
+        reason: 'menu'
       });
     }
+  }
+
+  canInteract() {
+    return socket.connected && !this.isRejoining && this.serverJoinedRoom === this.roomCode
+      && !this.gameState?.isPaused;
+  }
+
+  syncBackgroundPause() {
+    if (!this.roomCode?.startsWith('solo-') || this.isLeaving) return;
+    if (!socket.connected) {
+      if (!this.gameVisibility.backgrounded) socket.connect();
+      return;
+    }
+    if (this.isRejoining) return;
+    if (this.serverJoinedRoom !== this.roomCode) {
+      if (!this.isRejoining) this.rejoinStoredSession();
+      return;
+    }
+    const signature = `${socket.id}:${this.roomCode}:${this.gameVisibility.backgrounded}`;
+    if (!this.gameState?.gameStarted || signature === this.lastBackgroundPause) return;
+    this.lastBackgroundPause = signature;
+    socket.emit(PROTOCOL.SET_GAME_PAUSED, { roomId: this.roomCode,
+      paused: this.gameVisibility.backgrounded, reason: 'background' });
   }
 
   updateTaxMetrics(taxRate) {
@@ -561,8 +659,10 @@ export class GameScreen {
       '[data-market-action], [data-quantity-adjust], [data-quantity-max], '
       + '[data-issue-bond], [data-donate-world-bank], [data-repay-bond], [data-bond-amount]'
     )) {
-      control.removeAttribute('data-tooltip');
-      control.removeAttribute('title');
+      if (!control.disabled) {
+        control.removeAttribute('data-tooltip');
+        control.removeAttribute('title');
+      }
     }
     for (const element of this.container.querySelectorAll('button:disabled, input:disabled, select:disabled')) {
       if (element.id === 'play-button') element.dataset.tooltip = 'Esperando conexión con la partida';
@@ -573,7 +673,8 @@ export class GameScreen {
         : 'Propuesta bloqueada fuera de la reunión de la OI';
       else if (element.matches('#oi-submit-vote')) element.dataset.tooltip = 'Solo puedes votar durante una sesión activa de la OI';
       else if (element.matches('#phase-ready-button')) element.dataset.tooltip = 'Pulsa para marcarte listo; puedes volver a pulsar para retirar tu confirmación';
-      else element.dataset.tooltip ||= 'Acción no disponible en este momento';
+      else element.dataset.tooltip ||= element.closest('.pax-tile-action-control')?.dataset.tooltip
+        || 'Acción no disponible en este momento';
     }
   }
 
@@ -601,6 +702,7 @@ export class GameScreen {
     this.player = players.find((player) => (
       player.boundPlayerId === this.playerId || player.socketId === socket.id
     )) || null;
+    if (this.player?.socketId === socket.id && socket.connected) this.serverJoinedRoom = this.roomCode;
     this.chat.setIdentity(this.player);
     if (this.player) {
       this.player.plannedActions = Array.from(
@@ -619,7 +721,7 @@ export class GameScreen {
     }
     this.inspector.setContext(
       this.player,
-      phase,
+      this.canInteract() ? phase : 0,
       (action) => this.handleInspectorAction(action),
       this.activeActionSlot,
       gameState.grid
@@ -627,8 +729,9 @@ export class GameScreen {
     this.updateActionSlots();
     this.updateActionHighlights();
     this.updatePhaseReadyButton(players, phase, gameState.gameStarted);
-    this.globalPanel.update(gameState, this.player?.id);
-    this.financePanel.update({ ...gameState, currentStage: stage }, this.player?.id);
+    this.globalPanel.update({ ...gameState, gameStarted: gameState.gameStarted && this.canInteract() }, this.player?.id);
+    this.financePanel.update({ ...gameState, currentStage: stage,
+      gameStarted: gameState.gameStarted && this.canInteract() }, this.player?.id);
     this.updateDisabledTooltips(stage);
 
     const round = gameState.oiSession?.phase === 'voting'
@@ -651,7 +754,7 @@ export class GameScreen {
     this.updateResources(
       stage === GAME_STAGES.ROUND_START || stage === GAME_STAGES.CLOSING
     );
-    this.taxSlider.setEnabled(Boolean(this.player && stage === GAME_STAGES.PLANNING && !gameState.gameOver));
+    this.taxSlider.setEnabled(Boolean(this.canInteract() && this.player && stage === GAME_STAGES.PLANNING && !gameState.gameOver));
     this.syncGameEventHistory(gameState.eventHistory);
     this.updateGameSummary(gameState);
 
@@ -671,6 +774,7 @@ export class GameScreen {
       this.map.animateShipMovements(gameState.lastActionResolutions || []);
     }
     this.renderViewedMap();
+    this.syncBackgroundPause();
   }
 
   selectMapRound(round) {
@@ -720,7 +824,7 @@ export class GameScreen {
     this.inspector.setNationColors(state.players || []);
     this.map.setDemilitarizedZones(state.activeDmzZones || [], false);
     this.inspector.setContext(historical ? null : this.player,
-      historical ? 0 : this.gameState.currentPhase,
+      historical || !this.canInteract() ? 0 : this.gameState.currentPhase,
       (action) => this.handleInspectorAction(action), this.activeActionSlot, state.grid);
     this.map.render(state.grid);
   }
@@ -838,6 +942,12 @@ export class GameScreen {
     const proposalWindow = gameState.gameStarted
       && !gameState.gameOver
       && gameState.currentStage === GAME_STAGES.PLANNING;
+    const proposedResolutionTypes = new Set(
+      (gameState.oiProposals || []).map((proposal) => proposal.type)
+    );
+    const resolutionOption = (type, label) => `
+      <option value="${type}" ${proposedResolutionTypes.has(type) ? 'disabled' : ''}>${label}${proposedResolutionTypes.has(type) ? ' · ya propuesta' : ''}</option>
+    `;
     const resultsMarkup = session?.phase === 'complete' && session.results
       ? `
         <div class="pax-oi-controls">
@@ -862,9 +972,10 @@ export class GameScreen {
         ${proposalWindow ? `
           <label>Resolución
             <select id="oi-resolution-type">
-              <option value="${OI_RESOLUTIONS.INDUSTRY_LIMIT}">Límite de industria · 10 fábricas</option>
-              <option value="${OI_RESOLUTIONS.DEMILITARIZED_ZONE}">Zona Desmilitarizada · elegir casilla</option>
-              <option value="${OI_RESOLUTIONS.CONDITIONAL_SUBSIDY}">Subsidio condicionado · ${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata</option>
+              ${resolutionOption(OI_RESOLUTIONS.ARMAMENT_LIMIT, 'Límite de armamento · 10 tropas')}
+              ${resolutionOption(OI_RESOLUTIONS.INDUSTRY_LIMIT, 'Límite de industria · 10 fábricas')}
+              ${resolutionOption(OI_RESOLUTIONS.DEMILITARIZED_ZONE, 'Zona Desmilitarizada · elegir casilla')}
+              ${resolutionOption(OI_RESOLUTIONS.CONDITIONAL_SUBSIDY, `Subsidio condicionado · ${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata`)}
             </select>
           </label>
           <button id="oi-select-target" type="button" hidden>Elegir casilla para la ZDM</button>
@@ -902,6 +1013,7 @@ export class GameScreen {
   }
 
   handleOIProposal() {
+    if (!this.canInteract()) return;
     const type = this.container.querySelector('#oi-resolution-type')?.value;
     if (!type || type === OI_RESOLUTIONS.DEMILITARIZED_ZONE || !socket.connected) return;
     socket.emit(PROTOCOL.PROPOSE_OI_RESOLUTION, {
@@ -911,6 +1023,7 @@ export class GameScreen {
   }
 
   beginOITargetSelection() {
+    if (!this.canInteract()) return;
     if (this.historyRound !== null) this.selectMapRound(null);
     if (!socket.connected || !this.container.querySelector('#oi-resolution-type')) return;
     this.oiTargetSelection = true;
@@ -921,7 +1034,7 @@ export class GameScreen {
 
   submitOIVote() {
     const session = this.gameState?.oiSession;
-    if (!socket.connected || session?.phase !== 'voting') return;
+    if (!this.canInteract() || session?.phase !== 'voting') return;
     this.captureOIDraft();
     const ballot = session.proposals.map((proposal) => {
       const draft = this.oiDraftBallot[proposal.id] || { choice: 'ABSTAIN', wager: 0 };
@@ -942,6 +1055,7 @@ export class GameScreen {
     const requiredCount = participants.length;
     const enabled = Boolean(
       gameStarted
+      && this.canInteract()
       && !this.gameState?.gameOver
       && this.player
       && (this.gameState?.currentStage || this.getStageFromLegacyPhase(phase)) === GAME_STAGES.PLANNING
@@ -960,6 +1074,7 @@ export class GameScreen {
     const plannedActions = this.player?.plannedActions || Array(ACTION_SLOT_COUNT).fill(null);
     const canPlan = Boolean(
       this.player
+      && this.canInteract()
       && this.historyRound === null
       && !this.gameState?.gameOver
       && (this.gameState?.currentStage || this.getStageFromLegacyPhase(this.gameState?.currentPhase || 1))
@@ -1045,7 +1160,7 @@ export class GameScreen {
   }
 
   emitPlannedAction(slot, plannedAction) {
-    if (!this.player || this.historyRound !== null) return;
+    if (!this.canInteract() || !this.player || this.historyRound !== null) return;
     this.player.plannedActions ||= Array(ACTION_SLOT_COUNT).fill(null);
     this.player.plannedActions[slot] = plannedAction ? { ...plannedAction } : null;
     if (plannedAction) {
@@ -1078,9 +1193,9 @@ export class GameScreen {
     const status = this.container.querySelector('#start-status');
     if (!status) return;
     if (this.lobby?.enabled && !this.lobbyState) {
-      this.setStartStatus(socket.connected
+      this.setStartStatus(this.startError || (socket.connected
         ? 'Crea una sala o introduce un código para unirte.'
-        : 'Conectando con el servidor…');
+        : 'Conectando con el servidor…'));
       return;
     }
     if (gameStarted) {
@@ -1152,6 +1267,7 @@ export class GameScreen {
   }
 
   handleInspectorAction(action) {
+    if (!this.canInteract()) return;
     if (this.historyRound !== null) return;
     if (this.gameState?.currentStage !== GAME_STAGES.PLANNING || !this.player) return;
     if (['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)) {
@@ -1165,7 +1281,7 @@ export class GameScreen {
 
   handleTileSelection(tile) {
     if (this.historyRound !== null) { this.inspector.render(tile); return; }
-    if (this.oiTargetSelection && this.map.selectionFromUser && tile) {
+    if (this.canInteract() && this.oiTargetSelection && this.map.selectionFromUser && tile) {
       const type = this.container.querySelector('#oi-resolution-type')?.value;
       this.oiTargetSelection = false;
       this.map.setTargetSelectionMode(false);
@@ -1263,6 +1379,22 @@ export class GameScreen {
       }
     }
     this.seenBondEventKeys = bondEventKeys;
+    const expiryEvents = history.filter((event) => (
+      event?.category === 'treaty-expired'
+      && Array.isArray(event.playerIds)
+      && event.playerIds.includes(this.player?.id)
+    ));
+    const expiryEventKeys = new Set(expiryEvents.map((event) => (
+      `${event.id || event.timestamp}:${event.message}`
+    )));
+    if (this.seenTreatyExpiryEventKeys) {
+      for (const event of expiryEvents) {
+        const key = `${event.id || event.timestamp}:${event.message}`;
+        if (!this.seenTreatyExpiryEventKeys.has(key)) this.showToast(event.message, 'warning');
+      }
+    }
+    this.seenTreatyExpiryEventKeys = expiryEventKeys;
+    this.syncDiplomacyNotifications(this.gameState, this.player?.id);
     const savedScrollTop = this.eventLog?.element?.scrollTop || 0;
     this.events = mergeGameEvents(history, this.localEvents);
     this.eventLog.render(this.events, this.gameState?.players, savedScrollTop);
@@ -1280,46 +1412,64 @@ export class GameScreen {
   }
 
   readStoredSession() {
-    const roomId = sessionStorage.getItem(SESSION_ROOM_KEY);
-    const userId = sessionStorage.getItem(SESSION_USER_KEY);
-    return roomId && userId ? { roomId, userId } : null;
+    return readGameSession();
   }
 
   saveGameSession(roomId = this.roomCode, userId = this.playerId) {
-    if (!roomId || !userId) return;
-    sessionStorage.setItem(SESSION_ROOM_KEY, roomId);
-    sessionStorage.setItem(SESSION_USER_KEY, userId);
+    saveGameSession(roomId, userId);
   }
 
   clearGameSession() {
-    sessionStorage.removeItem(SESSION_ROOM_KEY);
-    sessionStorage.removeItem(SESSION_USER_KEY);
+    clearGameSession(this.roomCode);
   }
 
   rejoinStoredSession() {
+    window.clearTimeout(this.rejoinRetryTimer);
     const session = this.readStoredSession();
     if (!session || !socket.connected) return;
     const { roomId, userId } = session;
     this.roomCode = roomId;
     this.playerId = userId;
-    this.serverJoinedRoom = roomId;
+    const request = ++this.sessionRequest;
+    const connectionId = socket.id;
+    this.isRejoining = true;
+    this.serverJoinedRoom = null;
     sessionStorage.setItem(SESSION_USER_KEY, userId);
 
-    socket.emit(PROTOCOL.REJOIN_ROOM, { roomId, userId }, (result) => {
-      if (this.isLeaving) return;
+    socket.timeout(5000).emit(PROTOCOL.REJOIN_ROOM, {
+      roomId, userId, backgrounded: this.gameVisibility?.backgrounded ?? document.hidden
+    }, (error, result) => {
+      if (this.isLeaving || this.sessionRequest !== request || this.roomCode !== roomId || socket.id !== connectionId) return;
+      this.isRejoining = false;
+      if (error) {
+        this.startError = 'No se pudo recuperar la conexión. Vuelve a la pestaña para reintentarlo.';
+        this.updateStartMenu();
+        this.rejoinRetryTimer = window.setTimeout(() => {
+          if (!this.isLeaving && socket.connected && this.roomCode === roomId) this.rejoinStoredSession();
+        }, 1500);
+        return;
+      }
       if (result?.ok) {
         this.serverJoinedRoom = roomId;
+        this.startError = '';
+        this.lastBackgroundPause = null;
+        this.saveGameSession(roomId, userId);
         if (result.state) this.updateGameState(result.state);
+        if (roomId.startsWith('solo-') && result.state?.isPaused && !this.gameVisibility.backgrounded) {
+          this.setGameMenuOpen(true);
+        }
         return;
       }
       this.serverJoinedRoom = null;
-      if (this.lobbyState?.code === roomId && this.lobbyState.estado === 'en_juego') {
-        socket.emit(PROTOCOL.JOIN_GAME, {
-          playerId: userId,
-          playerName: this.lobbyState.slots.find((player) => player?.id === userId)?.nombre || 'alpha',
-          playerColor: this.lobbyState.slots.find((player) => player?.id === userId)?.color,
-          roomId
-        });
+      if (roomId.startsWith('solo-')) {
+        this.clearGameSession();
+        this.roomCode = null;
+        this.gameState = null;
+        this.player = null;
+        this.startError = result?.message || 'No se pudo recuperar la partida guardada.';
+        this.updateStartMenu(false);
+      } else if (this.lobbyState?.code === roomId && this.lobbyState.estado === 'en_juego') {
+        this.joinGame();
         socket.emit(PROTOCOL.START_GAME, { roomId });
       }
     });
@@ -1371,6 +1521,9 @@ export class GameScreen {
 
   startSinglePlayer() {
     if (!socket.connected) return;
+    this.sessionRequest += 1;
+    this.isRejoining = false;
+    this.lastBackgroundPause = null;
     this.isLeaving = false;
     this.chat.setEnabled(false);
     const name = this.container.querySelector('#single-player-name').value.trim();
@@ -1548,6 +1701,8 @@ export class GameScreen {
   async returnToMainMenu() {
     if (this.isLeaving) return;
     this.isLeaving = true;
+    this.sessionRequest += 1;
+    this.isRejoining = false;
     this.container.querySelector('#map-controls').hidden = true;
     const roomCode = this.roomCode;
     const userId = this.playerId;
@@ -1598,6 +1753,9 @@ export class GameScreen {
   }
 
   destroy() {
+    window.clearTimeout(this.rejoinRetryTimer);
+    this.sessionRequest += 1;
+    this.gameVisibility?.destroy();
     this.map?.destroy();
     this.lobby?.destroy();
     socket.off(PROTOCOL.GAME_STATE_UPDATE, this.onGameState);

@@ -21,6 +21,11 @@ export const BotController = {
     }
 
     for (const player of this.players.values()) {
+      if (player.isEliminated) {
+        player.phaseReady = true;
+        player.plannedActions = createEmptyActionSlots(this.settings?.actionSlotCount);
+        continue;
+      }
       if (resetReadiness) player.phaseReady = false;
       if (!player.isBot) continue;
       if (!resetReadiness && player.phaseReady) continue;
@@ -107,7 +112,7 @@ export const BotController = {
       for (const type of ['BUILD_FACTORY', 'BUILD_CITY', 'MOVE_CAPITAL']) {
         add({ type, x: source.x, y: source.y });
       }
-      if (count > 0) add({ type: 'RECRUIT_TROOP', x: source.x, y: source.y, count });
+      if (count > 0 && ['CAP', 'CIU'].includes(source.type)) add({ type: 'RECRUIT_TROOP', x: source.x, y: source.y, count });
       add({ type: 'BUILD_SHIP', x: source.x, y: source.y, count: 1 });
       const available = this.getTroopsForPlayerOnTile(source, player.id) - reserved
         .filter((a) => a.type === 'MOVE_TROOPS' && a.x === source.x && a.y === source.y)
@@ -117,7 +122,7 @@ export const BotController = {
         if (!target) continue;
         const base = { x: source.x, y: source.y, targetX: target.x, targetY: target.y };
         const defenders = target.ownerId && target.ownerId !== player.id
-          ? this.getTroopsForPlayerOnTile(target, target.ownerId) : 0;
+          ? this.getTroopsForPlayerOnTile(target, target.ownerId) + (target.defense || 0) : 0;
         for (const troops of new Set([Math.max(1, Math.floor(available / 2)), defenders + 1, available])) {
           if (troops > 0 && troops <= available && troops > defenders) add({ ...base, type: 'MOVE_TROOPS', troops });
         }
@@ -265,7 +270,9 @@ export const BotController = {
       || this.currentRound % this.settings.oiFrequency === 0
       || player.resources.INFLUENCE < ECONOMY.COSTS.OI_PROPOSAL_INFLUENCE
     ) return [];
+    const alreadyProposed = new Set((this.oiProposals || []).map((proposal) => proposal.type));
     return ['ARMAMENT_LIMIT', 'INDUSTRY_LIMIT', 'CONDITIONAL_SUBSIDY']
+      .filter((resolutionType) => !alreadyProposed.has(resolutionType))
       .map((resolutionType) => ({
         type: 'PROPOSE_OI_RESOLUTION',
         resolutionType,

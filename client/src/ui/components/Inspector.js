@@ -9,6 +9,7 @@ import {
 const TILE_TYPE_NAMES = {
   [TERRAIN_TYPES.CAP]: 'Capital',
   [TERRAIN_TYPES.CIU]: 'Ciudad',
+  [TERRAIN_TYPES.PUE]: 'Pueblo',
   [TERRAIN_TYPES.TR]: 'Tierra',
   [TERRAIN_TYPES.MPT]: 'Materia prima terrestre',
   [TERRAIN_TYPES.FT]: 'Fábrica terrestre',
@@ -20,11 +21,12 @@ const TILE_TYPE_NAMES = {
 const TILE_ICONS = {
   CAP: '♜',
   CIU: '▥',
+  PUE: '⌂',
   TR: '▲',
   MPT: '◆',
   FT: '▥',
   AG: '≋',
-  MPA: '◈',
+  MPA: '◆',
   FA: '▤'
 };
 
@@ -85,12 +87,10 @@ export class Inspector {
   getActions(tile, nation) {
     const isOwned = Boolean(this.player && tile && tile.ownerId === this.player.id);
     const resources = this.player?.resources || {};
-    const hasSilver = (amount) => (resources.SILVER || 0) >= amount;
-    const hasMaterials = (amount) => (resources.MATERIALS || 0) >= amount;
     const planningPhase = this.phase === 2;
     const landCanBuild = ['TR', 'MPT'].includes(tile?.type) && !tile?.building;
     const waterCanBuild = ['AG', 'MPA'].includes(tile?.type) && !tile?.building;
-    const landCanRecruit = ['CAP', 'CIU', 'TR', 'MPT', 'FT'].includes(tile?.type);
+    const landCanRecruit = ['CAP', 'CIU'].includes(tile?.type);
     const otherActions = (this.player?.plannedActions || [])
       .filter((action, index) => action && index !== this.activeSlot);
     const silverReserved = otherActions.reduce((sum, action) => {
@@ -108,30 +108,36 @@ export class Inspector {
     }, 0);
     const materialsReserved = otherActions.reduce((sum, action) => {
       if (action.type === 'RECRUIT_TROOP') return sum + ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS * (action.count || 1);
+      if (action.type === 'BUILD_CITY') return sum + ECONOMY.COSTS.BUILD_CITY_MATERIALS;
+      if (action.type === 'BUILD_FACTORY') {
+        const target = this.grid?.[action.y]?.[action.x];
+        return sum + (target?.type === 'MPT' || target?.type === 'MPA'
+          ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_MATERIALS
+          : ECONOMY.COSTS.BUILD_FACTORY_MATERIALS);
+      }
       if (action.type === 'BUILD_SHIP') return sum + ECONOMY.COSTS.BUILD_SHIP_MATERIALS * (action.count || 1);
       if (action.type === 'MOVE_CAPITAL') return sum + ECONOMY.COSTS.MOVE_CAPITAL_MATERIALS;
       return sum;
     }, 0);
     const availableSilver = Math.max(0, (resources.SILVER || 0) - silverReserved);
     const availableMaterials = Math.max(0, (resources.MATERIALS || 0) - materialsReserved);
+    const hasSilver = (amount) => availableSilver >= amount;
+    const hasMaterials = (amount) => availableMaterials >= amount;
     const buildShipLimit = Math.floor(Math.min(
       availableSilver / ECONOMY.COSTS.BUILD_SHIP_SILVER,
       availableMaterials / ECONOMY.COSTS.BUILD_SHIP_MATERIALS
     ));
-    const hasShipyardWater = tile?.type === 'FA' || Boolean(
-      this.grid?.[tile?.y - 1]?.[tile?.x]?.type === 'AG'
-      || this.grid?.[tile?.y - 1]?.[tile?.x]?.type === 'MPA'
-      || this.grid?.[tile?.y - 1]?.[tile?.x]?.type === 'FA'
-      || this.grid?.[tile?.y + 1]?.[tile?.x]?.type === 'AG'
-      || this.grid?.[tile?.y + 1]?.[tile?.x]?.type === 'MPA'
-      || this.grid?.[tile?.y + 1]?.[tile?.x]?.type === 'FA'
-      || this.grid?.[tile?.y]?.[tile?.x - 1]?.type === 'AG'
-      || this.grid?.[tile?.y]?.[tile?.x - 1]?.type === 'MPA'
-      || this.grid?.[tile?.y]?.[tile?.x - 1]?.type === 'FA'
-      || this.grid?.[tile?.y]?.[tile?.x + 1]?.type === 'AG'
-      || this.grid?.[tile?.y]?.[tile?.x + 1]?.type === 'MPA'
-      || this.grid?.[tile?.y]?.[tile?.x + 1]?.type === 'FA'
-    );
+    const shipyardWaterTiles = tile?.type === 'FA'
+      ? [tile]
+      : tile?.type === 'FT'
+        ? [[0, -1], [1, 0], [0, 1], [-1, 0]]
+          .map(([dx, dy]) => this.grid?.[tile.y + dy]?.[tile.x + dx])
+          .filter((waterTile) => waterTile && ['AG', 'MPA', 'FA'].includes(waterTile.type))
+          .filter((waterTile) => waterTile.ownerId == null || waterTile.ownerId === this.player?.id)
+          .filter((waterTile) => !Object.entries(waterTile.shipsByPlayer || {})
+            .some(([ownerId, count]) => ownerId !== this.player?.id && count > 0))
+        : [];
+    const hasShipyardWater = shipyardWaterTiles.length > 0;
     const recruitLimit = Math.floor(Math.min(
       availableSilver / ECONOMY.COSTS.RECRUIT_TROOP_SILVER,
       availableMaterials / ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS
@@ -169,16 +175,16 @@ export class Inspector {
       {
         type: 'BUILD_CITY',
         title: 'Construir ciudad',
-        cost: `${ECONOMY.COSTS.BUILD_CITY_SILVER} plata`,
-        enabled: planningPhase && isOwned && tile.type === 'TR' && !tile.building && hasSilver(ECONOMY.COSTS.BUILD_CITY_SILVER),
-        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : tile?.type !== 'TR' || tile?.building ? 'Requiere tierra vacía' : 'Plata insuficiente'
+        cost: `${ECONOMY.COSTS.BUILD_CITY_SILVER} plata · ${ECONOMY.COSTS.BUILD_CITY_MATERIALS} materiales`,
+        enabled: planningPhase && isOwned && tile.type === 'TR' && !tile.building && hasSilver(ECONOMY.COSTS.BUILD_CITY_SILVER) && hasMaterials(ECONOMY.COSTS.BUILD_CITY_MATERIALS),
+        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : tile?.type !== 'TR' || tile?.building ? 'Requiere tierra vacía' : 'Recursos insuficientes o reservados'
       },
       {
         type: 'BUILD_FACTORY',
         title: 'Construir fábrica',
-        cost: `${['MPT', 'MPA'].includes(tile?.type) ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER : ECONOMY.COSTS.BUILD_FACTORY_SILVER} plata`,
-        enabled: planningPhase && isOwned && (landCanBuild || waterCanBuild) && hasSilver(['MPT', 'MPA'].includes(tile?.type) ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER : ECONOMY.COSTS.BUILD_FACTORY_SILVER),
-        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : !(landCanBuild || waterCanBuild) ? 'Terreno no apto o ya edificado' : 'Plata insuficiente'
+        cost: `${['MPT', 'MPA'].includes(tile?.type) ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER : ECONOMY.COSTS.BUILD_FACTORY_SILVER} plata · ${['MPT', 'MPA'].includes(tile?.type) ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_MATERIALS : ECONOMY.COSTS.BUILD_FACTORY_MATERIALS} materiales`,
+        enabled: planningPhase && isOwned && (landCanBuild || waterCanBuild) && hasSilver(['MPT', 'MPA'].includes(tile?.type) ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_SILVER : ECONOMY.COSTS.BUILD_FACTORY_SILVER) && hasMaterials(['MPT', 'MPA'].includes(tile?.type) ? ECONOMY.COSTS.BUILD_FACTORY_RESOURCE_MATERIALS : ECONOMY.COSTS.BUILD_FACTORY_MATERIALS),
+        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : !(landCanBuild || waterCanBuild) ? 'Terreno no apto o ya edificado' : 'Recursos insuficientes o reservados'
       },
       {
         type: 'RECRUIT_TROOP',
@@ -186,7 +192,7 @@ export class Inspector {
         cost: `${ECONOMY.COSTS.RECRUIT_TROOP_SILVER} plata · ${ECONOMY.COSTS.RECRUIT_TROOP_MATERIALS} materiales por tropa`,
         quantity: quantity('RECRUIT_TROOP', recruitLimit, 'tropas', 'count'),
         enabled: planningPhase && isOwned && landCanRecruit && recruitLimit > 0,
-        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : !landCanRecruit ? 'Solo se puede reclutar en tierra' : 'Recursos insuficientes o reservados'
+        reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : !landCanRecruit ? 'Solo se puede reclutar en ciudades o capitales propias' : 'Recursos insuficientes o reservados'
       },
       {
         type: 'MOVE_TROOPS',
@@ -201,6 +207,11 @@ export class Inspector {
         title: 'Construir barco',
         cost: `${ECONOMY.COSTS.BUILD_SHIP_SILVER} plata · ${ECONOMY.COSTS.BUILD_SHIP_MATERIALS} materiales`,
         quantity: quantity('BUILD_SHIP', buildShipLimit, 'barcos', 'count'),
+        targetOptions: shipyardWaterTiles.map((waterTile) => ({
+          x: waterTile.x,
+          y: waterTile.y,
+          label: `Agua (${waterTile.x}, ${waterTile.y})`
+        })),
         enabled: planningPhase && isOwned && ['FT', 'FA'].includes(tile?.type)
           && hasShipyardWater
           && buildShipLimit > 0,
@@ -266,8 +277,7 @@ export class Inspector {
       ['Población', tile.population ?? 0, '♟'],
       ['Tropas', tile.troops ?? 0, '⚔'],
       ['Barcos', Object.values(tile.shipsByPlayer || {}).reduce((sum, count) => sum + count, 0), '⚓'],
-      ['Tropas embarcadas', Object.values(tile.transportedTroopsByPlayer || {}).reduce((sum, count) => sum + count, 0), '◉'],
-      ['Defensa', tile.defense ?? 0, '⬡']
+      ['Tropas embarcadas', Object.values(tile.transportedTroopsByPlayer || {}).reduce((sum, count) => sum + count, 0), '◉']
     ];
 
     this.container.innerHTML = `
@@ -316,6 +326,16 @@ export class Inspector {
                         ${action.enabled ? '' : 'disabled'}>
                     </label>
                   ` : ''}
+                  ${action.type === 'BUILD_SHIP' && action.targetOptions?.length > 1 ? `
+                    <label class="pax-tile-quantity">
+                      <span>Puerto de construcción</span>
+                      <select data-action-target="BUILD_SHIP" aria-label="Puerto de construcción">
+                        ${action.targetOptions.map((option) => `
+                          <option value="${option.x},${option.y}">${option.label}</option>
+                        `).join('')}
+                      </select>
+                    </label>
+                  ` : ''}
                   <button
                     class="pax-tile-action ${action.enabled ? '' : 'is-unavailable'}"
                     type="button"
@@ -325,7 +345,7 @@ export class Inspector {
                   >
                     <span class="pax-tile-action-copy">
                       <strong>${action.title}</strong>
-                      <small>${action.enabled ? action.cost : action.reason}</small>
+                      <small>${action.cost}</small>
                     </span>
                   </button>
                 </div>
@@ -349,11 +369,17 @@ export class Inspector {
         const type = button.dataset.action;
         const input = button.parentElement.querySelector(`[data-action-amount="${type}"]`);
         const amount = input ? Number(input.value) : null;
+        const target = type === 'BUILD_SHIP'
+          ? button.parentElement.querySelector('[data-action-target="BUILD_SHIP"]')
+          : null;
+        const [targetX, targetY] = target?.value?.split(',').map(Number) || [];
         this.onAction({
           type,
           x: tile.x,
           y: tile.y,
           ...(type === 'RECRUIT_TROOP' || type === 'BUILD_SHIP' ? { count: amount } : {}),
+          ...(type === 'BUILD_SHIP' && Number.isInteger(targetX) && Number.isInteger(targetY)
+            ? { targetX, targetY } : {}),
           ...(['MOVE_TROOPS', 'MOVE_SHIPS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(type)
             ? { [type === 'MOVE_SHIPS' ? 'ships' : 'troops']: amount }
             : {})

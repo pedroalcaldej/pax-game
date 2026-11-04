@@ -38,21 +38,21 @@ export const GAME_SETTINGS_LIMITS = {
 };
 
 export const GAME_SETTINGS_PRESETS = {
-  quick: { maxRounds: 15, planningDuration: 30, actionSlotCount: 3, mapSize: 20 },
-  normal: { maxRounds: 30, planningDuration: 60, actionSlotCount: 3, mapSize: GRID_SIZE },
-  strategic: { maxRounds: 40, planningDuration: 120, actionSlotCount: 3, mapSize: GRID_SIZE }
+  short: { maxRounds: 15, planningDuration: 30, actionSlotCount: 3, mapSize: 20 },
+  long: { maxRounds: 30, planningDuration: 60, actionSlotCount: 3, mapSize: GRID_SIZE },
+  custom: {}
 };
 
 export const DEFAULT_GAME_SETTINGS = {
-  preset: 'normal',
-  maxRounds: MAX_ROUNDS,
-  planningDuration: 60,
+  preset: 'short',
+  maxRounds: 15,
+  planningDuration: 30,
   actionSlotCount: ACTION_SLOT_COUNT,
-  startingResources: { SILVER: 100, MATERIALS: 100, INFLUENCE: 100 },
+  startingResources: { SILVER: 0, MATERIALS: 0, INFLUENCE: 0 },
   oiFrequency: 5,
   oiMeetingDuration: 60,
   mapSeed: null,
-  mapSize: GRID_SIZE,
+  mapSize: 20,
   dmzEnabled: true
 };
 
@@ -63,7 +63,9 @@ const clampSetting = (value, { min, max }, fallback) => {
 };
 
 export function normalizeGameSettings(input = {}) {
-  const preset = GAME_SETTINGS_PRESETS[input.preset] ? input.preset : DEFAULT_GAME_SETTINGS.preset;
+  const legacyPresetNames = { quick: 'short', normal: 'long', strategic: 'long' };
+  const requestedPreset = legacyPresetNames[input.preset] || input.preset;
+  const preset = GAME_SETTINGS_PRESETS[requestedPreset] ? requestedPreset : DEFAULT_GAME_SETTINGS.preset;
   const presetValues = GAME_SETTINGS_PRESETS[preset];
   const source = { ...DEFAULT_GAME_SETTINGS, ...presetValues, ...input };
   const resources = input.startingResources || DEFAULT_GAME_SETTINGS.startingResources;
@@ -76,9 +78,9 @@ export function normalizeGameSettings(input = {}) {
     planningDuration: clampSetting(source.planningDuration, GAME_SETTINGS_LIMITS.planningDuration, presetValues.planningDuration),
     actionSlotCount: clampSetting(source.actionSlotCount, GAME_SETTINGS_LIMITS.actionSlotCount, presetValues.actionSlotCount),
     startingResources: {
-      SILVER: clampSetting(resources.SILVER, GAME_SETTINGS_LIMITS.startingResource, 100),
-      MATERIALS: clampSetting(resources.MATERIALS, GAME_SETTINGS_LIMITS.startingResource, 100),
-      INFLUENCE: clampSetting(resources.INFLUENCE, GAME_SETTINGS_LIMITS.startingResource, 100)
+      SILVER: clampSetting(resources.SILVER, GAME_SETTINGS_LIMITS.startingResource, 0),
+      MATERIALS: clampSetting(resources.MATERIALS, GAME_SETTINGS_LIMITS.startingResource, 0),
+      INFLUENCE: clampSetting(resources.INFLUENCE, GAME_SETTINGS_LIMITS.startingResource, 0)
     },
     oiFrequency: clampSetting(source.oiFrequency, GAME_SETTINGS_LIMITS.oiFrequency, 5),
     oiMeetingDuration: clampSetting(source.oiMeetingDuration, GAME_SETTINGS_LIMITS.oiMeetingDuration, 60),
@@ -96,6 +98,7 @@ export function normalizeGameSettings(input = {}) {
 export const TERRAIN_TYPES = {
   CAP: 'CAP', // Capital
   CIU: 'CIU', // Ciudad
+  PUE: 'PUE', // Pueblo neutral
   TR: 'TR',   // Tierra
   MPT: 'MPT', // Materia Prima Terrestre
   FT: 'FT',   // Fábrica Terrestre
@@ -120,6 +123,7 @@ export const TILE_STATUS_COLORS = {
 export const TERRAIN_COLORS = {
   [TERRAIN_TYPES.CAP]: '#718096',
   [TERRAIN_TYPES.CIU]: '#718096',
+  [TERRAIN_TYPES.PUE]: '#9A8065',
   [TERRAIN_TYPES.TR]: '#8D5B4C',
   [TERRAIN_TYPES.MPT]: '#8D5B4C',
   [TERRAIN_TYPES.FT]: '#8D5B4C',
@@ -132,6 +136,7 @@ export const URBAN_TERRAIN = new Set([TERRAIN_TYPES.CAP, TERRAIN_TYPES.CIU]);
 export const LAND_TERRAIN = new Set([
   TERRAIN_TYPES.CAP,
   TERRAIN_TYPES.CIU,
+  TERRAIN_TYPES.PUE,
   TERRAIN_TYPES.TR,
   TERRAIN_TYPES.MPT,
   TERRAIN_TYPES.FT
@@ -233,7 +238,7 @@ export const ECONOMIC_POLICY = {
 // Economía en unidades comparables: los cuatro componentes del GDI comienzan
 // en 100 puntos y sus ingresos por ronda mantienen magnitudes similares.
 export const ECONOMY = {
-  STARTING_RESOURCES: { SILVER: 100, MATERIALS: 100, INFLUENCE: 100 },
+  STARTING_RESOURCES: { SILVER: 0, MATERIALS: 0, INFLUENCE: 0 },
   POPULATION: {
     CAPITAL_START: 50,
     CITY_START: 50,
@@ -242,8 +247,11 @@ export const ECONOMY = {
     TAX_REVENUE_RATE: 0.2
   },
   ROUND_PRODUCTION: {
-    MATERIALS_PER_FACTORY: 2,
+    MATERIALS_PER_FACTORY: 5,
     INFLUENCE_PER_CITY: 1
+  },
+  REWARDS: {
+    RESOURCE_NODE_CAPTURE_MATERIALS: 20
   },
   NAVAL: {
     TROOPS_PER_SHIP: 5
@@ -252,10 +260,13 @@ export const ECONOMY = {
   BANK_TRANSFER_TARIFF_RATE: 0.2,
   COSTS: {
     BUILD_CITY_SILVER: 50,
-    BUILD_FACTORY_SILVER: 10,
-    BUILD_FACTORY_RESOURCE_SILVER: 5,
-    RECRUIT_TROOP_SILVER: 5,
-    RECRUIT_TROOP_MATERIALS: 20,
+    BUILD_CITY_MATERIALS: 50,
+    BUILD_FACTORY_SILVER: 30,
+    BUILD_FACTORY_RESOURCE_SILVER: 20,
+    BUILD_FACTORY_MATERIALS: 30,
+    BUILD_FACTORY_RESOURCE_MATERIALS: 20,
+    RECRUIT_TROOP_SILVER: 10,
+    RECRUIT_TROOP_MATERIALS: 10,
     MOVE_CAPITAL_SILVER: 10,
     MOVE_CAPITAL_MATERIALS: 20,
     BUILD_SHIP_SILVER: 15,

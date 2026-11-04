@@ -258,6 +258,10 @@ export class GameState {
     return ActionEngine.getShipyardWaterTile.apply(this, args);
   }
 
+  getShipyardWaterTiles(...args) {
+    return ActionEngine.getShipyardWaterTiles.apply(this, args);
+  }
+
   applyPlayerAction(...args) {
     return ActionEngine.applyPlayerAction.apply(this, args);
   }

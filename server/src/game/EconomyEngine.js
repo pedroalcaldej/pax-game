@@ -44,7 +44,7 @@ export class EconomyEngine {
 
     for (const economy of economies) {
       for (const tile of economy.ownedTiles) {
-        if (tile.type !== 'CAP' && tile.type !== 'CIU') continue;
+        if (!['CAP', 'CIU', 'PUE'].includes(tile.type)) continue;
         const projected = projectUrbanPopulation(tile, economy.taxRate);
         tile.population = projected.population;
         economy.population += tile.population;

@@ -60,6 +60,18 @@ En el menú puedes iniciar una partida de un jugador, crear una sala privada o u
 
 La partida multijugador comienza cuando todos los jugadores humanos están listos. Los espacios restantes se completan con bots. Durante la planificación de cada ronda, la fase avanza cuando todos los humanos vuelven a marcarse listos o al terminar el temporizador.
 
+En un jugador, cambiar de pestaña, salir de la ventana o desconectarse pausa la
+partida. Al regresar se recupera el mismo país, sus órdenes y el tiempo restante.
+La sesión individual se conserva al cerrar el navegador; el servidor guarda la
+partida al iniciarla, pausarla o finalizarla en `server/data/solo-games/`, una carpeta
+local ignorada por Git. Una pausa manual del menú se mantiene hasta pulsar Reanudar.
+Volver al menú principal abandona la partida y elimina su guardado.
+
+Las acciones deshabilitadas conservan su precio visible; el motivo aparece en el
+tooltip. Las tropas se reclutan únicamente en ciudades o capitales propias. Entre
+países neutrales, cada Material cuesta 2 de Plata: 1 para el vendedor y 1 para el
+Banco Mundial. Con TLC el cambio es 1:1 sin arancel; los países en conflicto no comercian.
+
 Los bots consultan una tabla de decisiones contextual antes de planificar cada orden. La tabla agrupa la situación por ronda, territorio, tropas, fábricas y recursos; registra los intentos y resultados de cada tipo de acción, y usa una recompensa terminal para favorecer decisiones que ayudan a ganar la partida completa, no solo una ronda: +100 para el primer lugar, +40 para el segundo, -25 para el tercero y -60 para el cuarto. La memoria se guarda compactada en `server/data/bot-decision-memory.json`: conserva las tres mejores variantes de cada tipo de acción por contexto y usa arrays numéricos para ocupar menos espacio. Se carga al iniciar el servidor o el entrenador, por lo que sobrevive a los reinicios. Las partidas normales solo consultan esa memoria: no agregan aprendizajes ni la sobrescriben. El aprendizaje ocurre exclusivamente en sesiones del entrenador. El entrenador compara el modelo guardado antes de entrenar con el modelo resultante usando las mismas semillas de evaluación, informando cambios de victorias y GDI. Las tablas se conservan al reiniciar una sala, con una exploración limitada para descubrir alternativas en partidas de cuatro jugadores. El entrenador usa además las mismas opciones humanas de economía, impuestos, tratados, OI, movimientos navales, capital y órdenes militares.
 
 La memoria del campeón y la de aprendizaje tienen funciones distintas. El archivo

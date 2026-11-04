@@ -41,7 +41,7 @@ test('human quantities propose legal alternatives rather than reusing map coordi
   player.resources.SILVER = 100;
   player.resources.MATERIALS = 100;
   player.plannedActions = [null, null, null];
-  const tile = state.grid.flat().find((tile) => tile.ownerId === player.id && tile.type !== 'AG');
+  const tile = state.grid.flat().find((tile) => tile.ownerId === player.id && ['CAP', 'CIU'].includes(tile.type));
   const base = { type: 'RECRUIT_TROOP', x: tile.x, y: tile.y, count: 1 };
   state.botHumanIdeas = indexHumanIdeas([
     { contextKey: 'c', actionType: base.type, action: { count: 3, x: -100, y: -100 } },

@@ -18,7 +18,7 @@ function fixture() {
 
 test('directed exploration mutates the best learned quantity and validates neighbors', () => {
   const { state, player, table } = fixture();
-  const source = state.grid.flat().find((tile) => tile.ownerId === player.id && tile.type !== 'AG');
+  const source = state.grid.flat().find((tile) => tile.ownerId === player.id && ['CAP', 'CIU'].includes(tile.type));
   const action = { type: 'RECRUIT_TROOP', x: source.x, y: source.y, count: 5 };
   BotDecisionTable.rememberFinalResult(table, [{ contextKey: 'context', actionType: BotDecisionTable.getActionKey(action) }], 1);
   const variants = directedVariants(state, player, 0, [action], table, 'context');
@@ -67,6 +67,7 @@ test('search can override a preferred losing move using actual combat outcomes',
   target.type = 'TR';
   target.ownerId = [...state.players.keys()][1];
   target.troops = 4;
+  target.defense = 0;
   const losing = { type: 'MOVE_TROOPS', x: source.x, y: source.y, targetX: target.x, targetY: target.y, troops: 1 };
   const winning = { ...losing, troops: 5 };
   // Same destination quantities must also be compared within the search budget.

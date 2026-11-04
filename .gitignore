@@ -5,3 +5,4 @@ client/dist/
 server/data/bot-league.json
 server/data/bot-benchmark-latest.json
 server/data/bot-training-memory.json
+server/data/solo-games/

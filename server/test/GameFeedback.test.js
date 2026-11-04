@@ -16,35 +16,36 @@ function fixture() {
   return { state, human, bot };
 }
 
-test('bots accept beneficial trade offers with the same tariff accounting and complete them once', () => {
+test('neutral bot trades charge silver only and complete exactly once', () => {
   const { state, human, bot } = fixture();
   const result = state.performFinancialAction(human.socketId, {
     type: 'PROPOSE_TRADE', recipientId: bot.id,
-    offerResource: 'SILVER', offerAmount: 10, requestResource: 'MATERIALS', requestAmount: 2
+    offerResource: 'SILVER', offerAmount: 10, requestResource: 'MATERIALS', requestAmount: 5
   });
   assert.equal(result.ok, true);
   assert.equal(result.accepted, true);
   assert.equal(human.resources.SILVER, 90);
-  assert.equal(human.resources.MATERIALS, 101);
-  assert.equal(bot.resources.SILVER, 108);
-  assert.equal(bot.resources.MATERIALS, 98);
-  assert.deepEqual(state.bankFund, { SILVER: 2, MATERIALS: 1 });
+  assert.equal(human.resources.MATERIALS, 105);
+  assert.equal(bot.resources.SILVER, 105);
+  assert.equal(bot.resources.MATERIALS, 95);
+  assert.deepEqual(state.bankFund, { SILVER: 5, MATERIALS: 0 });
   assert.equal(state.tradeOffers.length, 0);
+  const tradeProposal = state.eventHistory.find((event) => event.category === 'trade-offer');
+  assert.equal(tradeProposal.recipientId, bot.id);
   assert.ok(state.eventHistory.some((event) => event.message.includes(`${bot.name} aceptó el intercambio`)));
 });
 
-test('bots reject unfavorable trades without charging either country', () => {
+test('invalid trade ratios are rejected without charging either country', () => {
   const { state, human, bot } = fixture();
   const before = structuredClone([human.resources, bot.resources, state.bankFund]);
   const result = state.performFinancialAction(human.socketId, {
     type: 'PROPOSE_TRADE', recipientId: bot.id,
     offerResource: 'SILVER', offerAmount: 5, requestResource: 'MATERIALS', requestAmount: 10
   });
-  assert.equal(result.ok, true);
-  assert.equal(result.accepted, false);
+  assert.equal(result.ok, false);
   assert.deepEqual([human.resources, bot.resources, state.bankFund], before);
   assert.equal(state.tradeOffers.length, 0);
-  assert.ok(state.eventHistory.some((event) => event.message.includes(`${bot.name} rechazó`)));
+  assert.match(result.message, /2 de Plata por 1 Material/);
 });
 
 test('bot trades respect free-trade exemptions and human proposals remain pending', () => {
@@ -57,6 +58,9 @@ test('bot trades respect free-trade exemptions and human proposals remain pendin
   bot.isBot = false;
   assert.equal(state.performFinancialAction(human.socketId, action).ok, true);
   assert.equal(state.tradeOffers.length, 1);
+  const pendingProposal = state.eventHistory.find((event) => event.category === 'trade-offer');
+  assert.equal(pendingProposal.recipientId, bot.id);
+  assert.equal(pendingProposal.proposerId, human.id);
 });
 
 test('subsidy voting names its beneficiary and payment honors that country after GDI changes', () => {

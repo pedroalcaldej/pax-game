@@ -177,14 +177,14 @@ export class SocketServer {
         this.io.to(room.id).emit(PROTOCOL.GAME_STATE_UPDATE, room.gameState.getState());
       });
 
-      socket.on(PROTOCOL.REJOIN_ROOM, ({ roomId, userId } = {}, acknowledge = () => {}) => {
+      socket.on(PROTOCOL.REJOIN_ROOM, ({ roomId, userId, backgrounded = false } = {}, acknowledge = () => {}) => {
         const room = roomId && this.roomManager.getRoom(roomId);
         if (!room || !userId) {
           const result = { ok: false, message: 'No se encontró la sala o el usuario de la sesión.' };
           acknowledge(result);
           return;
         }
-        const player = room.rejoinPlayer(socket.id, userId);
+        const player = room.rejoinPlayer(socket.id, userId, { backgrounded });
         if (!player) {
           const result = { ok: false, message: 'No hay un país reservado para esta sesión.' };
           acknowledge(result);
@@ -299,13 +299,13 @@ export class SocketServer {
         );
       });
 
-      socket.on(PROTOCOL.SET_GAME_PAUSED, ({ roomId, paused } = {}) => {
+      socket.on(PROTOCOL.SET_GAME_PAUSED, ({ roomId, paused, reason } = {}) => {
         const room = this.roomManager.getRoom(roomId);
         if (!room || !socket.rooms.has(room.id)) {
           socket.emit(PROTOCOL.ACTION_ERROR, 'Únete a la sala antes de pausar la partida.');
           return;
         }
-        const result = room.setPaused(socket.id, paused);
+        const result = room.setPaused(socket.id, paused, reason);
         if (!result.ok) {
           socket.emit(PROTOCOL.ACTION_ERROR, result.message);
           return;
