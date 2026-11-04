@@ -40,6 +40,21 @@ export function claimNeutralTransitTiles(state, playerId, source, target, terrai
   }
 }
 
+/** Los transportes son botín de la casilla: no se destruyen con las tropas. */
+export function transferVehiclesToWinner(tile, winnerId) {
+  if (!tile || winnerId == null) return;
+  for (const key of ['carsByPlayer', 'shipsByPlayer']) {
+    const total = Object.values(tile[key] || {})
+      .reduce((sum, count) => sum + Math.max(0, Number(count) || 0), 0);
+    if (total > 0) tile[key] = { [winnerId]: total };
+    else delete tile[key];
+  }
+  const cargo = Object.values(tile.transportedTroopsByPlayer || {})
+    .reduce((sum, count) => sum + Math.max(0, Number(count) || 0), 0);
+  if (cargo > 0) tile.transportedTroopsByPlayer = { [winnerId]: cargo };
+  else delete tile.transportedTroopsByPlayer;
+}
+
 export function applyCapitalConquest(state, winnerId, defeatedId, capitalTile) {
   if (!capitalTile || capitalTile.type !== TERRAIN_TYPES.CAP
     || winnerId == null || defeatedId == null || winnerId === defeatedId) return false;
@@ -48,6 +63,10 @@ export function applyCapitalConquest(state, winnerId, defeatedId, capitalTile) {
   if (!winner || !defeated) return false;
 
   for (const tile of state.grid.flat()) {
+    const hasDefeatedAssets = tile.carsByPlayer?.[defeatedId] != null
+      || tile.shipsByPlayer?.[defeatedId] != null
+      || tile.transportedTroopsByPlayer?.[defeatedId] != null;
+    if (tile.ownerId === defeatedId || hasDefeatedAssets) transferVehiclesToWinner(tile, winnerId);
     if (tile.ownerId === defeatedId) {
       tile.ownerId = winnerId;
       tile.nationId = winner.nationId;
@@ -55,10 +74,6 @@ export function applyCapitalConquest(state, winnerId, defeatedId, capitalTile) {
       if (tile.visitingTroops) {
         delete tile.visitingTroops[defeatedId];
         if (!Object.keys(tile.visitingTroops).length) delete tile.visitingTroops;
-      }
-      if (tile.carsByPlayer?.[defeatedId] != null) {
-        delete tile.carsByPlayer[defeatedId];
-        if (!Object.keys(tile.carsByPlayer).length) delete tile.carsByPlayer;
       }
     }
     if (tile.visitingTroops?.[defeatedId] != null) {
@@ -127,7 +142,8 @@ export function resolveLandMovements(state, orders) {
     }
     if (reason) { results.set(order, { ok: false, message: reason }); continue; }
     reserved.set(sourceKey, (reserved.get(sourceKey) || 0) + action.troops);
-    accepted.push({ order, source, sourceOwnerId: source.ownerId, target });
+    accepted.push({ order, source, sourceOwnerId: source.ownerId, target,
+      movedCars: isCar ? Math.ceil(order.action.troops / ECONOMY.GROUND_TRANSPORT.TROOPS_PER_CAR) : 0 });
   }
 
   // Invalid orders never depart. Reinforcements arriving later cannot fund departures.
@@ -165,6 +181,7 @@ export function resolveLandMovements(state, orders) {
     }
     if (!activeMovements.length) continue;
     const target = activeMovements[0].target;
+    const movedCars = activeMovements.reduce((sum, movement) => sum + movement.movedCars, 0);
     const ownerBefore = target.ownerId;
     const forces = new Map([...state.players.keys()].map((id) => [id, state.getTroopsForPlayerOnTile(target, id)]));
     for (const { order } of activeMovements) {
@@ -204,11 +221,25 @@ export function resolveLandMovements(state, orders) {
         }
       }
     }
+    if (!winnerId && movedCars > 0) {
+      // Un empate elimina las tropas, pero los carros regresan a sus orígenes.
+      for (const movement of activeMovements) if (movement.movedCars > 0) {
+        movement.source.carsByPlayer ||= {};
+        movement.source.carsByPlayer[movement.order.player.id] = (
+          movement.source.carsByPlayer[movement.order.player.id] || 0
+        ) + movement.movedCars;
+      }
+    }
     target.troops = survivors;
     delete target.visitingTroops;
     if (winnerId) {
       target.ownerId = winnerId;
       target.nationId = state.players.get(winnerId).nationId;
+      transferVehiclesToWinner(target, winnerId);
+      if (movedCars > 0) {
+        target.carsByPlayer ||= {};
+        target.carsByPlayer[winnerId] = (target.carsByPlayer[winnerId] || 0) + movedCars;
+      }
       applyCapitalConquest(state, winnerId, ownerBefore, target);
       awardNeutralResourceCapture(state, winnerId, target, ownerBefore);
     }
@@ -245,10 +276,7 @@ export function resolveLandMovements(state, orders) {
           defenderSurvivors: winnerId && winnerId !== order.player.id ? survivors : 0
         } } : {})
       });
-      if (order.movementType === 'car' && resultForCarTransfer(order, winnerId, fought)) {
-        const cars = Math.ceil(order.action.troops / ECONOMY.GROUND_TRANSPORT.TROOPS_PER_CAR);
-        target.carsByPlayer ||= {};
-        target.carsByPlayer[order.player.id] = (target.carsByPlayer[order.player.id] || 0) + cars;
+      if (order.movementType === 'car' && winnerId === order.player.id) {
         claimNeutralTransitTiles(state, order.player.id, movements.find((movement) => movement.order === order).source, target, LAND_TERRAIN);
       }
     }
@@ -256,6 +284,3 @@ export function resolveLandMovements(state, orders) {
   return results;
 }
 
-function resultForCarTransfer(order, winnerId, fought) {
-  return !fought || winnerId === order.player.id;
-}

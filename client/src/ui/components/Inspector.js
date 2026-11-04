@@ -173,7 +173,7 @@ export class Inspector {
       const hasPrevious = this.actionQuantities.has(key);
       const previous = hasPrevious
         ? this.actionQuantities.get(key)
-        : type === 'MOVE_TROOPS' ? limit : 1;
+        : ['MOVE_TROOPS', 'MOVE_CARS', 'MOVE_SHIPS'].includes(type) ? limit : 1;
       const value = limit > 0 ? Math.min(limit, Math.max(1, previous)) : 0;
       if (hasPrevious && limit > 0) this.actionQuantities.set(key, value);
       return { max: limit, unit, field, value };
@@ -236,7 +236,7 @@ export class Inspector {
       },
       {
         type: 'MOVE_CARS',
-        title: 'Mover tropas en carros',
+        title: 'Mover carros',
         cost: `${cars} carros · hasta ${carTroops} tropas`,
         quantity: quantity('MOVE_CARS', carTroops, 'tropas', 'troops'),
         enabled: planningPhase && isOwned && cars > 0 && carTroops > 0,

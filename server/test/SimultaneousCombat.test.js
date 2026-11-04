@@ -144,6 +144,67 @@ test('five troops overcome four fixed defense with one survivor', () => {
   assert.equal(destination.defense, 2);
 });
 
+test('los carros de la casilla pasan al vencedor del combate terrestre', () => {
+  const { state, alpha, beta, tile, move } = fixture();
+  tile(8, 4, alpha, 3);
+  const destination = tile(9, 4, beta, 1);
+  destination.carsByPlayer = { [beta.id]: 2 };
+  move(alpha, 8, 4, 9, 4, 3);
+  state.resolvePlannedActions();
+  assert.deepEqual(destination.carsByPlayer, { [alpha.id]: 2 });
+});
+
+test('los carros atacantes no se destruyen si pierde el combate', () => {
+  const { state, alpha, beta, tile } = fixture();
+  const source = tile(8, 4, alpha, 1);
+  source.carsByPlayer = { [alpha.id]: 1 };
+  const destination = tile(9, 4, beta, 2);
+  alpha.plannedActions[0] = {
+    type: 'MOVE_CARS', x: source.x, y: source.y,
+    targetX: destination.x, targetY: destination.y, troops: 1
+  };
+  state.resolvePlannedActions();
+  assert.deepEqual(destination.carsByPlayer, { [beta.id]: 1 });
+});
+
+test('los barcos supervivientes pasan al vencedor del combate naval', () => {
+  const { state, alpha, beta, tile } = fixture();
+  const source = tile(8, 4, alpha, 0);
+  source.type = 'AG';
+  source.shipsByPlayer = { [alpha.id]: 3 };
+  source.transportedTroopsByPlayer = { [alpha.id]: 3 };
+  const destination = tile(9, 4, beta, 0);
+  destination.type = 'AG';
+  destination.shipsByPlayer = { [beta.id]: 2 };
+  destination.transportedTroopsByPlayer = { [beta.id]: 2 };
+  const result = state.resolveShipMovement(alpha, {
+    type: 'MOVE_SHIPS', x: source.x, y: source.y,
+    targetX: destination.x, targetY: destination.y, ships: 3
+  });
+  assert.equal(result.ok, true);
+  assert.equal(destination.shipsByPlayer[alpha.id], 5);
+  assert.equal(destination.shipsByPlayer[beta.id], undefined);
+  assert.equal(destination.transportedTroopsByPlayer[beta.id], undefined);
+  assert.equal(destination.transportedTroopsByPlayer[alpha.id], 5);
+});
+
+test('los barcos atacantes derrotados pasan al vencedor naval', () => {
+  const { state, alpha, beta, tile } = fixture();
+  const source = tile(8, 4, alpha, 0);
+  source.type = 'AG';
+  source.shipsByPlayer = { [alpha.id]: 1 };
+  const destination = tile(9, 4, beta, 0);
+  destination.type = 'AG';
+  destination.shipsByPlayer = { [beta.id]: 2 };
+  const result = state.resolveShipMovement(alpha, {
+    type: 'MOVE_SHIPS', x: source.x, y: source.y,
+    targetX: destination.x, targetY: destination.y, ships: 1
+  });
+  assert.equal(result.ok, true);
+  assert.equal(destination.shipsByPlayer[beta.id], 3);
+  assert.equal(source.shipsByPlayer[alpha.id], undefined);
+});
+
 test('occupying a neutral resource node grants twenty materials', () => {
   const { state, alpha, tile, move } = fixture();
   const destination = tile(9, 4, null, 0);

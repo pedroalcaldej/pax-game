@@ -1,4 +1,4 @@
-import { applyCapitalConquest, awardNeutralResourceCapture, claimNeutralTransitTiles, resolveLandMovements } from './LandMovementResolver.js';
+import { applyCapitalConquest, awardNeutralResourceCapture, claimNeutralTransitTiles, resolveLandMovements, transferVehiclesToWinner } from './LandMovementResolver.js';
 /** State-bound domain operations; GameState delegates here to keep its state authoritative. */
 import { ACTION_SLOT_COUNT, ECONOMY, LAND_TERRAIN, TERRAIN_TYPES, WATER_TERRAIN } from '../../../shared/Constants.js';
 import { InternationalOrganizationEngine } from './InternationalOrganizationEngine.js';
@@ -612,35 +612,33 @@ export const ActionEngine = {
     }
 
     if (defendingShips > 0 && action.ships <= defendingShips) {
-      const survivors = Math.floor(action.ships / 2);
-      const losses = action.ships - survivors;
-      source.shipsByPlayer[player.id] -= losses;
+      const losses = action.ships;
+      source.shipsByPlayer[player.id] -= action.ships;
       if (source.shipsByPlayer[player.id] <= 0) delete source.shipsByPlayer[player.id];
       const cargo = source.transportedTroopsByPlayer?.[player.id] || 0;
-      const survivingCargo = Math.min(cargo, ships - losses > 0 ? (ships - losses) * ECONOMY.NAVAL.TROOPS_PER_SHIP : 0);
-      if (survivingCargo > 0) source.transportedTroopsByPlayer[player.id] = survivingCargo;
-      else if (source.transportedTroopsByPlayer) delete source.transportedTroopsByPlayer[player.id];
+      const movedCargo = Math.min(cargo, action.ships * ECONOMY.NAVAL.TROOPS_PER_SHIP);
+      if (movedCargo > 0) {
+        source.transportedTroopsByPlayer[player.id] -= movedCargo;
+        if (source.transportedTroopsByPlayer[player.id] <= 0) delete source.transportedTroopsByPlayer[player.id];
+        destination.transportedTroopsByPlayer ||= {};
+        destination.transportedTroopsByPlayer[player.id] = (destination.transportedTroopsByPlayer[player.id] || 0) + movedCargo;
+      }
+      destination.shipsByPlayer ||= {};
+      destination.shipsByPlayer[player.id] = (destination.shipsByPlayer[player.id] || 0) + action.ships;
+      const winnerId = [...hostilePlayers][0];
+      transferVehiclesToWinner(destination, winnerId);
       return {
         ok: true,
-        message: `Batalla naval perdida: ${player.name} pierde ${losses} barcos${cargo > survivingCargo ? ` y ${cargo - survivingCargo} tropas embarcadas` : ''}.`,
-        combat: { naval: true, attackerId: player.id, defenderId: [...hostilePlayers][0], attackerTroops: action.ships, defenderTroops: defendingShips }
+        message: `Batalla naval perdida: ${player.name} entrega ${losses} barcos al vencedor.`,
+        combat: { naval: true, attackerId: player.id, defenderId: winnerId, attackerTroops: action.ships, defenderTroops: defendingShips, winnerId }
       };
     }
 
     if (defendingShips > 0) {
+      // Los barcos defensores no se destruyen: al perder la casilla pasan al
+      // vencedor junto con las tropas que transporten.
       for (const [defenderId, count] of defenders) {
-        const survivors = Math.floor(count / 2);
-        const losses = count - survivors;
-        destination.shipsByPlayer[defenderId] = survivors;
-        if (survivors <= 0) delete destination.shipsByPlayer[defenderId];
-        const cargo = destination.transportedTroopsByPlayer?.[defenderId] || 0;
-        const survivingCargo = Math.min(cargo, survivors * ECONOMY.NAVAL.TROOPS_PER_SHIP);
-        if (survivingCargo > 0) destination.transportedTroopsByPlayer[defenderId] = survivingCargo;
-        else if (destination.transportedTroopsByPlayer) delete destination.transportedTroopsByPlayer[defenderId];
-        if (cargo > survivingCargo) {
-          this.recordEvent(`${cargo - survivingCargo} tropas embarcadas de ${this.players.get(defenderId)?.name || defenderId} se perdieron en la batalla naval.`);
-        }
-        if (losses > 0) this.recordEvent(`${this.players.get(defenderId)?.name || defenderId} perdió ${losses} barcos en la batalla naval.`);
+        destination.shipsByPlayer[defenderId] = count;
       }
     }
 
@@ -650,6 +648,18 @@ export const ActionEngine = {
       Object.entries(source.shipsByPlayer).filter(([, count]) => count > 0)
     );
     destination.shipsByPlayer ||= {};
+    if (defendingShips > 0) {
+      // Los barcos defensores supervivientes cambian de dueño junto con la
+      // casilla; no se destruyen sólo por haber perdido el combate.
+      const capturedShips = Object.values(destination.shipsByPlayer)
+        .reduce((sum, count) => sum + Math.max(0, Number(count) || 0), 0);
+      destination.shipsByPlayer = {};
+      if (capturedShips > 0) destination.shipsByPlayer[player.id] = capturedShips;
+      const capturedCargo = Object.values(destination.transportedTroopsByPlayer || {})
+        .reduce((sum, count) => sum + Math.max(0, Number(count) || 0), 0);
+      if (capturedCargo > 0) destination.transportedTroopsByPlayer = { [player.id]: capturedCargo };
+      else delete destination.transportedTroopsByPlayer;
+    }
     destination.shipsByPlayer[player.id] = (destination.shipsByPlayer[player.id] || 0) + action.ships;
     const cargo = source.transportedTroopsByPlayer?.[player.id] || 0;
     const movedCargo = Math.min(cargo, action.ships * ECONOMY.NAVAL.TROOPS_PER_SHIP);
@@ -666,7 +676,7 @@ export const ActionEngine = {
     return {
       ok: true,
       message: defendingShips > 0
-        ? `Victoria naval: ${player.name} controla el agua; los barcos supervivientes enemigos permanecen en la casilla.`
+        ? `Victoria naval: ${player.name} controla el agua y captura los barcos enemigos.`
         : 'La flota navegó y tomó el control de la casilla de agua.',
       claimed: destination.ownerId === player.id,
       combat: defendingShips > 0

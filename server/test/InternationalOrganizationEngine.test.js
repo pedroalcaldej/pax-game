@@ -594,6 +594,7 @@ test('donation to the World Bank requires 15 silver', () => {
 
 test('bonds default at maturity, lose influence, accrue one interest per round, and accept partial payment', () => {
   const { gameState, player } = createHumanGame();
+  gameState.bankFund.SILVER = 20;
   player.resources.SILVER = 100;
   player.resources.INFLUENCE = 20;
   const issued = gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
@@ -618,13 +619,14 @@ test('bonds default at maturity, lose influence, accrue one interest per round, 
   assert.equal(repayment.ok, true);
   assert.equal(player.resources.SILVER, 14);
   assert.equal(gameState.bonds[0].balance, 16);
-  assert.equal(gameState.bankFund.SILVER, -10);
+  assert.equal(gameState.bankFund.SILVER, 10);
   gameState.processBondsAtRoundStart(8);
   assert.equal(gameState.bonds[0].balance, 17);
 });
 
 test('a bond is automatically repaid when the player can cover its maturity balance', () => {
   const { gameState, player } = createHumanGame();
+  gameState.bankFund.SILVER = 20;
   gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
   player.resources.SILVER = 25;
   player.resources.INFLUENCE = 20;
@@ -634,16 +636,26 @@ test('a bond is automatically repaid when the player can cover its maturity bala
   assert.equal(gameState.bonds[0].paid, true);
   assert.equal(gameState.bonds[0].balance, 0);
   assert.equal(player.resources.SILVER, 0);
-  assert.equal(gameState.bankFund.SILVER, 5);
+  assert.equal(gameState.bankFund.SILVER, 25);
   assert.equal(player.resources.INFLUENCE, 20);
 });
 
 test('a player cannot issue a second bond while the first one is pending', () => {
   const { gameState, player } = createHumanGame();
+  gameState.bankFund.SILVER = 20;
   assert.equal(gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' }).ok, true);
   const rejected = gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
   assert.equal(rejected.ok, false);
   assert.match(rejected.message, /bono pendiente/);
+});
+
+test('el Banco Mundial rechaza bonos cuando no tiene reservas suficientes', () => {
+  const { gameState, player } = createHumanGame();
+  const result = gameState.performFinancialAction(player.socketId, { type: 'ISSUE_BOND' });
+  assert.equal(result.ok, false);
+  assert.match(result.message, /reservas de plata/);
+  assert.equal(gameState.bonds.length, 0);
+  assert.equal(player.resources.SILVER, 100);
 });
 
 test('a recent conflict disables new TLC proposals', () => {
@@ -1013,6 +1025,26 @@ test('bots build cities when military and factory actions are unavailable', () =
     bot.plannedActions.map(({ x, y }) => [x, y]),
     buildTiles.map(({ x, y }) => [x, y])
   );
+});
+
+test('bots priorizan reclutar en una capital amenazada', () => {
+  const { gameState } = createHumanGame();
+  const bot = gameState.players.get('nation-1');
+  const human = gameState.players.get('nation-0');
+  const capital = gameState.grid.flat().find((tile) => tile.ownerId === bot.id && tile.type === TERRAIN_TYPES.CAP);
+  const attacker = gameState.grid[capital.y][capital.x - 1];
+  assert.ok(capital && attacker);
+  capital.troops = 0;
+  capital.defense = 0;
+  Object.assign(attacker, { type: TERRAIN_TYPES.TR, ownerId: human.id, nationId: human.nationId, troops: 5 });
+  bot.resources.SILVER = 100;
+  bot.resources.MATERIALS = 100;
+  gameState.botStrategicActionsEnabled = false;
+
+  gameState.runBotDecisions();
+
+  assert.equal(bot.plannedActions[0].type, 'RECRUIT_TROOP');
+  assert.deepEqual([bot.plannedActions[0].x, bot.plannedActions[0].y], [capital.x, capital.y]);
 });
 
 test('bots attack a weaker enemy when no neutral land can be claimed', () => {

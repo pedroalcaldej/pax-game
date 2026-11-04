@@ -245,6 +245,12 @@ export class FinancePanel {
     root.querySelector('#finance-bank-fund').textContent = (
       `${formatValue(bankFund?.SILVER)} plata · ${formatValue(bankFund?.MATERIALS)} materiales`
     );
+    const issueBond = root.querySelector('[data-issue-bond]');
+    const enoughBankSilver = Number(bankFund?.SILVER || 0) >= ECONOMY.COSTS.BOND_PROCEEDS;
+    issueBond.disabled = !active || !enoughBankSilver;
+    issueBond.dataset.tooltip = !active
+      ? 'Disponible durante la planificación de una partida sin pausar'
+      : !enoughBankSilver ? 'El Banco Mundial no tiene suficientes reservas de plata' : '';
   }
 
   updateMarketQuantity() {

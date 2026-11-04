@@ -282,6 +282,10 @@ export class GameState {
     return BotController.findBotCandidates.apply(this, args);
   }
 
+  findBotDefenseNeeds(...args) {
+    return BotController.findBotDefenseNeeds.apply(this, args);
+  }
+
   chooseBotTaxRate(...args) {
     return BotController.chooseBotTaxRate.apply(this, args);
   }

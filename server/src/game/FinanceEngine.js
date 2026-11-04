@@ -222,6 +222,9 @@ export const FinanceEngine = {
       if (this.bonds.some((bond) => bond.playerId === player.id && !bond.paid)) {
         return { ok: false, message: 'Ya tienes un bono pendiente. Debes saldarlo antes de emitir otro.' };
       }
+      if ((this.bankFund.SILVER || 0) < ECONOMY.COSTS.BOND_PROCEEDS) {
+        return { ok: false, message: 'El Banco Mundial no tiene suficientes reservas de plata para comprar este bono.' };
+      }
       const bond = {
         id: `bond-${this.nextBondId++}`,
         playerId: player.id,

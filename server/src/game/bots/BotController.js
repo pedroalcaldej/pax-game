@@ -31,6 +31,7 @@ export const BotController = {
       if (!resetReadiness && player.phaseReady) continue;
       player.plannedActions = createEmptyActionSlots(this.settings?.actionSlotCount);
       this.activeBotStrategy = this.botStrategies?.[player.id];
+      this.activeBotPlayer = player;
       this.chooseBotTaxRate(player);
       this.runBotStrategicActions(player);
 
@@ -56,17 +57,36 @@ export const BotController = {
           random,
           exploring ? 1 : 0
         );
-        if (!this.activeBotStrategy && !exploring) {
+        if (!this.activeBotStrategy && !exploring && !this.findBotDefenseNeeds(player).length) {
           selected = searchAction(this, player, slot, candidates, table, context, selected);
         }
         this.planBotAction(player, selected, slot);
       }
       player.phaseReady = true;
       this.activeBotStrategy = null;
+      this.activeBotPlayer = null;
     }
   },
 
   chooseBotCandidate(table, context, candidates, random, exploration) {
+    const defenseNeeds = this.findBotDefenseNeeds(this.activeBotPlayer);
+    if (defenseNeeds.length) {
+      const urgency = new Map(defenseNeeds.map((need) => [`${need.x}:${need.y}`, need]));
+      const defensiveRecruitment = candidates
+        .filter((action) => action.type === 'RECRUIT_TROOP')
+        .map((action) => ({ action, need: urgency.get(`${action.x}:${action.y}`) }))
+        .filter((entry) => entry.need)
+        .sort((left, right) => right.need.score - left.need.score
+          || (right.action.count || 0) - (left.action.count || 0));
+      if (defensiveRecruitment.length) return defensiveRecruitment[0].action;
+
+      const defensiveMoves = candidates
+        .filter((action) => action.type === 'MOVE_TROOPS')
+        .map((action) => ({ action, need: urgency.get(`${action.targetX}:${action.targetY}`) }))
+        .filter((entry) => entry.need)
+        .sort((left, right) => right.need.score - left.need.score);
+      if (defensiveMoves.length) return defensiveMoves[0].action;
+    }
     if (!this.activeBotStrategy) {
       const hypotheses = this.trainingMode
         ? humanExplorationCandidates(this.botHumanIdeas, context, candidates) : [];
@@ -84,6 +104,33 @@ export const BotController = {
       return index < 0 ? 100 : index;
     };
     return [...candidates].sort((a, b) => score(a) - score(b))[0];
+  },
+
+  findBotDefenseNeeds(player) {
+    if (!player || player.isEliminated) return [];
+    const needs = [];
+    const settlements = new Set(['CAP', 'CIU', 'PUE']);
+    for (const tile of this.grid.flat()) {
+      if (tile.ownerId !== player.id || !settlements.has(tile.type)) continue;
+      let adjacentEnemy = 0;
+      for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) {
+        if (!dx && !dy) continue;
+        const neighbor = this.grid[tile.y + dy]?.[tile.x + dx];
+        if (!neighbor) continue;
+        for (const enemy of this.players.values()) {
+          if (enemy.id === player.id || enemy.isEliminated) continue;
+          adjacentEnemy += this.getTroopsForPlayerOnTile(neighbor, enemy.id);
+        }
+      }
+      const ownStrength = this.getTroopsForPlayerOnTile(tile, player.id) + (tile.defense || 0);
+      const attackStrength = adjacentEnemy;
+      if (attackStrength <= 0) continue;
+      const score = (tile.type === 'CAP' ? 100 : tile.type === 'CIU' ? 60 : 30)
+        + Math.max(0, attackStrength - ownStrength) * 10
+        + attackStrength;
+      needs.push({ x: tile.x, y: tile.y, score, attackStrength, ownStrength });
+    }
+    return needs.sort((left, right) => right.score - left.score);
   },
 
   findBotCandidates(player, slot) {
@@ -117,10 +164,10 @@ export const BotController = {
       for (const type of ['BUILD_FACTORY', 'BUILD_CITY', 'MOVE_CAPITAL']) {
         if (canDevelop) add({ type, x: source.x, y: source.y });
       }
-      if (!hasUnits) continue;
       if (count > 0 && canDevelop && ['CAP', 'CIU', 'PUE'].includes(source.type)) {
         add({ type: 'RECRUIT_TROOP', x: source.x, y: source.y, count });
       }
+      if (!hasUnits) continue;
       if (canDevelop) add({ type: 'BUILD_SHIP', x: source.x, y: source.y, count: 1 });
       if (canDevelop && source.type === 'FT' && source.building === 'FACTORY') {
         add({ type: 'BUILD_CAR', x: source.x, y: source.y, count: 1 });
@@ -242,7 +289,8 @@ export const BotController = {
     if (player.resources.MATERIALS > 0) {
       actions.push({ type: 'SELL_MATERIALS', quantity: 1, playerId: player.id });
     }
-    if (!this.bonds.some((bond) => bond.playerId === player.id && !bond.paid)) {
+    if (!this.bonds.some((bond) => bond.playerId === player.id && !bond.paid)
+      && (this.bankFund?.SILVER || 0) >= ECONOMY.COSTS.BOND_PROCEEDS) {
       actions.push({ type: 'ISSUE_BOND', playerId: player.id });
     }
     const bond = this.bonds.find((entry) => entry.playerId === player.id && !entry.paid);
