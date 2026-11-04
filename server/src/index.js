@@ -28,13 +28,21 @@ const allowedOrigins = (process.env.CLIENT_ORIGINS || '')
 if (!allowedOrigins.length) {
   throw new Error('Define CLIENT_ORIGINS con los orígenes permitidos del cliente.');
 }
-app.use(cors({ origin: allowedOrigins }));
+
+const allowLanOrigins = process.env.ALLOW_LAN_ORIGINS === 'true';
+const isLanOrigin = (origin) => {
+  if (!allowLanOrigins || typeof origin !== 'string') return false;
+  return /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2})(?::\d+)?$/.test(origin);
+};
+const isAllowedOrigin = (origin) => !origin || allowedOrigins.includes(origin) || isLanOrigin(origin);
+const corsOptions = {
+  origin: (origin, callback) => callback(null, isAllowedOrigin(origin)),
+  methods: ['GET', 'POST']
+};
+app.use(cors(corsOptions));
 
 const io = new Server(httpServer, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST']
-  }
+  cors: corsOptions
 });
 
 if (!process.env.REDIS_URL) {

@@ -1694,12 +1694,21 @@ export class GameScreen {
     );
     if (room.estado === 'en_juego') {
       this.setStartStatus('Partida iniciada. Cargando el mapa…');
-      if (socket.connected && this.serverJoinedRoom !== room.code) {
-        this.serverJoinedRoom = room.code;
-        this.joinGame();
-        socket.timeout(5000).emit(PROTOCOL.START_GAME, { roomId: this.roomCode });
+      if (socket.connected && !this.gameState?.gameStarted && !this.autoStartPending) {
+        this.autoStartPending = true;
+        if (this.serverJoinedRoom !== room.code) {
+          this.serverJoinedRoom = room.code;
+          this.joinGame();
+        }
+        socket.timeout(5000).emit(PROTOCOL.START_GAME, { roomId: this.roomCode }, (error, result) => {
+          this.autoStartPending = false;
+          if (error || !result?.ok) {
+            this.setStartStatus(result?.message || 'No se pudo iniciar la partida.');
+          }
+        });
       }
     } else {
+      this.autoStartPending = false;
       this.setStartStatus(ownSlot?.listo
         ? 'Estás listo. Pulsa «Listo» de nuevo para retirar tu confirmación.'
         : privateRoom
