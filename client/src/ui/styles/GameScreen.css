@@ -799,7 +799,11 @@
     font: inherit;
     font-size: 11px;
   }
-  .pax-peer-trade-fields span { color: #93a1b5; }
+  .pax-trade-quantity { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; gap: 3px; align-items: center; }
+  .pax-trade-quantity button, .pax-trade-swap { min-height: 28px; padding: 2px 6px; border: 1px solid #39455d; border-radius: 5px; color: #dbeafe; background: #17243a; font: inherit; cursor: pointer; }
+  .pax-trade-quantity button:hover, .pax-trade-swap:hover { border-color: #79a7f2; background: #223451; }
+  .pax-trade-swap { width: 34px; color: #f5b62e; font-size: 16px; }
+  .pax-peer-trade-fields input[readonly] { color: #cbd5e1; background: #17243a; }
   .pax-peer-trade-form > button { min-height: 34px; }
   .pax-peer-trade-offers { display: grid; gap: 7px; }
   .pax-peer-trade-offer { display: grid; gap: 6px; padding: 8px; border: 1px solid #39455d; border-radius: 6px; background: #10192b; font-size: 10px; }

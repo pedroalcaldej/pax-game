@@ -43,19 +43,19 @@ export class FinancePanel {
             <select id="trade-proposal-recipient" name="recipientId" aria-label="País destinatario"></select>
             <div class="pax-peer-trade-fields">
               <label>Ofreces
-                <select id="trade-offer-resource" name="offerResource" aria-label="Recurso ofrecido">
-                  <option value="SILVER">Plata</option>
-                  <option value="MATERIALS">Materiales</option>
-                </select>
-                <input name="offerAmount" type="number" min="1" step="1" value="1" aria-label="Cantidad ofrecida">
+                <input type="hidden" id="trade-offer-resource" name="offerResource" value="SILVER">
+                <strong id="trade-offer-resource-label">Plata</strong>
+                <span class="pax-trade-quantity">
+                  <button type="button" data-trade-quantity-adjust="-1" aria-label="Reducir cantidad ofrecida">−</button>
+                  <input name="offerAmount" type="number" min="1" step="1" value="1" aria-label="Cantidad ofrecida">
+                  <button type="button" data-trade-quantity-adjust="1" aria-label="Aumentar cantidad ofrecida">+</button>
+                </span>
               </label>
-              <span aria-hidden="true">⇄</span>
+              <button type="button" class="pax-trade-swap" data-trade-swap aria-label="Invertir sentido del intercambio">⇄</button>
               <label>Solicitas
-                <select id="trade-request-resource" name="requestResource" aria-label="Recurso solicitado">
-                  <option value="MATERIALS">Materiales</option>
-                  <option value="SILVER">Plata</option>
-                </select>
-                <input name="requestAmount" type="number" min="1" step="1" value="1" aria-label="Cantidad solicitada">
+                <input type="hidden" id="trade-request-resource" name="requestResource" value="MATERIALS">
+                <strong id="trade-request-resource-label">Materiales</strong>
+                <input name="requestAmount" type="number" min="1" step="1" value="1" aria-label="Cantidad solicitada" readonly>
               </label>
             </div>
             <button type="submit" id="trade-propose-button">Proponer intercambio</button>
@@ -82,8 +82,37 @@ export class FinancePanel {
       </section>
     `;
     this.root.addEventListener('click', (event) => {
+      const tradeQuantityButton = event.target.closest?.('[data-trade-quantity-adjust]');
+      if (tradeQuantityButton) {
+        const form = tradeQuantityButton.closest('[data-trade-proposal]');
+        const input = form?.elements.offerAmount;
+        if (!input) return;
+        const rate = this.tradeRelations(form.elements.recipientId.value).freeTrade ? 1 : 2;
+        const step = form.elements.offerResource.value === 'SILVER' ? rate : 1;
+        input.value = Math.max(1, Number(input.value || 1) + Number(tradeQuantityButton.dataset.tradeQuantityAdjust) * step);
+        this.syncTradeAmounts('offerAmount');
+        return;
+      }
+      const tradeSwap = event.target.closest?.('[data-trade-swap]');
+      if (tradeSwap) {
+        const form = tradeSwap.closest('[data-trade-proposal]');
+        const offerResource = form.elements.offerResource;
+        const requestResource = form.elements.requestResource;
+        const offerAmount = form.elements.offerAmount;
+        const requestAmount = form.elements.requestAmount;
+        [offerResource.value, requestResource.value] = [requestResource.value, offerResource.value];
+        [offerAmount.value, requestAmount.value] = [requestAmount.value, offerAmount.value];
+        this.root.querySelector('#trade-offer-resource-label').textContent = offerResource.value === 'SILVER' ? 'Plata' : 'Materiales';
+        this.root.querySelector('#trade-request-resource-label').textContent = requestResource.value === 'SILVER' ? 'Plata' : 'Materiales';
+        this.syncTradeAmounts('offerAmount');
+        return;
+      }
       const quantityButton = event.target.closest?.('[data-quantity-adjust], [data-quantity-max]');
       if (quantityButton) {
+        if (quantityButton.hasAttribute('data-quantity-adjust') && this.marketQuantityRepeatStarted) {
+          this.marketQuantityRepeatStarted = false;
+          return;
+        }
         const input = this.container.querySelector('#market-quantity-input');
         if (!input) return;
         input.value = quantityButton.hasAttribute('data-quantity-max')
@@ -150,14 +179,16 @@ export class FinancePanel {
       if (event.target.matches('#market-quantity-input')) this.updateMarketQuantity();
       if (event.target.matches('[data-trade-proposal] input')) this.updateTradeQuote();
     });
+    this.root.addEventListener('pointerdown', (event) => {
+      const button = event.target.closest?.('[data-quantity-adjust]');
+      if (!button) return;
+      this.startMarketQuantityRepeat(button);
+    });
+    for (const eventName of ['pointerup', 'pointercancel', 'pointerleave']) {
+      this.root.addEventListener(eventName, () => this.stopMarketQuantityRepeat());
+    }
     this.root.addEventListener('change', (event) => {
-      if (!event.target.matches('[data-trade-proposal] input, [data-trade-proposal] select')) return;
-      const offerResource = this.container.querySelector('#trade-offer-resource');
-      const requestResource = this.container.querySelector('#trade-request-resource');
-      if (offerResource.value === requestResource.value) {
-        const other = event.target === requestResource ? offerResource : requestResource;
-        other.value = event.target.value === 'SILVER' ? 'MATERIALS' : 'SILVER';
-      }
+      if (!event.target.matches('[data-trade-proposal] input')) return;
       this.syncTradeAmounts(event.target.name);
     });
   }
@@ -206,7 +237,7 @@ export class FinancePanel {
     }
     root.querySelector('#trade-propose-button').disabled = !active || !tradePlayers.length;
     for (const control of root.querySelectorAll(
-      '[data-market-action], #market-quantity-input, [data-quantity-adjust], [data-quantity-max], #trade-proposal-recipient, [data-trade-proposal] select, [data-trade-proposal] input, [data-trade-proposal] button, [data-trade-response], [data-trade-cancel], [data-issue-bond], [data-donate-world-bank]'
+      '[data-market-action], #market-quantity-input, [data-quantity-adjust], [data-quantity-max], #trade-proposal-recipient, [data-trade-proposal] input, [data-trade-proposal] button, [data-trade-response], [data-trade-cancel], [data-issue-bond], [data-donate-world-bank]'
     )) {
       const needsRecipient = control.matches('#trade-proposal-recipient, #trade-propose-button');
       control.disabled = !active || (needsRecipient && !tradePlayers.length);
@@ -275,6 +306,29 @@ export class FinancePanel {
     }
   }
 
+  startMarketQuantityRepeat(button) {
+    this.stopMarketQuantityRepeat();
+    this.marketQuantityRepeatStarted = false;
+    const adjust = () => {
+      const input = this.container.querySelector('#market-quantity-input');
+      if (!input) return;
+      input.value = Math.max(1, Number(input.value || 1) + Number(button.dataset.quantityAdjust));
+      this.updateMarketQuantity();
+    };
+    this.marketQuantityRepeatTimer = window.setTimeout(() => {
+      this.marketQuantityRepeatStarted = true;
+      adjust();
+      this.marketQuantityRepeatInterval = window.setInterval(adjust, 70);
+    }, 350);
+  }
+
+  stopMarketQuantityRepeat() {
+    window.clearTimeout(this.marketQuantityRepeatTimer);
+    window.clearInterval(this.marketQuantityRepeatInterval);
+    this.marketQuantityRepeatTimer = null;
+    this.marketQuantityRepeatInterval = null;
+  }
+
   tradeRelations(recipientId) {
     const includesBoth = (entry) => entry.playerIds.includes(this.localPlayerId) && entry.playerIds.includes(recipientId);
     return {
@@ -316,7 +370,7 @@ export class FinancePanel {
       : !enough ? 'Uno de los países no tiene suficientes recursos' : '';
     const button = this.root.querySelector('#trade-propose-button');
     button.disabled = Boolean(reason);
-    button.dataset.tooltip = reason;
+    delete button.dataset.tooltip;
     this.root.querySelector('#trade-quote').textContent = !terms.ok ? terms.message : terms.freeTrade
       ? 'TLC: 1 de Plata por 1 Material, sin arancel.'
       : `Por cada Material: el comprador paga 2 de Plata; el vendedor recibe 1 y el banco 1. Banco: ${terms.silverTariff} de Plata.`;

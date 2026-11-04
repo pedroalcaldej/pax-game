@@ -667,6 +667,11 @@ export class GameScreen {
       }
     }
     for (const element of this.container.querySelectorAll('button:disabled, input:disabled, select:disabled')) {
+      if (element.closest('.pax-peer-trade')) {
+        element.removeAttribute('data-tooltip');
+        element.removeAttribute('title');
+        continue;
+      }
       if (element.id === 'play-button') element.dataset.tooltip = 'Esperando conexión con la partida';
       else if (element.id === 'single-player-button') element.dataset.tooltip = 'Esperando conexión con la partida';
       else if (element.matches('#create-room-button, #quick-match-button, #join-room-button')) element.dataset.tooltip = 'El servidor no está disponible';
