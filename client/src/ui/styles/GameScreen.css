@@ -70,6 +70,12 @@
   }
   .pax-start-button:disabled { opacity: .5; cursor: not-allowed; }
   .pax-start-status { min-height: 18px; margin-top: 12px !important; font-size: 11px; }
+  .pax-audio-controls { display: grid; gap: 8px; margin-top: 18px; padding: 12px; border: 1px solid #34435d; border-radius: 8px; background: rgba(15, 23, 42, .55); text-align: left; }
+  .pax-audio-controls h3 { margin: 0 0 2px; color: #e2e8f0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  .pax-audio-controls label { display: grid; gap: 4px; color: #a7b3c7; font-size: 11px; font-weight: 700; }
+  .pax-audio-controls label span { display: flex; justify-content: space-between; }
+  .pax-audio-controls output { color: #e2e8f0; font-variant-numeric: tabular-nums; }
+  .pax-audio-controls input[type="range"] { width: 100%; accent-color: #f5a900; cursor: pointer; }
   .pax-room-actions { display: grid; gap: 14px; margin-top: 22px; }
   .pax-join-room { display: grid; gap: 6px; text-align: left; }
   .pax-join-room label { color: #a7b3c7; font-size: 11px; font-weight: 800; text-transform: uppercase; }

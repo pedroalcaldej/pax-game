@@ -12,6 +12,11 @@ export function renderGameScreen(container) {
               <button type="button" id="menu-resume">Reanudar</button>
               <button type="button" class="pax-menu-end" id="menu-end-game">Salir de la partida y volver al menú</button>
             </div>
+            <section class="pax-audio-controls" aria-label="Controles de sonido">
+              <h3>Sonido</h3>
+              <label><span>Música <output data-audio-output="music">28%</output></span><input type="range" min="0" max="100" step="1" data-audio-volume="music" aria-label="Volumen de la música"></label>
+              <label><span>Efectos <output data-audio-output="effects">65%</output></span><input type="range" min="0" max="100" step="1" data-audio-volume="effects" aria-label="Volumen de los efectos de sonido"></label>
+            </section>
           </div>
         </section>
         <div class="pax-stage-overlay" id="stage-overlay" hidden aria-live="polite">

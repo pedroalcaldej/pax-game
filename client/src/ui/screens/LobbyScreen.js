@@ -69,6 +69,11 @@ export class LobbyScreen {
                 </div>
               </section>
             </div>
+            <section class="pax-audio-controls" aria-label="Controles de sonido">
+              <h3>Sonido</h3>
+              <label><span>Música <output data-audio-output="music">28%</output></span><input type="range" min="0" max="100" step="1" data-audio-volume="music" aria-label="Volumen de la música"></label>
+              <label><span>Efectos <output data-audio-output="effects">65%</output></span><input type="range" min="0" max="100" step="1" data-audio-volume="effects" aria-label="Volumen de los efectos de sonido"></label>
+            </section>
           </div>
           <div id="lobby-view" hidden>
             <h1 id="lobby-title">Sala <strong id="lobby-code"></strong></h1>

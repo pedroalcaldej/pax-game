@@ -39,6 +39,7 @@ import { EventLog } from '../components/EventLog.js';
 import { PhaseReadyButton } from '../components/PhaseReadyButton.js';
 import { LobbyScreen } from './LobbyScreen.js';
 import { renderGameScreen } from './GameScreenView.js';
+import { GameAudio } from '../../audio/GameAudio.js';
 import '../styles/GameScreen.css';
 
 const createPlayerId = () => {
@@ -125,6 +126,7 @@ export class GameScreen {
     this.isLeaving = false;
     this.sessionRequest = 0;
     this.isRejoining = false;
+    this.audio = new GameAudio();
 
     this.init();
   }
@@ -146,6 +148,8 @@ export class GameScreen {
         if (picker.id === 'lobby-player-color') this.saveLobbyProfile();
       }
     });
+    this.bindAudioControls();
+    this.audio.startMenuMusic();
     this.eventLog = new EventLog(this.container.querySelector('#event-log'), {
       onCoordinateHover: (x, y) => this.map?.setHoveredPosition(x, y),
       onCoordinateLeave: () => this.map?.clearHoveredPosition(),
@@ -216,6 +220,7 @@ export class GameScreen {
           PROTOCOL.FINANCIAL_ACTION,
           { roomId: this.roomCode, action },
           (error, result) => {
+            if (!error && result?.ok) this.audio.playTransaction();
             this.financePanel.setStatus(error
               ? 'El servidor no respondió; comprueba la conexión e inténtalo otra vez.'
               : result?.message || 'No se pudo completar la operación financiera.');
@@ -439,6 +444,28 @@ export class GameScreen {
     });
   }
 
+  bindAudioControls() {
+    const controls = this.container.querySelectorAll('[data-audio-volume]');
+    const updateControls = (type, value) => {
+      const percentage = `${Math.round(Number(value) * 100)}%`;
+      this.container.querySelectorAll(`[data-audio-volume="${type}"]`).forEach((control) => {
+        control.value = Math.round(Number(value) * 100);
+      });
+      this.container.querySelectorAll(`[data-audio-output="${type}"]`).forEach((output) => {
+        output.textContent = percentage;
+      });
+    };
+    const volumes = this.audio.getVolumes();
+    for (const [type, value] of Object.entries(volumes)) updateControls(type, value);
+    controls.forEach((control) => control.addEventListener('input', (event) => {
+      const type = event.currentTarget.dataset.audioVolume;
+      const value = Number(event.currentTarget.value) / 100;
+      if (type === 'music') this.audio.setMusicVolume(value);
+      if (type === 'effects') this.audio.setEffectsVolume(value);
+      updateControls(type, value);
+    }));
+  }
+
   showToast(message, type = 'info') {
     if (!message || !this.toastContainer) return;
     const toast = document.createElement('div');
@@ -546,21 +573,7 @@ export class GameScreen {
   }
 
   playButtonClick() {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    this.audioContext ||= new AudioContextClass();
-    const now = this.audioContext.currentTime;
-    const oscillator = this.audioContext.createOscillator();
-    const gain = this.audioContext.createGain();
-    oscillator.type = 'triangle';
-    oscillator.frequency.setValueAtTime(820, now);
-    oscillator.frequency.exponentialRampToValueAtTime(480, now + 0.035);
-    gain.gain.setValueAtTime(0.035, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
-    oscillator.connect(gain);
-    gain.connect(this.audioContext.destination);
-    oscillator.start(now);
-    oscillator.stop(now + 0.04);
+    this.audio.playClick();
   }
 
   setGameMenuOpen(open) {
@@ -689,6 +702,7 @@ export class GameScreen {
     if (!gameState) return;
     if (gameState.gameStarted && (!this.gameState?.gameStarted || this.gameState?.gameOver)) {
       this.map.clearSelection();
+      this.audio.startGameMusic();
     }
     if (this.gameState?.mapHistoryId !== gameState.mapHistoryId) {
       this.historyRound = null;
@@ -1590,6 +1604,7 @@ export class GameScreen {
       this.setStartStatus('El nombre del país no puede estar vacío.');
       return;
     }
+    this.audio.startGameMusic();
     this.roomCode = createSoloRoomId();
     this.saveGameSession(this.roomCode, this.playerId);
     this.startPending = true;
@@ -1697,6 +1712,8 @@ export class GameScreen {
     try {
       if (!await this.saveLobbyProfile()) return;
       await this.lobby.startGame();
+      // El clic del jugador habilita la reproducción en navegadores con bloqueo de autoplay.
+      this.audio.startGameMusic();
     } catch (error) {
       this.setStartStatus(error.message);
     }
@@ -1759,6 +1776,7 @@ export class GameScreen {
   async returnToMainMenu() {
     if (this.isLeaving) return;
     this.isLeaving = true;
+    this.audio.stop();
     this.sessionRequest += 1;
     this.isRejoining = false;
     this.container.querySelector('#map-controls').hidden = true;
@@ -1785,6 +1803,7 @@ export class GameScreen {
     this.startPending = false;
     this.startError = '';
     this.lobbyScreen.showMainMenu();
+    this.audio.startMenuMusic();
     this.setRoomControlsEnabled(Boolean(this.lobby?.enabled));
     this.setStartStatus('Crea una sala o introduce un código para unirte.');
   }
@@ -1813,6 +1832,7 @@ export class GameScreen {
   destroy() {
     window.clearTimeout(this.rejoinRetryTimer);
     this.sessionRequest += 1;
+    this.audio.stop();
     this.gameVisibility?.destroy();
     this.map?.destroy();
     this.lobby?.destroy();

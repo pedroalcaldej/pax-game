@@ -479,6 +479,7 @@ test('the global market buys and sells materials at the fixed prices', () => {
   assert.equal(player.resources.SILVER, 94);
   assert.equal(player.resources.MATERIALS, 12);
   assert.equal(gameState.bankFund.SILVER, 6);
+  assert.equal(gameState.bankFund.MATERIALS, -2);
 
   assert.equal(gameState.performFinancialAction(player.socketId, {
     type: 'SELL_MATERIALS',
@@ -486,7 +487,8 @@ test('the global market buys and sells materials at the fixed prices', () => {
   }).ok, true);
   assert.equal(player.resources.SILVER, 97);
   assert.equal(player.resources.MATERIALS, 9);
-  assert.equal(gameState.bankFund.MATERIALS, 3);
+  assert.equal(gameState.bankFund.SILVER, 3);
+  assert.equal(gameState.bankFund.MATERIALS, 1);
 });
 
 test('direct transfers charge the 20 percent tariff, TLC transfers are exempt and war blocks transfers', () => {
