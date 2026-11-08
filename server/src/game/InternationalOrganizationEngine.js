@@ -1,13 +1,15 @@
+import { countCountryTroops, countCountryFactories, getCountryLimitStatus } from '../../../shared/OILimits.js';
 import {
   LAND_TERRAIN,
   ECONOMY,
   OI_RESOLUTIONS,
+  OI_RESOLUTION_DURATION_ROUNDS,
   TIMINGS
 } from '../../../shared/Constants.js';
 
 export const OI_RESOLUTION_NAMES = {
-  [OI_RESOLUTIONS.ARMAMENT_LIMIT]: 'Límites de Armamento (máximo 10 tropas)',
-  [OI_RESOLUTIONS.INDUSTRY_LIMIT]: 'Límites de Industria (máximo 10 fábricas)',
+  [OI_RESOLUTIONS.ARMAMENT_LIMIT]: `Límites de Armamento (máximo ${ECONOMY.OI_LIMITS.TROOPS} tropas)`,
+  [OI_RESOLUTIONS.INDUSTRY_LIMIT]: `Límites de Industria (máximo ${ECONOMY.OI_LIMITS.FACTORIES} fábricas)`,
   [OI_RESOLUTIONS.DEMILITARIZED_ZONE]: 'Zona Desmilitarizada (ZDM)',
   [OI_RESOLUTIONS.CONDITIONAL_SUBSIDY]: `Subsidios Condicionados (+${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata)`
 };
@@ -75,9 +77,7 @@ export class InternationalOrganizationEngine {
 
   static startSession(gameState) {
     const nextRound = gameState.currentRound;
-    gameState.activeDmzZones = gameState.activeDmzZones.filter(
-      (zone) => zone.expiresAfterRound >= nextRound
-    );
+    this.expireResolutionsBeforeRound(gameState);
     gameState.expireTreatiesAfterRound(nextRound - 1);
     const seenResolutionTypes = new Set();
     const selected = [...gameState.oiProposals]
@@ -199,10 +199,10 @@ export class InternationalOrganizationEngine {
 
   static isHarmfulToPlayer(gameState, player, proposal) {
     if (proposal.type === OI_RESOLUTIONS.ARMAMENT_LIMIT) {
-      return this.countTroops(gameState, player.id) > 10;
+      return this.countTroops(gameState, player.id) > ECONOMY.OI_LIMITS.TROOPS;
     }
     if (proposal.type === OI_RESOLUTIONS.INDUSTRY_LIMIT) {
-      return this.countFactories(gameState, player.id) > 10;
+      return this.countFactories(gameState, player.id) > ECONOMY.OI_LIMITS.FACTORIES;
     }
     if (proposal.type === OI_RESOLUTIONS.DEMILITARIZED_ZONE) {
       return gameState.grid.flat().some((tile) => (
@@ -266,17 +266,18 @@ export class InternationalOrganizationEngine {
   }
 
   static applyResolution(gameState, proposal, votes) {
+    this.expireResolutionsBeforeRound(gameState);
     switch (proposal.type) {
       case OI_RESOLUTIONS.INDUSTRY_LIMIT:
-        gameState.oiPolicies.industryLimit = 10;
+        this.activateLimit(gameState, 'industryLimit', ECONOMY.OI_LIMITS.FACTORIES);
         break;
       case OI_RESOLUTIONS.ARMAMENT_LIMIT:
-        gameState.oiPolicies.armamentLimit = 10;
+        this.activateLimit(gameState, 'armamentLimit', ECONOMY.OI_LIMITS.TROOPS);
         break;
       case OI_RESOLUTIONS.DEMILITARIZED_ZONE: {
         const zone = {
           ...proposal.target,
-          expiresAfterRound: gameState.currentRound + 4
+          expiresAfterRound: gameState.currentRound + OI_RESOLUTION_DURATION_ROUNDS
         };
         gameState.activeDmzZones.push(zone);
         this.evacuateZone(gameState, zone);
@@ -292,7 +293,7 @@ export class InternationalOrganizationEngine {
           if (vote.choice !== 'FOR' || vote.playerId === beneficiary.id) continue;
           gameState.nonAggressionPacts.push({
             playerIds: [beneficiary.id, vote.playerId].sort(),
-            expiresAfterRound: gameState.currentRound + 4
+            expiresAfterRound: gameState.currentRound + OI_RESOLUTION_DURATION_ROUNDS
           });
         }
         break;
@@ -341,28 +342,82 @@ export class InternationalOrganizationEngine {
       ))[0];
   }
 
-  static countTroops(gameState, playerId) {
-    return gameState.grid.flat().reduce(
-      (sum, tile) => {
-        const visitors = tile.visitingTroops || {};
-        if (tile.ownerId === playerId) {
-          const foreignTroops = Object.values(visitors)
-            .reduce((total, count) => total + count, 0);
-          return sum + Math.max(0, (tile.troops || 0) - foreignTroops);
-        }
-        return sum + (visitors[playerId] || 0);
-      },
-      0
+  static activateLimit(gameState, policy, limit) {
+    const expiresAfterRound = gameState.currentRound + OI_RESOLUTION_DURATION_ROUNDS;
+    if (gameState.oiPolicies[policy] != null) {
+      // A new vote renews the duration, but does not forgive ongoing violations.
+      gameState.oiPolicies[`${policy}ExpiresAfterRound`] = expiresAfterRound;
+      gameState.recordEvent(`La OI renovó el límite de ${policy === 'armamentLimit' ? 'tropas' : 'fábricas'} hasta el cierre de la ronda ${expiresAfterRound}, sin reiniciar la gracia.`,
+        { category: 'oi-limit-approved', policy, limit, expiresAfterRound });
+      return;
+    }
+    gameState.oiPolicies[`${policy}ExpiresAfterRound`] = expiresAfterRound;
+    gameState.oiPolicies[policy] = limit;
+    const finesFromRound = gameState.currentRound + ECONOMY.OI_LIMITS.GRACE_ROUNDS;
+    gameState.oiPolicies[`${policy}FinesFromRound`] = finesFromRound;
+    gameState.recordEvent(
+      `La OI aprobó un máximo de ${limit} ${policy === 'armamentLimit' ? 'tropas' : 'fábricas'} por país. Hay ${ECONOMY.OI_LIMITS.GRACE_ROUNDS} ronda de gracia: regulariza antes del cierre de la ronda ${finesFromRound}. Las multas se cobran en ese cierre y cada ronda posterior mientras la resolución esté vigente, hasta el cierre de la ronda ${expiresAfterRound}.`,
+      { category: 'oi-limit-approved', policy, limit, finesFromRound, expiresAfterRound }
     );
   }
 
+  static expireResolutionsBeforeRound(gameState) {
+    for (const policy of ['armamentLimit', 'industryLimit']) {
+      if (gameState.oiPolicies[policy] == null) continue;
+      // Older saved games did not store expiry. Recover the approval round
+      // from the grace deadline when available, otherwise start the duration now.
+      if (gameState.oiPolicies[`${policy}ExpiresAfterRound`] == null) {
+        const deadline = gameState.oiPolicies[`${policy}FinesFromRound`];
+        const approvedRound = deadline == null ? gameState.currentRound : deadline - ECONOMY.OI_LIMITS.GRACE_ROUNDS;
+        gameState.oiPolicies[`${policy}ExpiresAfterRound`] = approvedRound + OI_RESOLUTION_DURATION_ROUNDS;
+      }
+      const expiresAfterRound = gameState.oiPolicies[`${policy}ExpiresAfterRound`];
+      if (expiresAfterRound >= gameState.currentRound) continue;
+      gameState.oiPolicies[policy] = null;
+      delete gameState.oiPolicies[`${policy}FinesFromRound`];
+      delete gameState.oiPolicies[`${policy}ExpiresAfterRound`];
+      gameState.recordEvent(`Expiró el límite de ${policy === 'armamentLimit' ? 'tropas' : 'fábricas'} de la OI; dejan de aplicarse sus restricciones y multas.`,
+        { category: 'oi-resolution-expired', policy, expiresAfterRound });
+    }
+    gameState.activeDmzZones = gameState.activeDmzZones.filter((zone) => {
+      if (zone.expiresAfterRound >= gameState.currentRound) return true;
+      gameState.recordEvent(`Expiró la Zona Desmilitarizada de la OI en (${zone.x}, ${zone.y}).`,
+        { category: 'oi-resolution-expired', x: zone.x, y: zone.y, expiresAfterRound: zone.expiresAfterRound });
+      return false;
+    });
+  }
+
+  static enforceLimitsAtRoundEnd(gameState) {
+    this.expireResolutionsBeforeRound(gameState);
+    const policies = gameState.oiPolicies;
+    if (policies.armamentLimit == null && policies.industryLimit == null) return;
+    if (policies.lastFineRound === gameState.currentRound) return;
+    policies.lastFineRound = gameState.currentRound;
+    for (const player of gameState.players.values()) {
+      if (player.isEliminated) continue;
+      const status = getCountryLimitStatus(gameState.grid, player.id, policies);
+      const troopFine = policies.armamentLimit != null
+        && gameState.currentRound >= (policies.armamentLimitFinesFromRound ?? 0) ? status.troopFine : 0;
+      const factoryFine = policies.industryLimit != null
+        && gameState.currentRound >= (policies.industryLimitFinesFromRound ?? 0) ? status.factoryFine : 0;
+      const fine = troopFine + factoryFine;
+      if (!fine) continue;
+      // Fines remain collectible even when the country has spent all its silver.
+      player.resources.SILVER -= fine;
+      gameState.recordEvent(
+        `${player.name} recibió una multa de la OI de ${fine} de plata: ${troopFine} por ${status.excessTroops} tropas excedentes y ${factoryFine} por ${status.excessFactories} fábricas excedentes.${player.resources.SILVER < 0 ? ' El saldo negativo queda como deuda.' : ''}`,
+        { category: 'oi-limit-fine', playerId: player.id, round: gameState.currentRound,
+          troopFine, factoryFine, fine, excessTroops: status.excessTroops, excessFactories: status.excessFactories }
+      );
+    }
+  }
+
+  static countTroops(gameState, playerId) {
+    return countCountryTroops(gameState.grid, playerId);
+  }
+
   static countFactories(gameState, playerId) {
-    return gameState.grid.flat().reduce(
-      (sum, tile) => sum + (tile.ownerId === playerId && tile.building === 'FACTORY'
-        ? tile.factoriesCount || 1
-        : 0),
-      0
-    );
+    return countCountryFactories(gameState.grid, playerId);
   }
 
   static isWithinZone(x, y, zone) {
@@ -370,7 +425,9 @@ export class InternationalOrganizationEngine {
   }
 
   static isInActiveDmz(gameState, x, y) {
-    return gameState.activeDmzZones.some((zone) => this.isWithinZone(x, y, zone));
+    return gameState.activeDmzZones.some((zone) => (
+      zone.expiresAfterRound >= gameState.currentRound && this.isWithinZone(x, y, zone)
+    ));
   }
 
   static arePlayersBoundByPact(gameState, firstPlayerId, secondPlayerId) {

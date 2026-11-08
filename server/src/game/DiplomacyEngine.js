@@ -192,7 +192,7 @@ export const DiplomacyEngine = {
     }
   },
 
-  breakNonAggressionPact(attacker, defenderId, pactsAtStart = this.nonAggressionPacts) {
+  breakNonAggressionPact(attacker, defenderId, pactsAtStart = this.nonAggressionPacts, { penalize = true } = {}) {
     const hadActivePact = pactsAtStart.some((pact) => (
       pact.expiresAfterRound >= this.currentRound
       && pact.playerIds.includes(attacker.id)
@@ -210,13 +210,15 @@ export const DiplomacyEngine = {
       : 0;
     attacker.resources.INFLUENCE = Math.max(
       0,
-      influence - ECONOMY.COSTS.BROKEN_PACT_INFLUENCE_PENALTY
+      influence - (penalize ? ECONOMY.COSTS.BROKEN_PACT_INFLUENCE_PENALTY : 0)
     );
     const defender = this.players.get(defenderId);
     this.recordEvent(
-      `${attacker.name} traicionó el Pacto de No Agresión con ${defender?.name || defenderId}: el pacto se rompió y perdió ${ECONOMY.COSTS.BROKEN_PACT_INFLUENCE_PENALTY} de Influencia Política.`,
+      penalize ? `${attacker.name} traicionó el Pacto de No Agresión con ${defender?.name || defenderId}: el pacto se rompió y perdió ${ECONOMY.COSTS.BROKEN_PACT_INFLUENCE_PENALTY} de Influencia Política.`
+        : `El combate en territorio neutral entre ${attacker.name} y ${defender?.name || defenderId} terminó el Pacto de No Agresión sin pérdida de Influencia Política.`,
       { category: 'treaty-breach', treatyType: TREATY_TYPES.NON_AGGRESSION_PACT,
-        attackerId: attacker.id, defenderId }
+        playerIds: [attacker.id, defenderId], attackerId: penalize ? attacker.id : null, defenderId,
+        influencePenalty: penalize ? Math.min(influence, ECONOMY.COSTS.BROKEN_PACT_INFLUENCE_PENALTY) : 0 }
     );
     return true;
   },
@@ -267,7 +269,7 @@ export const DiplomacyEngine = {
     }));
   },
 
-  registerMilitaryConflict(attacker, defenderId) {
+  registerMilitaryConflict(attacker, defenderId, { neutral = false } = {}) {
     const existing = this.conflicts.find((conflict) => (
       conflict.round === this.currentRound
       && [conflict.attackerId, conflict.defenderId].sort().join('|')
@@ -294,9 +296,11 @@ export const DiplomacyEngine = {
       ));
       const defender = this.players.get(defenderId);
       this.recordEvent(
-        `La acción militar de ${attacker.name} contra ${defender?.name || defenderId} rompió el Tratado de Libre Comercio; se restablece el arancel del Banco Mundial.`,
+        neutral
+          ? `El combate en territorio neutral entre ${attacker.name} y ${defender?.name || defenderId} terminó el Tratado de Libre Comercio; se restablece el arancel del Banco Mundial.`
+          : `La acción militar de ${attacker.name} contra ${defender?.name || defenderId} rompió el Tratado de Libre Comercio; se restablece el arancel del Banco Mundial.`,
         { category: 'treaty-breach', treatyType: TREATY_TYPES.FREE_TRADE,
-          attackerId: attacker.id, defenderId }
+          playerIds: [attacker.id, defenderId], attackerId: neutral ? null : attacker.id, defenderId }
       );
     }
   },

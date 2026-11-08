@@ -215,6 +215,9 @@ export const TREATY_TYPES = {
   FREE_TRADE: 'FREE_TRADE'
 };
 
+// Approved OI measures cover this many complete rounds after the vote.
+export const OI_RESOLUTION_DURATION_ROUNDS = 5;
+
 export const OI_RESOLUTIONS = {
   ARMAMENT_LIMIT: 'ARMAMENT_LIMIT',
   INDUSTRY_LIMIT: 'INDUSTRY_LIMIT',
@@ -262,6 +265,13 @@ export const ECONOMY = {
     MAX_MOVE_DISTANCE: 2
   },
   OI_BOT_WAGER_SHARE: 0.5,
+  OI_LIMITS: {
+    TROOPS: 20,
+    FACTORIES: 20,
+    GRACE_ROUNDS: 1,
+    TROOP_FINE_SILVER: 2,
+    FACTORY_FINE_SILVER: 5
+  },
   BANK_TRANSFER_TARIFF_RATE: 0.2,
   COSTS: {
     BUILD_CITY_SILVER: 50,

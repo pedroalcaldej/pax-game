@@ -43,6 +43,7 @@ export class PhaseManager {
 
     switch (nextPhase) {
       case GAME_PHASES.PHASE_1_STATS:
+        InternationalOrganizationEngine.expireResolutionsBeforeRound(this.gameState);
         this.gameState.processBondsAtRoundStart(this.gameState.currentRound);
         if (this.gameState.currentRound > 1) {
           EconomyEngine.processRoundEconomy(this.gameState);
@@ -86,6 +87,7 @@ export class PhaseManager {
         break;
       case GAME_PHASES.PHASE_5_SUMMARY: {
         this.gameState.timeRemaining = 0;
+        InternationalOrganizationEngine.enforceLimitsAtRoundEnd(this.gameState);
         EconomyEngine.awardEndOfTurnInfluence(this.gameState);
         this.gameState.recordTaxRateChangesAtRoundEnd();
         this.gameState.expireTreatiesAfterRound(this.gameState.currentRound);

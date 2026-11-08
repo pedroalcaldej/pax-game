@@ -84,7 +84,6 @@ export const FinanceEngine = {
         player.resources.SILVER -= cost;
         player.resources.MATERIALS += quantity;
         this.bankFund.SILVER += cost;
-        this.bankFund.MATERIALS -= quantity;
         this.recordEvent(`${player.name} compró ${quantity} materiales por ${cost} de plata en el Mercado Global.`);
         return { ok: true, message: `Compraste ${quantity} materiales por ${cost} de plata.` };
       }
@@ -94,7 +93,6 @@ export const FinanceEngine = {
       player.resources.MATERIALS -= quantity;
       const proceeds = quantity * ECONOMY.COSTS.MARKET_SELL_MATERIAL_SILVER;
       player.resources.SILVER += proceeds;
-      this.bankFund.SILVER -= proceeds;
       this.bankFund.MATERIALS += quantity;
       this.recordEvent(`${player.name} vendió ${quantity} materiales por ${proceeds} de plata en el Mercado Global.`);
       return { ok: true, message: `Vendiste ${quantity} materiales por ${proceeds} de plata.` };

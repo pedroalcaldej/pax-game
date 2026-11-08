@@ -7,6 +7,7 @@ const GAMEPLAY_TRACKS = [
 
 const TRANSACTION_SOUND = '/audio/sfx/coincollect.mp3';
 const CLICK_SOUND = '/audio/sfx/click.mp3';
+const GAME_START_SOUND = '/audio/sfx/game-start.mp3';
 const AUDIO_SETTINGS_KEY = 'pax-audio-settings';
 const DEFAULT_VOLUMES = { music: 0.28, effects: 0.65 };
 
@@ -109,6 +110,13 @@ export class GameAudio {
     this.transaction = new Audio(TRANSACTION_SOUND);
     this.transaction.volume = this.volumes.effects;
     this.transaction.play().catch(() => {});
+  }
+
+  playGameStart() {
+    if (typeof Audio === 'undefined') return;
+    const sound = new Audio(GAME_START_SOUND);
+    sound.volume = this.volumes.effects;
+    sound.play().catch(() => {});
   }
 
   stop() {

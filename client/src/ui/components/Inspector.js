@@ -203,6 +203,21 @@ export class Inspector {
         reason: !planningPhase ? 'Disponible en fase de planificación' : !isOwned ? 'Requiere territorio propio' : !landCanRecruit ? 'Solo se puede reclutar en pueblos, ciudades o capitales propias' : 'Recursos insuficientes o reservados'
       },
       {
+        type: 'DEMOBILIZE_TROOPS',
+        title: 'Desmovilizar tropas',
+        cost: 'Inmediato · sin usar órdenes · sin devolución',
+        quantity: quantity('DEMOBILIZE_TROOPS', tileTroops, 'tropas', 'count'),
+        enabled: planningPhase && tileTroops > 0,
+        reason: !planningPhase ? 'Disponible en fase de planificación' : 'No hay tropas propias en esta casilla'
+      },
+      {
+        type: 'DISMANTLE_FACTORY',
+        title: 'Desmantelar fábrica',
+        cost: 'Inmediato · sin usar órdenes · sin devolución',
+        enabled: planningPhase && isOwned && tile?.building === 'FACTORY',
+        reason: !planningPhase ? 'Disponible en fase de planificación' : 'Selecciona una fábrica propia'
+      },
+      {
         type: 'MOVE_TROOPS',
         title: 'Mover tropas',
         cost: `${movableTroops} tropas disponibles`,
@@ -335,7 +350,7 @@ export class Inspector {
           <section class="pax-development">
             <h3>Opciones de desarrollo</h3>
             <p>${this.phase === 2
-              ? 'Elige un espacio de acción abajo. La orden queda guardada allí y se ejecuta al terminar el tiempo.'
+              ? 'Elige un espacio de acción abajo. La orden queda guardada allí y se ejecuta al terminar el tiempo. Desmovilizar y desmantelar son inmediatos y no usan órdenes.'
               : 'Las órdenes se habilitan durante la fase de planificación y se ejecutan al terminar.'}</p>
             <div class="pax-tile-actions">
               ${this.getActions(tile, nation).map((action) => `
@@ -403,7 +418,8 @@ export class Inspector {
           type,
           x: tile.x,
           y: tile.y,
-          ...(type === 'RECRUIT_TROOP' || type === 'BUILD_SHIP' || type === 'BUILD_CAR' ? { count: amount } : {}),
+          ...(type === 'RECRUIT_TROOP' || type === 'BUILD_SHIP' || type === 'BUILD_CAR' || type === 'DEMOBILIZE_TROOPS' ? { count: amount } : {}),
+          ...(type === 'DEMOBILIZE_TROOPS' ? { embarked: isWater } : {}),
           ...(type === 'BUILD_SHIP' && Number.isInteger(targetX) && Number.isInteger(targetY)
             ? { targetX, targetY } : {}),
           ...(['MOVE_TROOPS', 'MOVE_SHIPS', 'MOVE_CARS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(type)

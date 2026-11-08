@@ -116,3 +116,16 @@ test('local log notifications survive server updates, in chronological order wit
   assert.ok(mergeGameEvents([...history, { timestamp: 40, message: 'Siguiente' }], local)
     .some((e) => e.message === 'Aviso local'));
 });
+
+test('treaty notifications reach both affected countries, including neutral combat', async () => {
+  const { getGameEventNotifications } = await import('../../client/src/ui/components/GameEventHistory.js');
+  const history = [
+    { id: 1, category: 'treaty-breach', playerIds: ['a', 'b'], attackerId: null },
+    { id: 2, category: 'treaty-breach', attackerId: 'a', defenderId: 'b' },
+    { id: 3, category: 'treaty-expired', playerIds: ['a', 'b'] },
+    { id: 4, category: 'treaty-breach', playerIds: ['c', 'd'] }
+  ];
+  for (const playerId of ['a', 'b']) {
+    assert.deepEqual(getGameEventNotifications(history, playerId).map(event => event.id), [1, 2, 3]);
+  }
+});

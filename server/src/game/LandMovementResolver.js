@@ -108,7 +108,7 @@ export function resolveLandMovements(state, orders) {
   const results = new Map();
   const accepted = [];
   const pactsAtStart = [...state.nonAggressionPacts];
-  const chargedBreaches = new Set();
+  const breaches = new Map();
   const reserved = new Map();
   for (const order of orders) {
     const { player, action } = order;
@@ -213,12 +213,16 @@ export function resolveLandMovements(state, orders) {
         state.registerMilitaryConflict(order.player, sourceOwnerId);
       }
       for (const opponentId of opponents) {
-        state.registerMilitaryConflict(order.player, opponentId);
-        const breachKey = `${order.player.id}:${opponentId}`;
-        if (!chargedBreaches.has(breachKey)) {
-          state.breakNonAggressionPact(order.player, opponentId, pactsAtStart);
-          chargedBreaches.add(breachKey);
-        }
+        // Returning reinforcements defend their own territory; only an invasion
+        // of the other country's tile assigns responsibility for the breach.
+        const invader = ownerBefore === opponentId ? order.player
+          : ownerBefore === order.player.id ? state.players.get(opponentId) : null;
+        const defenderId = invader ? (invader.id === opponentId ? order.player.id : opponentId) : opponentId;
+        state.registerMilitaryConflict(invader || order.player, defenderId, { neutral: !invader });
+        const pairKey = [order.player.id, opponentId].sort().join('|');
+        const breach = breaches.get(pairKey) || { player: order.player, opponentId, invaders: new Map() };
+        if (invader) breach.invaders.set(invader.id, { player: invader, defenderId });
+        breaches.set(pairKey, breach);
       }
     }
     if (!winnerId && movedCars > 0) {
@@ -279,6 +283,15 @@ export function resolveLandMovements(state, orders) {
       if (order.movementType === 'car' && winnerId === order.player.id) {
         claimNeutralTransitTiles(state, order.player.id, movements.find((movement) => movement.order === order).source, target, LAND_TERRAIN);
       }
+    }
+  }
+  for (const breach of breaches.values()) {
+    if (breach.invaders.size) {
+      for (const { player, defenderId } of breach.invaders.values()) {
+        state.breakNonAggressionPact(player, defenderId, pactsAtStart);
+      }
+    } else {
+      state.breakNonAggressionPact(breach.player, breach.opponentId, pactsAtStart, { penalize: false });
     }
   }
   return results;

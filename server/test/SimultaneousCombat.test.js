@@ -268,7 +268,7 @@ test('three-country arrivals resolve once without country iteration bias', () =>
   assert.deepEqual(run(true), run(false));
 });
 
-test('simultaneous pact violations charge each aggressor once, independent of country order', () => {
+test('neutral combat ends the pact without charging either country, independent of country order', () => {
   for (const reverse of [false, true]) {
     const { state, alpha, beta, tile, move } = fixture(reverse);
     alpha.resources.INFLUENCE = 100;
@@ -280,8 +280,13 @@ test('simultaneous pact violations charge each aggressor once, independent of co
     move(alpha, 8, 4, 9, 4, 2);
     move(beta, 10, 4, 9, 4, 1);
     state.resolvePlannedActions();
-    assert.equal(alpha.resources.INFLUENCE, 90);
-    assert.equal(beta.resources.INFLUENCE, 90);
+    assert.equal(state.nonAggressionPacts.length, 0);
+    const breaches = state.eventHistory.filter((event) => event.category === 'treaty-breach');
+    assert.equal(breaches.length, 1);
+    assert.equal(breaches[0].attackerId, null);
+    assert.equal(breaches[0].influencePenalty, 0);
+    assert.equal(alpha.resources.INFLUENCE, 100);
+    assert.equal(beta.resources.INFLUENCE, 100);
   }
 });
 
@@ -298,4 +303,65 @@ test('withdrawing legacy visiting troops does not count as a new pact violation'
   assert.equal(destination.troops, 2);
   assert.equal(alpha.resources.INFLUENCE, 100);
   assert.equal(state.nonAggressionPacts.length, 1);
+});
+
+for (const reverse of [false, true]) {
+  test(`defensive reinforcements never pay for an invader's breach (reverse ${reverse})`, () => {
+    const { state, alpha, beta, tile, move } = fixture(reverse);
+    alpha.resources.INFLUENCE = beta.resources.INFLUENCE = 100;
+    tile(8, 4, alpha, 5);
+    tile(10, 4, beta, 2);
+    tile(9, 4, beta, 1);
+    state.nonAggressionPacts.push({ playerIds: [alpha.id, beta.id], expiresAfterRound: 5 });
+    state.freeTradeTreaties.push({ playerIds: [alpha.id, beta.id], expiresAfterRound: 5 });
+    move(alpha, 8, 4, 9, 4, 5);
+    move(beta, 10, 4, 9, 4, 2);
+    state.resolvePlannedActions();
+    assert.equal(alpha.resources.INFLUENCE, 90);
+    assert.equal(beta.resources.INFLUENCE, 100);
+    assert.equal(state.nonAggressionPacts.length, 0);
+    assert.equal(state.freeTradeTreaties.length, 0);
+    const breaches = state.eventHistory.filter((event) => event.category === 'treaty-breach');
+    assert.equal(breaches.length, 2);
+    assert.ok(breaches.every((event) => event.attackerId === alpha.id && event.defenderId === beta.id));
+  });
+}
+
+test('naval combat in neutral water ends both treaties without influence loss', () => {
+  const { state, alpha, beta, tile } = fixture();
+  const source = tile(8, 4, alpha, 0);
+  const target = tile(9, 4, null, 0);
+  source.type = target.type = 'AG';
+  source.shipsByPlayer = { [alpha.id]: 3 };
+  target.shipsByPlayer = { [beta.id]: 2 };
+  alpha.resources.INFLUENCE = beta.resources.INFLUENCE = 100;
+  for (const treaties of [state.nonAggressionPacts, state.freeTradeTreaties]) {
+    treaties.push({ playerIds: [alpha.id, beta.id], expiresAfterRound: 5 });
+  }
+  const result = state.resolveShipMovement(alpha, { x: 8, y: 4, targetX: 9, targetY: 4, ships: 3 });
+  assert.equal(result.ok, true);
+  assert.equal(alpha.resources.INFLUENCE, 100);
+  assert.equal(beta.resources.INFLUENCE, 100);
+  assert.equal(state.nonAggressionPacts.length, 0);
+  assert.equal(state.freeTradeTreaties.length, 0);
+});
+
+test('mutual invasions penalize each invader once even with several attacks', () => {
+  for (const reverse of [false, true]) {
+    const { state, alpha, beta, tile, move } = fixture(reverse);
+    alpha.resources.INFLUENCE = beta.resources.INFLUENCE = 100;
+    tile(8, 4, alpha, 4);
+    tile(9, 4, beta, 4);
+    tile(8, 5, alpha, 2);
+    tile(9, 5, beta, 1);
+    state.nonAggressionPacts.push({ playerIds: [alpha.id, beta.id], expiresAfterRound: 5 });
+    move(alpha, 8, 4, 9, 4, 2);
+    move(alpha, 8, 5, 9, 5, 2, 1);
+    move(beta, 9, 4, 8, 4, 2);
+    state.resolvePlannedActions();
+    assert.equal(alpha.resources.INFLUENCE, 90);
+    assert.equal(beta.resources.INFLUENCE, 90);
+    assert.equal(state.nonAggressionPacts.length, 0);
+    assert.equal(state.eventHistory.filter(event => event.category === 'treaty-breach').length, 2);
+  }
 });

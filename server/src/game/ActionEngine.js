@@ -33,13 +33,52 @@ function hasWaterRoute(grid, source, destination, maxDistance = 2) {
   return true;
 }
 
+function reduceCountryAssets(state, player, action) {
+  const tile = Number.isInteger(action.x) && Number.isInteger(action.y)
+    ? state.grid[action.y]?.[action.x] : null;
+  if (!tile) return { ok: false, message: 'Selecciona una casilla válida.' };
+  if (action.type === 'DEMOBILIZE_TROOPS') {
+    const count = action.count;
+    const embarked = action.embarked === true;
+    const available = embarked ? tile.transportedTroopsByPlayer?.[player.id] || 0
+      : state.getTroopsForPlayerOnTile(tile, player.id);
+    if (!Number.isSafeInteger(count) || count < 1 || count > available) {
+      return { ok: false, message: 'La cantidad supera las tropas propias disponibles en esta casilla.' };
+    }
+    if (embarked) {
+      tile.transportedTroopsByPlayer[player.id] -= count;
+      if (!tile.transportedTroopsByPlayer[player.id]) delete tile.transportedTroopsByPlayer[player.id];
+    } else {
+      state.removeTroopsFromPlayerOnTile(tile, player.id, count);
+    }
+    const message = `${player.name} desmovilizó ${count} tropas${embarked ? ' embarcadas' : ''} en (${tile.x}, ${tile.y}), sin devolución de recursos.`;
+    state.recordEvent(message, { category: 'demobilization', playerId: player.id, count, x: tile.x, y: tile.y });
+    return { ok: true, message };
+  }
+  if (tile.ownerId !== player.id || tile.building !== 'FACTORY') {
+    return { ok: false, message: 'Selecciona una fábrica propia para desmantelar.' };
+  }
+  const count = tile.factoriesCount || 1;
+  tile.type = tile.factoryTerrainType || (WATER_TERRAIN.has(tile.type) ? TERRAIN_TYPES.AG : TERRAIN_TYPES.TR);
+  tile.building = null;
+  delete tile.factoriesCount;
+  delete tile.factoryTerrainType;
+  const message = `${player.name} desmanteló ${count} ${count === 1 ? 'fábrica' : 'fábricas'} en (${tile.x}, ${tile.y}), sin devolución de recursos.`;
+  state.recordEvent(message, { category: 'factory-dismantled', playerId: player.id, count, x: tile.x, y: tile.y });
+  return { ok: true, message };
+}
+
 export const ActionEngine = {
   performPlayerAction(socketId, action) {
     const player = Array.from(this.players.values()).find((entry) => entry.socketId === socketId);
     if (!player) return { ok: false, message: 'No tienes un país asignado.' };
     if (player.isEliminated) return { ok: false, message: 'Tu país ha sido eliminado de la partida.' };
+    if (this.gameOver) return { ok: false, message: 'La partida terminó.' };
     if (!this.gameStarted) return { ok: false, message: 'La partida todavía no ha comenzado.' };
     if (this.currentPhase !== 2) return { ok: false, message: 'Las acciones solo están disponibles en la fase de planificación.' };
+    if (['DEMOBILIZE_TROOPS', 'DISMANTLE_FACTORY'].includes(action?.type)) {
+      return reduceCountryAssets(this, player, action);
+    }
     if (!action || action.type !== 'PLAN_ACTION') {
       return { ok: false, message: 'La orden de planificación no es válida.' };
     }
@@ -202,6 +241,8 @@ export const ActionEngine = {
           if (
             this.oiPolicies.armamentLimit != null
             && InternationalOrganizationEngine.countTroops(this, player.id) + count
+              + otherActions.filter((planned) => planned.type === 'RECRUIT_TROOP')
+                .reduce((sum, planned) => sum + (planned.count ?? 1), 0)
               > this.oiPolicies.armamentLimit
           ) {
             return { ok: false, message: `El límite de armamento es de ${this.oiPolicies.armamentLimit} tropas.` };
@@ -607,8 +648,11 @@ export const ActionEngine = {
     const hostilePlayers = new Set(defenders.map(([playerId]) => playerId));
     if (rivalOwner) hostilePlayers.add(rivalOwner);
     for (const defenderId of hostilePlayers) {
-      this.registerMilitaryConflict(player, defenderId);
-      this.breakNonAggressionPact(player, defenderId);
+      const invader = ownerBefore === defenderId ? player
+        : ownerBefore === player.id ? this.players.get(defenderId) : null;
+      const victimId = invader?.id === defenderId ? player.id : defenderId;
+      this.registerMilitaryConflict(invader || player, victimId, { neutral: !invader });
+      this.breakNonAggressionPact(invader || player, victimId, this.nonAggressionPacts, { penalize: !!invader });
     }
 
     if (defendingShips > 0 && action.ships <= defendingShips) {
@@ -871,6 +915,7 @@ export const ActionEngine = {
         }
         resources.SILVER -= cost;
         resources.MATERIALS -= materialCost;
+        tile.factoryTerrainType = tile.type;
         tile.type = isWater ? TERRAIN_TYPES.FA : TERRAIN_TYPES.FT;
         tile.building = 'FACTORY';
         tile.factoriesCount = 1;
@@ -923,6 +968,10 @@ export const ActionEngine = {
         }
         if (InternationalOrganizationEngine.isInActiveDmz(this, tile.x, tile.y)) {
           return { ok: false, message: 'No puedes reclutar tropas dentro de una Zona Desmilitarizada.' };
+        }
+        if (this.oiPolicies.armamentLimit != null
+          && InternationalOrganizationEngine.countTroops(this, player.id) + count > this.oiPolicies.armamentLimit) {
+          return { ok: false, message: `El límite de armamento es de ${this.oiPolicies.armamentLimit} tropas.` };
         }
         if (resources.SILVER < silverCost || resources.MATERIALS < materialCost) {
           return { ok: false, message: `Necesitas ${silverCost} de plata y ${materialCost} materiales para reclutar.` };

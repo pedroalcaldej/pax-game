@@ -1,5 +1,6 @@
+import { getCountryLimitStatus } from '../../../../shared/OILimits.js';
 import { roundMapOptions, roundMapStep } from '../components/RoundMapNavigation.js';
-import { mergeGameEvents } from '../components/GameEventHistory.js';
+import { mergeGameEvents, getGameEventNotifications } from '../components/GameEventHistory.js';
 /**
  * Pantalla principal de PAX: panel de nación, mapa e inspector territorial.
  */
@@ -23,6 +24,7 @@ import {
   NATIONS,
   LEGACY_NATION_NAMES,
   OI_RESOLUTIONS,
+  OI_RESOLUTION_DURATION_ROUNDS,
   PROTOCOL,
   STAGE_TIMINGS,
   TIMINGS,
@@ -100,7 +102,7 @@ export class GameScreen {
     this.historyToken = 0;
     this.localEvents = [];
     this.seenBondEventKeys = null;
-    this.seenTreatyExpiryEventKeys = null;
+    this.seenGameEventNotificationKeys = null;
     // `Map` está importado arriba como el componente visual del tablero.
     this.persistentToasts = new globalThis.Map();
     this.pendingMoveSource = null;
@@ -703,6 +705,7 @@ export class GameScreen {
     if (gameState.gameStarted && (!this.gameState?.gameStarted || this.gameState?.gameOver)) {
       this.map.clearSelection();
       this.audio.startGameMusic();
+      this.audio.playGameStart();
     }
     if (this.gameState?.mapHistoryId !== gameState.mapHistoryId) {
       this.historyRound = null;
@@ -901,6 +904,7 @@ export class GameScreen {
         results: session.results
       },
       votesSubmitted: session?.votesSubmitted,
+      limitStatus: this.player ? getCountryLimitStatus(gameState.grid, this.player.id, gameState.oiPolicies) : null,
       policies: gameState.oiPolicies,
       zones: gameState.activeDmzZones,
       pacts: gameState.nonAggressionPacts
@@ -969,6 +973,18 @@ export class GameScreen {
     const resolutionOption = (type, label) => `
       <option value="${type}" ${proposedResolutionTypes.has(type) ? 'disabled' : ''}>${label}${proposedResolutionTypes.has(type) ? ' · ya propuesta' : ''}</option>
     `;
+    const limits = this.player ? getCountryLimitStatus(gameState.grid, this.player.id, gameState.oiPolicies) : null;
+    const policyNote = (policy, count, unit, fine, rate) => {
+      const limit = gameState.oiPolicies?.[policy];
+      if (limit == null || !limits) return '';
+      const deadline = gameState.oiPolicies[`${policy}FinesFromRound`] ?? round;
+      const expiry = gameState.oiPolicies[`${policy}ExpiresAfterRound`];
+      return `<p class="pax-oi-note">${unit}: ${count}/${limit}. ${expiry != null ? `Vigente hasta el cierre de ronda ${expiry}.` : ''} ${round <= deadline
+        ? `Regulariza antes del cierre de ronda ${deadline}.` : 'Multas al cierre de cada ronda.'}
+        ${rate} de plata por unidad excedente; multa actual: ${fine} de plata por ronda.</p>`;
+    };
+    const limitsMarkup = limits ? policyNote('armamentLimit', limits.troops, 'Tropas', limits.troopFine, ECONOMY.OI_LIMITS.TROOP_FINE_SILVER)
+      + policyNote('industryLimit', limits.factories, 'Fábricas', limits.factoryFine, ECONOMY.OI_LIMITS.FACTORY_FINE_SILVER) : '';
     const resultsMarkup = session?.phase === 'complete' && session.results
       ? `
         <div class="pax-oi-controls">
@@ -989,12 +1005,13 @@ export class GameScreen {
       : `Próxima sesión después de ronda ${Math.ceil(round / 5) * 5}.`;
     content.innerHTML = `
       <div class="pax-oi-controls">
+        ${limitsMarkup}
         ${resultsMarkup}
         ${proposalWindow ? `
           <label>Resolución
             <select id="oi-resolution-type">
-              ${resolutionOption(OI_RESOLUTIONS.ARMAMENT_LIMIT, 'Límite de armamento · 10 tropas')}
-              ${resolutionOption(OI_RESOLUTIONS.INDUSTRY_LIMIT, 'Límite de industria · 10 fábricas')}
+              ${resolutionOption(OI_RESOLUTIONS.ARMAMENT_LIMIT, `Límite de armamento · ${ECONOMY.OI_LIMITS.TROOPS} tropas`)}
+              ${resolutionOption(OI_RESOLUTIONS.INDUSTRY_LIMIT, `Límite de industria · ${ECONOMY.OI_LIMITS.FACTORIES} fábricas`)}
               ${resolutionOption(OI_RESOLUTIONS.DEMILITARIZED_ZONE, 'Zona Desmilitarizada · elegir casilla')}
               ${resolutionOption(OI_RESOLUTIONS.CONDITIONAL_SUBSIDY, `Subsidio condicionado · ${ECONOMY.COSTS.OI_SUBSIDY_SILVER} de plata`)}
             </select>
@@ -1008,7 +1025,7 @@ export class GameScreen {
             <div class="pax-oi-proposal">${escapeHTML(proposal.name)} · ${escapeHTML(proposal.proposerName)}${proposal.target ? ` · (${proposal.target.x}, ${proposal.target.y})` : ''}</div>
           `).join('')}</div>`
           : '<p class="pax-oi-note">Aún no hay propuestas para la próxima sesión.</p>'}
-        <p class="pax-oi-note">Los límites aprobados se mantienen activos. Las ZDM y los pactos duran hasta la siguiente sesión.</p>
+        <p class="pax-oi-note">Las resoluciones de la OI duran ${OI_RESOLUTION_DURATION_ROUNDS} rondas completas después de aprobarse. El subsidio se paga una vez; sus pactos asociados duran ese plazo.</p>
       </div>
     `;
     const selectTargetButton = content.querySelector('#oi-select-target');
@@ -1263,7 +1280,9 @@ export class GameScreen {
     const status = this.container.querySelector('#start-status');
     if (!status) return;
     if (this.lobby?.enabled && !this.lobbyState) {
-      this.setStartStatus(this.startError || (socket.connected
+      this.setStartStatus(this.startError || (this.startPending
+        ? 'Iniciando la partida…'
+        : socket.connected
         ? 'Crea una sala o introduce un código para unirte.'
         : 'Conectando con el servidor…'));
       return;
@@ -1340,6 +1359,10 @@ export class GameScreen {
     if (!this.canInteract()) return;
     if (this.historyRound !== null) return;
     if (this.gameState?.currentStage !== GAME_STAGES.PLANNING || !this.player) return;
+    if (['DEMOBILIZE_TROOPS', 'DISMANTLE_FACTORY'].includes(action.type)) {
+      socket.emit(PROTOCOL.PLAYER_ACTION, { roomId: this.roomCode, action });
+      return;
+    }
     if (['MOVE_TROOPS', 'MOVE_SHIPS', 'MOVE_CARS', 'EMBARK_TROOPS', 'DISEMBARK_TROOPS'].includes(action.type)) {
       this.pendingMoveSource = { ...action, slot: this.activeActionSlot };
       this.updateActionSlots();
@@ -1450,21 +1473,17 @@ export class GameScreen {
       }
     }
     this.seenBondEventKeys = bondEventKeys;
-    const expiryEvents = history.filter((event) => (
-      event?.category === 'treaty-expired'
-      && Array.isArray(event.playerIds)
-      && event.playerIds.includes(this.player?.id)
-    ));
-    const expiryEventKeys = new Set(expiryEvents.map((event) => (
+    const notificationEvents = getGameEventNotifications(history, this.player?.id);
+    const notificationEventKeys = new Set(notificationEvents.map((event) => (
       `${event.id || event.timestamp}:${event.message}`
     )));
-    if (this.seenTreatyExpiryEventKeys) {
-      for (const event of expiryEvents) {
+    if (this.seenGameEventNotificationKeys) {
+      for (const event of notificationEvents) {
         const key = `${event.id || event.timestamp}:${event.message}`;
-        if (!this.seenTreatyExpiryEventKeys.has(key)) this.showToast(event.message, 'warning');
+        if (!this.seenGameEventNotificationKeys.has(key)) this.showToast(event.message, 'warning');
       }
     }
-    this.seenTreatyExpiryEventKeys = expiryEventKeys;
+    this.seenGameEventNotificationKeys = notificationEventKeys;
     this.syncDiplomacyNotifications(this.gameState, this.player?.id);
     const savedScrollTop = this.eventLog?.element?.scrollTop || 0;
     this.events = mergeGameEvents(history, this.localEvents);
@@ -1608,6 +1627,8 @@ export class GameScreen {
     this.roomCode = createSoloRoomId();
     this.saveGameSession(this.roomCode, this.playerId);
     this.startPending = true;
+    this.startError = '';
+    this.lobbyScreen.setSinglePlayerEnabled(false);
     this.setStartStatus('Iniciando la partida…');
     socket.emit(PROTOCOL.JOIN_GAME, {
       playerId: this.playerId,
@@ -1622,6 +1643,7 @@ export class GameScreen {
       (error, result) => {
         if (error || !result?.ok) {
           this.startPending = false;
+          this.lobbyScreen.setSinglePlayerEnabled(socket.connected);
           this.startError = result?.message || 'No se pudo iniciar la partida.';
           this.updateStartMenu();
         }
@@ -1692,6 +1714,11 @@ export class GameScreen {
       this.playerId,
       (name) => this.normalizeNationName(name)
     );
+    if (this.readyPending) {
+      const button = this.container.querySelector('#start-room-button');
+      button.disabled = true;
+      button.textContent = 'Confirmando…';
+    }
     if (room.estado === 'en_juego') {
       this.setStartStatus('Partida iniciada. Cargando el mapa…');
       if (socket.connected && !this.gameState?.gameStarted && !this.autoStartPending) {
@@ -1718,6 +1745,12 @@ export class GameScreen {
   }
 
   async startRoom() {
+    if (this.readyPending || !socket.connected) return;
+    this.readyPending = true;
+    const button = this.container.querySelector('#start-room-button');
+    button.disabled = true;
+    button.textContent = 'Confirmando…';
+    this.setStartStatus('Enviando tu confirmación…');
     try {
       if (!await this.saveLobbyProfile()) return;
       await this.lobby.startGame();
@@ -1725,6 +1758,12 @@ export class GameScreen {
       this.audio.startGameMusic();
     } catch (error) {
       this.setStartStatus(error.message);
+    } finally {
+      this.readyPending = false;
+      if (this.lobbyState) this.lobbyScreen.updateRoom(
+        this.lobbyState, this.playerId, (name) => this.normalizeNationName(name)
+      );
+      button.disabled = !socket.connected;
     }
   }
 
@@ -1746,7 +1785,6 @@ export class GameScreen {
     }
     try {
       await this.lobby.updateProfile({ name, color });
-      this.joinGame();
       return true;
     } catch (error) {
       this.setStartStatus(error.message);

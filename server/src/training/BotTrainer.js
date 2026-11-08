@@ -87,6 +87,7 @@ function simulateGame(sharedTables, settings, seed, explorationRate, learn = tru
     const historyStarts = new Map([...gameState.players.values()].map((p) => [p.id, p.botDecisionHistory?.length || 0]));
     gameState.currentRound = round;
     gameState.currentPhase = 1;
+    InternationalOrganizationEngine.expireResolutionsBeforeRound(gameState);
     gameState.processBondsAtRoundStart(round);
     if (round > 1) EconomyEngine.processRoundEconomy(gameState);
 
@@ -107,6 +108,7 @@ function simulateGame(sharedTables, settings, seed, explorationRate, learn = tru
     }
 
     gameState.currentPhase = 5;
+    InternationalOrganizationEngine.enforceLimitsAtRoundEnd(gameState);
     EconomyEngine.awardEndOfTurnInfluence(gameState);
     rewardRound(gameState, before, historyStarts);
     roundRankings.push([...gameState.players.values()]
