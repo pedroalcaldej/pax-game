@@ -1,26 +1,39 @@
 # PAX
 
-Juego de estrategia geopolítica para cuatro países. Combina economía, expansión territorial, diplomacia y votaciones en la Organización Internacional. El servidor valida las acciones y conserva el estado autoritativo de cada partida.
+Juego de estrategia geopolítica para cuatro países, con planificación simultánea por rondas, economía, combate terrestre y naval, tratados y votaciones en la Organización Internacional (OI). Se puede jugar solo contra bots o compartir una sala con otros jugadores. El servidor valida las acciones y mantiene el estado de la partida.
+
+## Documentación
+
+| Documento | Para qué sirve |
+| --- | --- |
+| [README](README.md) | Instalar, ejecutar, conectar dispositivos, configurar y publicar el proyecto. |
+| [Reglas y diseño](docs/GAME_DESIGN.md) | Aprender a jugar y consultar economía, combate, diplomacia, OI, mapa y victoria. |
+| [Bots y entrenamiento](docs/BOTS.md) | Entender la IA, sus memorias, el entrenamiento y las evaluaciones. |
 
 ## Contenido
 
 - [Requisitos](#requisitos)
 - [Instalación y ejecución](#instalación-y-ejecución)
-- [Cómo jugar](#cómo-jugar)
-- [Multijugador en red local](#multijugador-en-red-local)
-- [Salas online con Redis](#salas-online-con-redis)
+- [Configuración del entorno](#configuración-del-entorno)
+- [Primeros pasos para jugar](#primeros-pasos-para-jugar)
+- [Multijugador en la misma red](#multijugador-en-la-misma-red)
+- [Salas, guardado y reconexión](#salas-guardado-y-reconexión)
+- [Comandos de desarrollo](#comandos-de-desarrollo)
 - [Publicación](#publicación)
+- [Dónde cambiar las reglas](#dónde-cambiar-las-reglas)
 - [Estructura del proyecto](#estructura-del-proyecto)
-- [Reglas y diseño](#reglas-y-diseño)
+- [Solución de problemas](#solución-de-problemas)
 
 ## Requisitos
 
-- Node.js y npm instalados.
-- Para crear o unirse a salas online: Redis disponible para el servidor.
+- Node.js compatible con Vite 8: `20.19+` en la rama 20 o `22.12+` en las ramas posteriores.
+- npm con soporte de workspaces; se instala junto con Node.js.
+- Una URL de Redis configurada para arrancar el servidor. Las salas multijugador necesitan que Redis esté accesible. Si falla la conexión, el backend sigue escuchando, pero el lobby queda indisponible hasta recuperarla.
+- Un navegador con JavaScript habilitado.
 
 ## Instalación y ejecución
 
-Desde la raíz del repositorio, instala las dependencias y crea los archivos de configuración locales:
+Ejecuta estos comandos desde la raíz del repositorio:
 
 ```sh
 npm install
@@ -28,293 +41,182 @@ cp server/.env.example server/.env
 cp client/.env.example client/.env
 ```
 
-`npm install` normalmente se ejecuta una sola vez. Repítelo si clonas el proyecto
-de nuevo, borras `node_modules` o cambian `package.json` o `package-lock.json`.
+Copia los ejemplos solo la primera vez: si ya tienes archivos `.env`, conserva tu configuración. Estos archivos están ignorados por Git.
 
-Configura `REDIS_URL` en `server/.env` y asegúrate de que Redis esté iniciado. Los puertos y orígenes permitidos también se leen de esos archivos. Para probar desde otro dispositivo en la red local, agrega el origen del cliente —incluida su IP y puerto— a `CLIENT_ORIGINS` en `server/.env`. Los archivos `.env` están ignorados por Git.
+Configura `REDIS_URL` en `server/.env`. El ejemplo usa `redis://127.0.0.1:6379`, que requiere un Redis local escuchando en ese puerto. También puedes usar la URL de tu instancia administrada.
 
-Inicia el cliente y el servidor juntos:
+Inicia ambos servicios:
 
 ```sh
 npm run dev
 ```
 
-Abre [http://localhost:5173](http://localhost:5173). El cliente Vite usa el puerto `5173` y el servidor Socket.IO el `3000`. Ambos procesos aparecen identificados por color en la terminal. Deténlos con `Ctrl + C`.
+Abre [http://localhost:5173](http://localhost:5173). Con los ejemplos de configuración, Vite sirve el cliente en `5173` y Node sirve el backend en `3000`. La terminal distingue ambos procesos; `Ctrl + C` los detiene.
 
-Para ejecutar cada servicio por separado:
+`npm install` instala dependencias: no inicia el juego ni asigna direcciones IP. Repítelo cuando cambien las dependencias o falte `node_modules`. Para iniciar una sesión de desarrollo basta con `npm run dev`.
 
-```sh
-npm run dev --workspace=client
-npm run dev --workspace=server
-```
+## Configuración del entorno
 
-Para ejecutar el servidor sin el modo de desarrollo:
+### Servidor: `server/.env`
 
-```sh
-npm start --workspace=server
-```
+| Variable | Ejemplo | Función |
+| --- | --- | --- |
+| `REDIS_URL` | `redis://127.0.0.1:6379` | Conexión del lobby. No se publica en el cliente. |
+| `PORT` | `3000` | Puerto HTTP y Socket.IO. |
+| `HOST` | `0.0.0.0` | Interfaces donde escucha el servidor; permite acceso desde la red local. |
+| `CLIENT_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Orígenes permitidos, separados por comas, con protocolo y puerto. |
+| `ALLOW_LAN_ORIGINS` | `true` | Permite también orígenes de localhost y redes privadas; útil al cambiar la IP local. En producción usa `false` y declara los orígenes del cliente. |
 
-## Cómo jugar
+Redis admite conexiones `redis://` y `rediss://`. Para hosts de Upstash, el adaptador usa HTTPS y toma el token de la contraseña incluida en `REDIS_URL`.
 
-En el menú puedes iniciar una partida de un jugador, crear una sala privada o unirte con un código. En el lobby multijugador, el nombre se guarda al presionar Enter o salir del campo, y el color al seleccionarlo. Pulsa **Listo** para confirmar; puedes volver a pulsarlo para retirar la confirmación.
+### Cliente: `client/.env`
 
-La partida multijugador comienza cuando todos los jugadores humanos están listos. Los espacios restantes se completan con bots. Durante la planificación de cada ronda, la fase avanza cuando todos los humanos vuelven a marcarse listos o al terminar el temporizador.
+| Variable | Ejemplo | Función |
+| --- | --- | --- |
+| `VITE_CLIENT_PORT` | `5173` | Puerto del servidor de desarrollo; si está ocupado, Vite falla en lugar de cambiarlo. |
+| `VITE_CLIENT_HOST` | `0.0.0.0` | Dirección de escucha configurada para desarrollo. El script `dev` también pasa `--host 0.0.0.0`. |
+| `VITE_SERVER_PORT` | `3000` | En desarrollo, conecta al backend con el mismo nombre de host o IP con que se abrió el cliente. |
+| `VITE_SERVER_URL` | `https://tu-backend.example` | URL completa del backend; obligatoria para compilar producción. Si se define, tiene prioridad sobre la dirección local. |
 
-En un jugador, cambiar de pestaña, salir de la ventana o desconectarse pausa la
-partida. Al regresar se recupera el mismo país, sus órdenes y el tiempo restante.
-La sesión individual se conserva al cerrar el navegador; el servidor guarda la
-partida al iniciarla, pausarla o finalizarla en `server/data/solo-games/`, una carpeta
-local ignorada por Git. Una pausa manual del menú se mantiene hasta pulsar Reanudar.
-Volver al menú principal abandona la partida y elimina su guardado.
+Las variables `VITE_*` se incorporan al cliente: no pongas contraseñas ni credenciales en ellas. Reinicia el servicio después de cambiar su `.env`; si cambias `VITE_SERVER_URL` para producción, recompila el cliente.
 
-Las acciones deshabilitadas conservan su precio visible; el motivo aparece en el
-tooltip. Las tropas se reclutan únicamente en ciudades o capitales propias. Entre
-países neutrales, cada Material cuesta 2 de Plata: 1 para el vendedor y 1 para el
-Banco Mundial. Con TLC el cambio es 1:1 sin arancel; los países en conflicto no comercian.
+## Primeros pasos para jugar
 
-Los bots consultan una tabla de decisiones contextual antes de planificar cada orden. La tabla agrupa la situación por ronda, territorio, tropas, fábricas y recursos; registra los intentos y resultados de cada tipo de acción, y usa una recompensa terminal para favorecer decisiones que ayudan a ganar la partida completa, no solo una ronda: +100 para el primer lugar, +40 para el segundo, -25 para el tercero y -60 para el cuarto. La memoria se guarda compactada en `server/data/bot-decision-memory.json`: conserva las tres mejores variantes de cada tipo de acción por contexto y usa arrays numéricos para ocupar menos espacio. Se carga al iniciar el servidor o el entrenador, por lo que sobrevive a los reinicios. Las partidas normales solo consultan esa memoria: no agregan aprendizajes ni la sobrescriben. El aprendizaje ocurre exclusivamente en sesiones del entrenador. El entrenador compara el modelo guardado antes de entrenar con el modelo resultante usando las mismas semillas de evaluación, informando cambios de victorias y GDI. Las tablas se conservan al reiniciar una sala, con una exploración limitada para descubrir alternativas en partidas de cuatro jugadores. El entrenador usa además las mismas opciones humanas de economía, impuestos, tratados, OI, movimientos navales, capital y órdenes militares.
+1. Abre el cliente e introduce tu nombre y color.
+2. Elige una partida individual o crea/únete a una sala con su código.
+3. Antes de iniciar, el anfitrión puede elegir el preset Corto, Largo o Personalizado. En Personalizado se editan rondas, tiempo de planificación, cantidad de órdenes, frecuencia de la OI, mapa y semilla.
+4. En una sala, cada humano pulsa **Listo**. Cuando todos confirman, comienza la partida; los países restantes los controlan bots.
+5. Selecciona una casilla en el mapa y usa el inspector. Las órdenes se guardan en los espacios de acción; puedes reemplazarlas o vaciarlas durante la planificación. Para mover tropas, elige origen, cantidad y destino.
+6. Ajusta impuestos y usa finanzas y diplomacia durante la planificación. Esas operaciones son inmediatas. Desmovilizar tropas y desmantelar fábricas también son inmediatos y no consumen órdenes.
+7. Pulsa **Listo** al terminar tus decisiones. La resolución comienza cuando todos los participantes activos están listos o se agota el tiempo.
 
-La memoria del campeón y la de aprendizaje tienen funciones distintas. El archivo
-`server/data/bot-training-memory.json` conserva todos los experimentos, incluso los
-fallidos, entre generaciones y sesiones. Los candidatos parten de ese aprendizaje;
-rechazar una candidata no borra lo que se probó. Este archivo nunca se carga para
-jugar: las partidas normales usan exclusivamente `bot-decision-memory.json`, que
-solo se reemplaza tras superar selección y confirmación. `RESET_BOT_MEMORY=1`
-inicia ambos aprendizajes desde cero. La API permite `trainingMemoryPath` y
-`memoryPath` para aislar archivos en pruebas o experimentos.
+Por defecto, una partida corta tiene **15 rondas**, **30 segundos** de planificación, **3 órdenes por país** y mapa de **20×20**. Se gana por GDI al finalizar el número de rondas. Las capitales se pueden conquistar y perder la capital elimina al país.
 
-Las observaciones también alimentan preferencias generales de situaciones de la
-misma etapa y cantidades similares, con un peso de referencia limitado a cuatro
-observaciones. Así pueden orientar situaciones nuevas sin imponerse a evidencia
-específica suficiente. La recompensa terminal se descuenta por rondas transcurridas
-(0,97 por ronda), no por cada orden: las decisiones tempranas siguen recibiendo
-crédito. Durante la evaluación, exploración cero desactiva tanto el sorteo aleatorio
-como el bono de incertidumbre. Los workers reutilizan copias inmutables de los
-modelos dentro de cada evaluación, sin retransmitirlas por cada encuentro.
+Las reglas completas y ejemplos están en [GAME_DESIGN.md](docs/GAME_DESIGN.md). Los controles de música y efectos permiten regular sus volúmenes por separado; las preferencias se guardan en el navegador.
 
-Cada generación entrena candidatos con memorias independientes y los evalúa
-contra una liga: el campeón actual, hasta tres campeones históricos y estrategias
-fijas económica y agresiva. Los históricos se conservan en
-`server/data/bot-league.json` entre sesiones. Cada mapa se juega rotando las
-cuatro naciones para cada rival. Las evaluaciones no modifican las memorias.
-El mapa y las decisiones usan semillas reproducibles.
+## Multijugador en la misma red
 
-Cada candidata incorpora un descriptor numérico versionado (`action.features`):
-fuerzas enviadas, defensa visible, proporción de fuerzas, bajas y supervivientes si
-la defensa permanece; reservas propias ya comprometidas; protección y amenazas
-visibles en el origen (incluidas diagonales); población, capitales, ciudades,
-recursos y producción del destino; costos separados de Plata, Materiales e
-Influencia; efecto de impuestos y tratados que se romperían. Las estimaciones de
-combate no consultan órdenes de otros países ni garantizan qué harán sus tropas.
+Ejecuta `npm run dev` en **un solo computador**. Todos deben abrir la misma dirección **Network** que muestra Vite, por ejemplo `http://192.168.1.7:5173/`, y unirse a la misma sala. Si cada computador inicia su servidor, son instancias independientes.
 
-Un resumen categórico acotado de esos atributos distingue las situaciones en la
-tabla actual. Las cifras exactas alimentan un evaluador lineal de jugadas: sus pesos se aprenden
-con regresión regularizada sobre los resultados observados, sin asignar premios
-manuales a una característica concreta. El modelo usa características numéricas normalizadas e indicadores del tipo de
-acción. Aprende del resultado final descontado por ronda y de la señal intermedia,
-ponderando cada resultado de jugador por igual para que emitir más órdenes no
-le dé mayor peso. Sus estadísticas se acumulan entre generaciones y se combinan
-sin duplicar al padre de los candidatos. La puntuación aprendida se mezcla con
-la memoria tabular; su influencia crece con la experiencia y disminuye cuando
-hay mucha evidencia específica en la tabla. La exploración y la búsqueda corta
-siguen siendo etapas separadas de la elección.
+- En el computador servidor puedes usar `http://localhost:5173/`.
+- En teléfonos u otros computadores usa la IP del computador servidor. `localhost` en esos dispositivos apunta a ellos mismos.
+- Estar en la misma Wi-Fi no significa tener la misma IP. El router normalmente asigna una a cada dispositivo mediante DHCP y puede cambiarla al reconectarse o renovar su asignación.
+- Si cambia la IP, actualiza el enlace guardado. Una reserva DHCP en el router permite conservar la dirección de ese computador en esa red.
+- Con `ALLOW_LAN_ORIGINS=true`, los orígenes privados se aceptan sin añadir cada IP a `CLIENT_ORIGINS`. Si lo desactivas, declara el origen exacto del cliente.
 
-El evaluador se serializa en el campo opcional `actionModel` de los archivos de
-memoria. El modelo del campeón solo se reemplaza junto a una candidata que supere
-selección y confirmación; la evaluación y las partidas normales no ajustan pesos.
-Los archivos antiguos, sin modelo, siguen funcionando con la tabla. Los pesos
-nuevos se aprenden en próximos entrenamientos: no se pueden reconstruir a partir
-de estadísticas antiguas que no guardaban descriptores numéricos.
-
-Si falta una entrada nueva,
-se consultan las claves anteriores y sus preferencias generales, manteniendo la
-compatibilidad con el campeón guardado. Los historiales internos con descriptores
-no se transmiten en el estado público de la partida.
-
-Los bots generan varias ubicaciones de construcción y reclutamiento, destinos
-de movimiento (incluidos refuerzos y pasos diagonales legales), alternativas
-navales y cantidades. La memoria distingue cantidades, impuestos, tratados,
-resoluciones, terreno, frontera, defensa y edificios del destino, sin memorizar
-coordenadas. Las entradas anteriores por tipo siguen sirviendo como referencia.
-
-El candidato recibe 3/2/1/0 puntos según su posición y se compara con el campeón
-en exactamente los mismos mapas, asientos y rivales. Solo se promueve si supera
-al campeón tanto en selección como en una confirmación con mapas nuevos, fuera
-del entrenamiento y de la selección. Una muestra pequeña todavía puede ser ruido;
-la promoción no certifica nivel humano.
-
-Las simulaciones usan un pool de workers: los candidatos aprenden por separado
-y los encuentros de evaluación se distribuyen entre procesos de ejecución de
-Node. El orden de finalización no cambia el resultado. Con `BOT_WORKERS=1` se
-puede ejecutar en serie. Se descarta un candidato cuando ni ganando todas las
-partidas restantes podría superar el puntaje requerido. Es un límite matemático
-conservador, no una estimación estadística. `BOT_EARLY_STOP=0` desactiva ese ahorro.
-
-Para ejecutar varias generaciones reproducibles:
-
-```sh
-BOT_GENERATIONS=5 BOT_CANDIDATES=3 BOT_GAMES=100 BOT_EVALUATION_GAMES=20 BOT_WORKERS=4 BOT_SEED=123 npm run train:bots --workspace=server
-```
-
-`BOT_EVALUATION_GAMES` cuenta mapas por rival: con los tres rivales iniciales
-son 12 encuentros por mapa para cada candidato y para la referencia del campeón.
-Los históricos aumentan ese número; la confirmación tiene su propio presupuesto
-igual de mapas cuando hay un candidato que supera la selección. No se ejecutan
-simulaciones adicionales solo para métricas informativas. `BOT_EVALUATION_BATCH`
-(predeterminado: 8) controla cuántos encuentros se programan antes de revisar el
-descarte temprano. Valores menores permiten detener antes; valores mayores pueden
-aprovechar más workers.
-
-La exploración dirigida toma la mejor jugada según la memoria y prueba cantidades
-vecinas (±1 y ±20%), validando cada alternativa. Durante la exploración, el 70% de
-las veces se priorizan esas variantes cuando existen. La exploración general sigue
-activa para descubrir otras estrategias.
-
-El entrenador también reparte entre las decisiones de cada ronda el cambio de
-una valoración acotada de ingresos fiscales, fábricas, tropas, territorios valiosos
-y GDI. Las diferencias se telescopan: esta señal auxiliar tiene un rango de 10
-puntos frente a los 100 de la victoria final. Solo se registra al entrenar.
-
-Antes de ejecutar una orden, los bots pueden simular hasta tres alternativas con
-el motor real y proyectar una ronda de economía. Las simulaciones son copias
-independientes, no leen las órdenes privadas de los rivales ni escriben experiencias
-o memoria. Es una búsqueda de un turno propio con economía siguiente: no modela
-la respuesta del rival. Durante la exploración se respeta la jugada exploratoria.
-La búsqueda agrega costo de cómputo y no garantiza una mejora de resultados.
-
-`BOT_SEARCH_WIDTH=0` desactiva la búsqueda; su valor predeterminado es 3.
-`BOT_DIRECTED_EXPLORATION=0` y `BOT_INTERMEDIATE_REWARDS=0` permiten desactivar las
-otras mejoras para hacer comparaciones. Estos parámetros también están disponibles
-en `settings` de `trainBots()` como `botSearchWidth`, `botDirectedExploration` y
-`botIntermediateRewards`.
-
-Para comparar el sistema completo contra una referencia con esas tres funciones
-desactivadas, sin modificar la memoria del campeón ni la liga:
-
-```sh
-BOT_GAMES=10 BOT_EVALUATION_GAMES=3 BOT_MAX_ROUNDS=10 BOT_CANDIDATES=2 BOT_WORKERS=2 BOT_SEED=123 npm run benchmark:bots --workspace=server
-```
-
-Ambos comandos usan `server/src/training/runBotTraining.js`: el modo normal
-entrena y la opción `--benchmark` ejecuta la comparación. También puedes usar
-`npm run train:bots --workspace=server -- --benchmark`.
-
-El benchmark usa el mismo presupuesto de partidas y semillas de entrenamiento,
-pero no exige igual tiempo de cómputo. Enfrenta ambos modelos promovidos contra
-los mismos rivales, rotando naciones en mapas excluidos de entrenamiento,
-selección y confirmación. Guarda victorias, puntos y velocidad en
-`server/data/bot-benchmark-latest.json` (o `BOT_BENCHMARK_OUTPUT`). Muestras pequeñas
-no establecen significancia estadística ni equivalencia con jugadores humanos.
-
-El código de entrenamiento se organiza en cinco archivos: `BotTrainer.js`
-coordina las simulaciones y evaluaciones; `BotMemoryStore.js` guarda y carga
-memorias, campeones históricos y experiencias humanas; `TrainingPool.js` y
-`TrainingWorker.js` ejecutan las tareas en paralelo; `runBotTraining.js` reúne
-los comandos de entrenamiento y benchmark. Cada conjunto de datos conserva su
-archivo y formato actual.
-
-La API `trainBots()` es asíncrona: debe llamarse con `await`. También permite
-configurar `historyLimit` (predeterminado: 3) y `leaguePath`.
-`BOT_MAX_ROUNDS` permite acortar las partidas (el juego aplica sus límites).
-`BOT_PERSIST=0` permite una prueba desde memoria vacía sin guardar memoria ni liga.
-Se evalúa la memoria compactada que usarán los bots al cargarla, evitando promover
-una variante que solo funciona antes de guardarse.
-
-Para comenzar una memoria nueva una sola vez, ejecuta
-`RESET_BOT_MEMORY=1 npm run train:bots --workspace=server`; las siguientes sesiones
-normales continúan desde el campeón guardado.
-
-El entrenamiento no requiere tener el servidor encendido ni ejecutar `npm install`
-en cada sesión. Después de instalar las dependencias, basta con ejecutar:
-
-```sh
-npm run train:bots --workspace=server
-```
-
-Durante la sesión, la consola muestra el avance de entrenamiento, evaluación y
-confirmación. Al finalizar informa los encuentros y puntos del candidato, su tasa
-de victorias, candidatos descartados, duración y partidas simuladas por segundo.
-Los puntajes de candidatos descartados se etiquetan como parciales.
-El GDI y los resultados por nación incluyen a todos los participantes de los
-encuentros y son informativos; la promoción usa los puntos del asiento candidato.
-El valor predeterminado es 100 partidas de aprendizaje por candidato, 100 mapas
-de evaluación, una generación, un candidato y cuatro workers en la CLI.
-Para comenzar con una sesión corta:
-
-```sh
-BOT_GENERATIONS=3 BOT_CANDIDATES=2 BOT_GAMES=30 BOT_EVALUATION_GAMES=10 BOT_WORKERS=4 BOT_SEED=123 npm run train:bots --workspace=server
-```
-
-Las decisiones humanas se guardan en `server/data/human-bot-experiences.json`
-como hipótesis para explorar, no como ejemplos que deban imitarse. Que una orden
-se ejecute correctamente no demuestra que sea buena: no concede recompensa ni
-modifica las estadísticas de la memoria. Los registros nuevos conservan también
-cantidades y parámetros; los antiguos siguen sirviendo como ideas de tipos de acción.
-Las ideas repetidas se deduplican para que la frecuencia humana no otorgue más peso.
-
-Solo durante el aprendizaje se prueban variantes humanas en contextos similares,
-con destinos del mapa actual y validación de legalidad. Dentro de la exploración,
-se reserva la mitad de los sorteos guiados para esas hipótesis y se mantiene la
-exploración general. Las cantidades sugeridas se evalúan al ejecutarse en partidas
-simuladas; reciben las mismas recompensas intermedias y finales que cualquier
-alternativa del bot, sin bonificaciones por su origen. No se usan ideas humanas
-en la evaluación ni en las partidas normales. La candidata solo reemplaza al
-campeón si supera selección y confirmación independiente.
-
-Este cambio se aplica a los entrenamientos siguientes. No borra la memoria ya
-entrenada ni permite separar retrospectivamente qué parte de sus estadísticas
-provino de las antiguas bonificaciones humanas.
-
-## Multijugador en red local
-
-Con ambos servicios ejecutándose, abre en cada dispositivo la dirección de red que muestra Vite, por ejemplo `http://192.168.1.7:5173`. El cliente se conecta al servidor del mismo equipo por el puerto `3000`.
-
-Comprueba la conexión desde otro dispositivo en `http://IP_LOCAL_DEL_SERVIDOR:3000/health`; debe responder:
+Para comprobar el backend, abre `http://IP_DEL_SERVIDOR:3000/health`. Una respuesta con Redis disponible es:
 
 ```json
-{"ok":true,"service":"pax-game-server"}
+{"ok":true,"service":"pax-game-server","redisConnected":true}
 ```
 
-Si la dirección local no responde, comprueba que los dispositivos estén en la misma red y que el firewall permita conexiones entrantes para Node.js.
+`redisConnected:false` indica que el backend responde pero Redis no está disponible. La dirección privada solo sirve dentro de la red local; para jugar por Internet utiliza un cliente y un backend publicados.
 
-## Salas online con Redis
+## Salas, guardado y reconexión
 
-El servidor administra creación, búsqueda, reservas de países, perfiles, disponibilidad y chat de las salas con Redis. Los cambios de lobby se validan en el servidor. Las salas caducan siete días después de su última actualización. El estado de la partida sigue en el proceso del servidor Node.js.
+| Situación | Comportamiento |
+| --- | --- |
+| Sala multijugador | Redis conserva perfiles, códigos, disponibilidad, reservas de países y chat. Sus datos caducan tras siete días sin actualización. |
+| Partida multijugador activa | El tablero y el reloj viven en el proceso Node; Redis no guarda todo el estado de la partida. |
+| Desconexión en multijugador | Se reserva el país para reconectar; la partida de los demás continúa. |
+| Partida individual | Se pausa al desconectarse, cambiar de pestaña o perder el foco. Al volver conserva país, órdenes y tiempo restante. |
+| Guardado individual | El servidor guarda al iniciar, pausar y finalizar en `server/data/solo-games/`, ignorado por Git. Permite recuperar la sesión tras cerrar el navegador o reiniciar el servidor si se conserva ese directorio. |
+| Pausa manual | Se mantiene hasta pulsar Reanudar, aunque la ventana vuelva a tener foco. |
+| Volver al menú principal | Abandona la partida individual y elimina su guardado. |
 
-Configura `REDIS_URL` en el entorno del servidor. Acepta URLs `redis://` y `rediss://`; para proveedores administrados, copia la URL privada que entrega el proveedor. No la publiques en el cliente ni en el repositorio.
+Los archivos de memoria de bots tienen otro propósito: consulta [Bots y entrenamiento](docs/BOTS.md). Las partidas normales consultan el modelo guardado; el aprendizaje ocurre en el entrenador.
+
+## Comandos de desarrollo
+
+Todos se ejecutan desde la raíz:
+
+| Comando | Resultado |
+| --- | --- |
+| `npm install` | Instala las dependencias de ambos workspaces. |
+| `npm ci` | Instala exactamente el lockfile; útil en CI y despliegues. |
+| `npm run dev` | Inicia cliente y servidor juntos. |
+| `npm run dev --workspace=client` | Inicia solo Vite. |
+| `npm run dev --workspace=server` | Inicia solo el backend, con reinicio al cambiar código. |
+| `npm start --workspace=server` | Inicia el backend sin modo de vigilancia. |
+| `npm test --workspace=server` | Ejecuta las pruebas de Node. No hay script `test` en la raíz. |
+| `npm audit` | Consulta vulnerabilidades de dependencias. |
+| `npm run train:bots --workspace=server` | Ejecuta entrenamiento de bots; puede actualizar archivos de memoria. |
+| `npm run benchmark:bots --workspace=server` | Compara variantes del sistema de bots. |
+
+Para ejecutar solo las pruebas de límites y resoluciones:
+
+```sh
+node --test server/test/OILimits.test.js server/test/InternationalOrganizationEngine.test.js
+```
+
+Los parámetros, ejemplos y efectos del entrenamiento se explican en [BOTS.md](docs/BOTS.md).
 
 ## Publicación
 
-Publica el backend y el cliente por separado. Configura estas variables en Render:
+El backend Node y el cliente estático se publican por separado.
 
-- En el servicio Node del backend, define `REDIS_URL`, `CLIENT_ORIGINS` y `HOST=0.0.0.0`. Render proporciona `PORT` automáticamente. `CLIENT_ORIGINS` debe contener el origen del sitio del cliente, por ejemplo `https://tu-cliente.onrender.com`.
-- En el servicio estático del cliente, define `VITE_SERVER_URL` con la URL HTTPS del backend. Vite incorpora esta URL durante la compilación; no es un secreto.
+| Servicio | Instalar | Compilar | Iniciar / directorio publicado |
+| --- | --- | --- | --- |
+| Backend | `npm ci` | No requiere compilación | `npm start --workspace=server` |
+| Cliente | `npm ci` | `npm run build --workspace=client` | `client/dist` |
 
-Para compilar manualmente con otra URL de backend:
+Estos comandos suponen que la raíz del servicio es la raíz del repositorio.
+
+En el backend configura `REDIS_URL`, `HOST=0.0.0.0` y `CLIENT_ORIGINS` con el origen HTTPS del cliente. Usa `ALLOW_LAN_ORIGINS=false`. Proporciona `PORT` mediante el entorno; Render lo asigna automáticamente. El backend debe admitir conexiones Socket.IO y ser accesible por HTTPS.
+
+En el cliente define `VITE_SERVER_URL` con la URL HTTPS del backend **antes de compilar**. Ejemplo manual:
 
 ```sh
-VITE_SERVER_URL=https://tu-servidor.example npm run build --workspace=client
+VITE_SERVER_URL=https://tu-backend.example npm run build --workspace=client
 ```
 
-Publica el contenido de `client/dist` en un servicio de hosting estático y mantén accesible el backend por HTTPS.
+Publica `client/dist`. El cliente compilado no obtiene una nueva URL de backend por cambiar una variable después: hay que reconstruirlo.
+
+Para conservar partidas individuales tras reinicios del hosting, preserva `server/data/solo-games/` en almacenamiento persistente. La persistencia del lobby Redis no recupera por sí sola un tablero multijugador perdido al reiniciar Node.
+
+## Dónde cambiar las reglas
+
+Los valores compartidos se encuentran en [shared/Constants.js](shared/Constants.js). Los cambios requieren reiniciar el servidor y reconstruir o recargar el cliente según el entorno; no recalculan necesariamente los efectos ya aprobados en una partida guardada.
+
+| Configuración | Qué controla |
+| --- | --- |
+| `DEFAULT_GAME_SETTINGS`, `GAME_SETTINGS_PRESETS`, `GAME_SETTINGS_LIMITS` | Valores iniciales, presets y rangos permitidos de partidas. |
+| `ECONOMY.STARTING_RESOURCES`, `POPULATION`, `ROUND_PRODUCTION` | Recursos, población, crecimiento e ingresos. |
+| `ECONOMY.COSTS`, `REWARDS`, `NAVAL`, `GROUND_TRANSPORT` | Precios, recompensas y capacidad/alcance de transporte. |
+| `ECONOMIC_POLICY` | Rango de impuestos y tasa inicial. |
+| `OI_RESOLUTION_DURATION_ROUNDS` | Duración de las resoluciones: **5 turnos completos** posteriores a la aprobación. |
+| `ECONOMY.OI_LIMITS` | Máximos de **20 tropas y 20 fábricas**, **1 ronda de gracia** y multas de **2 y 5 de Plata** por unidad excedente. |
+
+Los tratados diplomáticos ordinarios y el plazo de bonos usan `TREATY_DURATION_ROUNDS` en `server/src/game/GameStateUtils.js`; su plazo no depende de la duración de las resoluciones de la OI.
 
 ## Estructura del proyecto
 
-| Ruta | Contenido |
+| Ruta | Responsabilidad |
 | --- | --- |
-| `client/src/ui/screens/GameScreen.js` | Coordina la partida y sincroniza la interfaz con el estado recibido. |
-| `client/src/ui/screens/LobbyScreen.js` | Menú inicial, sala, perfil y confirmación de disponibilidad. |
-| `client/src/ui/components/` | Piezas reutilizables como historial de eventos y botón «Listo». |
-| `client/src/ui/styles/GameScreen.css` | Estilos de la interfaz de juego y el lobby. |
-| `server/src/game/GameState.js` | Estado autoritativo de la partida y delegación a motores de dominio. |
-| `server/src/game/` | Motores de acciones, economía, diplomacia, finanzas y jugadores. |
-| `server/src/game/bots/` | Decisiones, características de acciones, evaluador aprendido y estrategias de aprendizaje de bots. |
-| `server/src/network/` | Servidor Socket.IO y administración de salas. |
-| `shared/` | Constantes y definiciones compartidas entre cliente y servidor. |
-| `docs/GAME_DESIGN.md` | Documento detallado de reglas y diseño del juego. |
+| `client/src/ui/screens/` | Pantalla de partida y lobby. |
+| `client/src/ui/components/` | Mapa, inspector, finanzas, diplomacia e historial. |
+| `client/src/ui/styles/` | Estilos de la interfaz. |
+| `client/src/audio/`, `client/public/audio/` | Reproducción, música y efectos. |
+| `client/src/network/` | Socket.IO, sesiones y lobby del cliente. |
+| `server/src/game/GameState.js` | Estado de la partida y delegación a motores. |
+| `server/src/game/` | Acciones, rondas, economía, diplomacia y finanzas. |
+| `server/src/game/bots/` | Decisiones y evaluación de bots. |
+| `server/src/training/` | Entrenador, workers, almacenamiento de modelos y benchmark. |
+| `server/src/network/` | Socket.IO, Redis, salas y guardados. |
+| `server/test/` | Pruebas del motor, red y componentes compartidos con el cliente. |
+| `shared/` | Reglas, constantes, protocolos y cálculos compartidos. |
+| `docs/` | Reglas del juego y guía de bots. |
 
-El proyecto usa npm workspaces. Las dependencias de cliente y servidor se instalan desde la raíz con `npm install`.
+## Solución de problemas
 
-## Reglas y diseño
-
-Consulta el [documento de diseño del juego](./docs/GAME_DESIGN.md) para las reglas detalladas de economía, combate, diplomacia, Organización Internacional, mapa e interfaz.
+| Síntoma | Qué comprobar |
+| --- | --- |
+| Falta una variable al arrancar | Crea los dos `.env` desde sus ejemplos y comprueba los nombres de las variables. |
+| Vite no inicia o avisa de versión de Node | Ejecuta `node --version` y comprueba los requisitos de Vite 8. |
+| El puerto `5173` está ocupado | Detén la instancia anterior o cambia `VITE_CLIENT_PORT`; actualiza también el origen permitido si corresponde. |
+| Abre el cliente pero no conecta | Comprueba el backend en `/health`, `VITE_SERVER_PORT` o `VITE_SERVER_URL`, y los orígenes permitidos. |
+| Otro dispositivo no puede entrar | Comprueba misma red, IP actual del servidor, firewall y ausencia de aislamiento entre clientes Wi-Fi. |
+| Fallan las salas o el chat | Comprueba `redisConnected` en `/health` y la conexión configurada en `REDIS_URL`. |
+| La compilación exige `VITE_SERVER_URL` | Define la URL del backend antes de ejecutar el build. |
+| `npm install` muestra vulnerabilidades | Consulta `npm audit`; revisa la actualización y su compatibilidad antes de usar `--force`. Los avisos de financiación o scripts de instalación son mensajes distintos. |
+| Una acción está deshabilitada | El tooltip indica el motivo: fase, dueño, terreno, recursos, órdenes reservadas o restricciones aplicables. El servidor valida de nuevo al ejecutar. |

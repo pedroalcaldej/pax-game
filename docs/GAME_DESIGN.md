@@ -1,281 +1,388 @@
-# PAX — Documento de diseño del juego
-**Especificación Técnica y Visual**
+# PAX — Reglas y diseño del juego
 
----
+Este documento describe las reglas implementadas. Los valores corresponden a la configuración del repositorio; los ajustes de una partida pueden cambiar su duración, mapa y cantidad de órdenes. Aquí, **turno** y **ronda** significan el mismo ciclo de planificación y resolución para todos los países.
 
-## 1. Resumen Ejecutivo y Visión General
+Para instalar y ejecutar el proyecto, consulta el [README](../README.md). El funcionamiento interno y entrenamiento de la IA están en [BOTS.md](BOTS.md).
 
-**PAX** es un juego de estrategia geopolítica y económica en tiempo real (RTS) para **4 jugadores**, ambientado en un mundo plano en vista cenital 2D (*tilemap*). El juego pone al jugador al mando de un Estado soberano que compite por la hegemonía global en un tablero internacional interconectado, donde la dominación se construye combinando la fuerza militar con el peso institucional y las tensiones se resuelven o escalan tanto en el campo de batalla como en las mesas de negociación.
+## Contenido
 
-El objetivo principal de la partida es consolidar a la nación como la potencia dominante del planeta al término de un número fijado de rondas, alcanzando la puntuación más alta en el **Índice de Dominio Global (GDI)**. Dado que las Capitales son sedes políticas inexpugnables y no existe la eliminación de participantes, la victoria no se logra mediante la aniquilación o erradicación de los rivales, sino superándolos en desarrollo económico, capacidad industrial, volumen demográfico, poderío militar y liderazgo diplomático.
+- [1. Objetivo y participantes](#1-objetivo-y-participantes)
+- [2. Configuración e inicio](#2-configuración-e-inicio)
+- [3. Ciclo de una ronda](#3-ciclo-de-una-ronda)
+- [4. Mapa, territorio y capitales](#4-mapa-territorio-y-capitales)
+- [5. Recursos, población e impuestos](#5-recursos-población-e-impuestos)
+- [6. Construcción y acciones territoriales](#6-construcción-y-acciones-territoriales)
+- [7. Movimiento y combate](#7-movimiento-y-combate)
+- [8. Finanzas y comercio](#8-finanzas-y-comercio)
+- [9. Tratados y conflicto](#9-tratados-y-conflicto)
+- [10. Organización Internacional](#10-organización-internacional)
+- [11. Límites, gracia y multas](#11-límites-gracia-y-multas)
+- [12. Victoria y puntuación](#12-victoria-y-puntuación)
+- [13. Interfaz, avisos y sesiones](#13-interfaz-avisos-y-sesiones)
+- [14. Configuración y alcance implementado](#14-configuración-y-alcance-implementado)
 
-### Pilares Estratégicos
+## 1. Objetivo y participantes
 
-- **Economía:** Es el motor del Estado. Se encarga de la recaudación fiscal en **Plata**, la regulación de la tasa impositiva sobre la población y la producción de **Materiales** mediante industrias. Permite financiar proyectos, edificar defensas y sostener las fuerzas armadas.
-- **Política y Diplomacia:** Representa la Proyección de Soberanía e Influencia del país en el escenario multilateral. Utiliza la **Influencia Política** para votar resoluciones vinculantes en la Organización Internacional, gestionar el sistema de Casus Belli y pactar tratados o sanciones.
-- **Militar y Control Territorial:** Es la herramienta de defensa y proyección de poder sobre el mapa. Abarca el reclutamiento y movimiento de fuerzas terrestres y navales, la fortificación de posiciones clave y la ejecución de bloqueos estratégicos sobre la infraestructura enemiga.
-- **Demografía y Sociedad:** Constituye la base humana y el sustento fiscal de la nación. El volumen de población en las ciudades responde dinámicamente a la presión impositiva, afectando la recaudación a largo plazo y la prosperidad del Estado.
+PAX combina economía, expansión territorial, combate y diplomacia para **cuatro países**. Cada país lo controla una persona o un bot. Las decisiones se planifican con un reloj compartido y se resuelven por rondas; las tropas no se desplazan continuamente mientras se planifica.
 
----
+El objetivo es terminar el número de rondas configurado con el mayor **Índice de Dominio Global (GDI)**. Las capitales **sí se pueden conquistar**: perder la capital elimina al país y transfiere su territorio al vencedor. La partida no depende únicamente de la conquista; también cuentan los recursos y la población acumulados.
 
-## 2. Estructura de la Partida y Dinámica de Ronda
+## 2. Configuración e inicio
 
-Las partidas usan por defecto el preset **Corto** (**15 rondas**, **30 segundos** de planificación y mapa de 20×20). El anfitrión puede elegir también el preset **Largo** (**30 rondas**, **60 segundos** y mapa de 30×30). Ambos presets son sólo informativos y sus valores no se pueden editar; para ajustar manualmente rondas, acciones por ronda, frecuencia de reuniones de la OI, semilla o tamaño del mapa se debe elegir **Personalizado**. Los barcos siempre están disponibles. El servidor valida y congela estos parámetros al iniciar la partida.
+### Presets
 
-1. **Inicio de ronda:** desde la ronda 2, el servidor procesa en este orden Materiales, Influencia, crecimiento poblacional y recaudación de impuestos. La primera ronda solo usa las cantidades iniciales. Los intereses y vencimientos de bonos se procesan al comienzo de todas las rondas.
-2. **Planificación:** es la única etapa normal en la que el jugador interactúa. Aquí se gestionan impuestos, mercado, transferencias, bonos, pagos, diplomacia y las órdenes territoriales. Los jugadores pueden confirmar que están listos; si todos lo hacen, la etapa termina antes de los 60 segundos.
-3. **Resolución:** el servidor valida y ejecuta automáticamente las órdenes planificadas. Normalmente no se muestra en pantalla; si tarda más de lo esperado, la interfaz informa que está resolviendo acciones.
-4. **Cierre:** se presenta el resultado de la resolución durante una ventana breve. Las tropas se animan sobre el mapa, se muestran combates y capturas, y los cambios restantes de recursos se presentan visualmente.
-5. **Reunión de la OI:** al cerrar las rondas 5, 10, 15, etc., se intercala una reunión extraordinaria visible e interactiva de hasta 60 segundos antes de iniciar la siguiente ronda. Durante ella no se planifican acciones normales.
+| Ajuste | Corto, predeterminado | Largo |
+| --- | --- | --- |
+| Rondas | 15 | 30 |
+| Tiempo de planificación | 30 segundos | 60 segundos |
+| Órdenes por país y ronda | 3 | 3 |
+| Tamaño del mapa | 20×20 | 30×30 |
 
-Las etapas automáticas no aceptan interacciones del jugador. La planificación concentra todas las decisiones normales y la reunión de la OI es la única excepción interactiva. Las animaciones del inicio y del cierre son presentación visual: las reglas y valores definitivos se calculan y validan en el servidor.
+El anfitrión puede elegir **Personalizado** para editar rondas (5–100), planificación (15–300 segundos), órdenes (1–6), frecuencia de la OI (0–20 rondas), tamaño del mapa (12–50 casillas por lado) y semilla. Una frecuencia OI de 0 desactiva sus reuniones. Los campos de los presets Corto y Largo se muestran como referencia; el servidor valida la configuración al iniciar.
 
----
-
-## 3. Sistema Económico, Demografía e Industria
-
-La economía de PAX pivota sobre tres recursos principales: **Plata** (moneda de cambio), **Materiales** (insumo de construcción y reclutamiento) e **Influencia Política** (capital diplomático).
-
-### 3.1. Mecánica Impositiva y Crecimiento Demográfico
-
-La población de las Ciudades (`CIU`) es el motor fiscal del Estado. Las cantidades iniciales y la producción por ronda se calibran para que Plata, Materiales, Influencia y Población comiencen y evolucionen en rangos comparables; el GDI suma sus valores directamente.
-
-1. **Rango Permitido de Impuestos:** La Tasa Impositiva ($\tau \in [0.05, 0.50]$) se fija dentro de un rango obligatorio del **5% al 50%**.
-2. **Crecimiento:** cada casilla urbana crece a una tasa de $G = \frac{1}{250 \times \tau}$ por ronda, sin tope. La población añadida en cada casilla se calcula como $\operatorname{redondeo}(\text{población} \times G)$; las fracciones no se acumulan entre rondas. Con el impuesto predeterminado del 20%, la tasa es del 2%; al 5%, es del 8%.
-3. **Recaudación:** la Plata obtenida por ronda es $\operatorname{redondeo}(\text{Población urbana} \times \tau \times 0.2)$. Los decimales no se acumulan entre rondas. Con 100 habitantes, al 5% se recauda 1 de Plata por ronda; al impuesto predeterminado del 20%, se recaudan 4.
+La configuración compartida también contempla recursos iniciales y duración de la votación. Estos parámetros no aparecen todos como campos del lobby; sus valores predeterminados y rangos se definen en `shared/Constants.js`.
 
-> **Regla de Jugabilidad:** A menor carga impositiva, la población crece a mayor velocidad; a mayor tasa, la recaudación por habitante aumenta de inmediato.
+### Preparación y condiciones iniciales
 
-Al comenzar, cada país recibe **0 de Plata, 0 de Materiales y 0 de Influencia**. Su Capital y Ciudad comienzan con **50 habitantes cada una**. Desde el inicio de la ronda 2, cada fábrica produce **5 de Materiales** y cada ciudad/capital genera **1 de Influencia**; después se actualiza la población y se recaudan los impuestos. Las cantidades iniciales, la producción, los precios y los costos se centralizan en `ECONOMY` dentro de `shared/Constants.js`.
+En una sala, los humanos eligen nombre y color y pulsan **Listo**. Cuando todos confirman, comienza la partida y los países restantes se completan con bots. Antes de ese inicio se puede retirar la confirmación.
 
-El Mercado Global tiene precios fijos por Material: comprar uno cuesta **3 de Plata** y vender uno entrega **1 de Plata**. La cantidad elegida se expresa en Materiales.
+Por defecto, cada país comienza con:
 
-### 3.2. Infraestructura Industrial
+| Elemento | Cantidad |
+| --- | --- |
+| Plata, Materiales e Influencia | 0 de cada recurso |
+| Capital | 50 habitantes, 4 tropas y 4 de defensa |
+| Ciudad inicial | 50 habitantes, 2 tropas y 2 de defensa |
+| Impuestos | 20% |
+| Fábricas | Ninguna |
 
-Los Materiales son indispensables para construir defensas y entrenar fuerzas armadas. Se producen mediante:
+Los enclaves iniciales están separados. El mapa distribuye pueblos y materias primas cercanos a cada país para ofrecer oportunidades de expansión comparables, manteniendo variación entre semillas.
 
-- **Fábricas (`FT` / `FA`):** Edificaciones industriales construibles tanto en tierra (`FT`) como en agua (`FA`). Desde el inicio de la ronda 2 aportan **+5 Materiales al comienzo de cada ronda** y tienen un costo de **30 de Plata y 30 de Materiales**.
-- **Transporte:** Los barcos y carros cuestan lo mismo al fabricarse (**15 de Plata y 15 de Materiales**), transportan hasta 5 tropas por unidad y pueden moverse hasta dos casillas. Los barcos navegan por agua; los carros se fabrican en fábricas terrestres y recorren rutas terrestres.
-- **Materia Prima (`MPT` / `MPA`):** Yacimientos naturales en tierra (`MPT`) o agua (`MPA`). No producen recursos por sí solas; construir una fábrica allí cuesta **20 de Plata y 20 de Materiales**.
-- Ocupar una materia prima neutral entrega inmediatamente **20 Materiales** al país que la controla.
-- **Costos de acción:** construir una ciudad cuesta **50 de Plata y 50 de Materiales**; una fábrica cuesta **30 de Plata y 30 de Materiales**, o **20 y 20** sobre un yacimiento. Reclutar una tropa cuesta **10 de Plata y 10 de Materiales**. Estos costos comparten la misma configuración que valida el servidor y muestra la interfaz.
+## 3. Ciclo de una ronda
 
-### 3.3. Emisión de Deuda y Comercio
+| Etapa | Qué sucede |
+| --- | --- |
+| Inicio | Expiran las resoluciones cuyo plazo terminó. Se procesan vencimientos e intereses de bonos. Desde la ronda 2 se producen Materiales, crece la población y se recaudan impuestos. |
+| Planificación | Se eligen órdenes, impuestos, operaciones financieras y tratados. Las órdenes territoriales quedan pendientes; finanzas, diplomacia, desmovilización y desmantelamiento son inmediatos. |
+| Resolución | El servidor valida las órdenes con el estado efectivo. Primero resuelve las llegadas terrestres simultáneas; luego procesa las demás acciones. |
+| Cierre de acciones | La interfaz presenta movimientos, combates y resultados. |
+| Reunión de la OI, si corresponde | Se votan resoluciones, sin acciones normales. Ocurre antes del resumen de la ronda. |
+| Resumen y avance | Se cobran multas OI vigentes, se otorga Influencia por ciudades/capitales, se registran cambios de impuestos y vencen los tratados que terminan en esa ronda. Se inicia la siguiente o se cierra la partida. |
 
-- **Mercado Global:** Cada jugador puede comprar materiales por **1 de Plata** o
-  venderlos por **1 de Plata** cada uno. El sistema neutral no tiene límites de stock.
-- **Comercio entre países:** Un jugador propone entregar Plata a cambio de Materiales,
-  o viceversa; el destinatario puede aceptar o rechazar y el proponente puede cancelar.
-  Entre países neutrales se pagan **2 de Plata por 1 Material**: el vendedor recibe
-  **1 de Plata** y el Banco Mundial recibe **1 de Plata** por cada Material vendido.
-  Los Materiales llegan íntegros al comprador. Con un TLC activo, se paga **1 de Plata
-  por 1 Material**, sin aranceles. Los países en conflicto no comercian entre sí.
-  El servidor comprueba la relación vigente, las cantidades y los saldos tanto al
-  proponer como al aceptar; una propuesta desactualizada debe cancelarse y rehacerse.
-- **Emisión de Bonos:** Un bono entrega **20 de Plata** y crea una deuda de **25 de Plata**
-  con vencimiento cinco rondas después de la emisión. El saldo se cobra
-  automáticamente al vencimiento si hay fondos suficientes. El impago resta
-  **5 de Influencia** y añade **1 de Plata** de interés al comienzo de cada ronda
-  posterior; se permiten pagos parciales y totales manuales en cualquier momento.
-- **Ingreso de Influencia:** al inicio de cada ronda desde la segunda, cada ciudad o capital controlada
-  otorga **1 Punto de Influencia Política**. Durante la planificación, el jugador también
-  puede donar **15 de Plata al Banco Mundial** para obtener **1 Punto de Influencia**.
-- **Tratado de Libre Comercio (TLC):** Acuerdo político de cinco rondas que habilita
-  intercambios 1:1 sin aranceles. Una acción militar contra el firmante rompe el TLC.
-  No se permiten nuevos TLC durante una guerra: combate en las últimas tres rondas o
-  tropas de un país ocupando territorio del otro.
+La planificación termina al agotarse el tiempo o cuando todos los países activos están listos. Los bots confirman después de decidir; los humanos pueden alternar **Listo** mientras no haya comenzado la resolución.
 
----
+Las reuniones de la OI ocurren cada 5 rondas por defecto, siempre que quede una ronda posterior por jugar. Por ejemplo, una partida de 15 rondas tiene reuniones después de las rondas 5 y 10; no necesita una reunión después de su última ronda. La frecuencia es independiente de la duración de las resoluciones.
 
-## 4. Logística y Combate Militar
+Las fases automáticas no aceptan nuevas decisiones. Una orden válida al planificarse puede fallar al ejecutarse si cambian el territorio, las tropas, los recursos o las restricciones. El registro indica el resultado; guardar una orden no garantiza que se ejecute.
 
-El combate implementado incluye operaciones terrestres y navales. Las flotas se construyen
-en fábricas costeras, se desplazan por casillas de agua y pueden transportar tropas.
-La escolta comercial y el bloqueo costero aún no están activos.
+## 4. Mapa, territorio y capitales
 
-### Combate terrestre
+El tablero es una cuadrícula 2D vista desde arriba. Su tamaño y distribución dependen de la configuración y la semilla. La mayor parte del territorio empieza neutral.
 
-Las órdenes de movimiento terrestre se resuelven simultáneamente al terminar la
-planificación. Primero se validan todas y se descuentan las salidas; después se
-agrupan todas las llegadas por casilla. Las unidades que salieron legalmente ya no
-defienden su origen, aunque la orden esté en otro espacio de acción. Una salida
-inválida no escapa: sus tropas permanecen en el origen.
+### Tipos de casilla
 
-- Las fuerzas del mismo país que permanecen o llegan se suman antes del combate.
-- Dos países enfrentados pierden una tropa por cada tropa enemiga. El vencedor
-  ocupa la casilla con la diferencia: 2 contra 1 deja 1 tropa del vencedor.
-- Si las fuerzas son iguales, ambas se eliminan. La casilla conserva su dueño
-  anterior con cero tropas; si era neutral, sigue neutral.
-- Si el defensor sale antes de la llegada enemiga y no queda otra fuerza, el
-  atacante conquista sin combate y conserva todas las tropas enviadas.
-- Si participan más de dos países, un vencedor debe superar la suma de todas
-  las fuerzas contrarias: conserva esa diferencia. Si ninguno la supera,
-  se eliminan todas las fuerzas y se conserva el propietario anterior.
-- No hay retirada automática ni tropas derrotadas supervivientes como visitantes.
-  Las tropas que llegan no pueden financiar otra salida en la misma resolución.
-- Los movimientos terrestres se resuelven antes de las demás órdenes de construcción,
-  reclutamiento y operaciones navales. Estas conservan su resolución por órdenes.
-- Entrar en territorio de otro país rompe los tratados correspondientes aunque la
-  guarnición haya escapado. Romper un PNA descuenta hasta 10 puntos de Influencia;
-  el log conserva el país afectado, el infractor y el tratado roto.
-- En el log, la orden y un eventual aviso de que no pudo realizarse son entradas
-  separadas. Cada combate registra sus fuerzas y el resultado en la casilla.
+| Sigla | Tipo | Función |
+| --- | --- | --- |
+| `CAP` | Capital | Centro político: permite reclutar y tiene 4 de defensa base. Su conquista elimina al propietario derrotado. |
+| `CIU` | Ciudad | Población, impuestos, reclutamiento e Influencia; 2 de defensa base. |
+| `PUE` | Pueblo | Asentamiento neutral con 20 habitantes y 1 de defensa. Al ocuparlo conserva esos valores y permite reclutar. Produce impuestos y crecimiento, pero no la Influencia de una ciudad/capital. |
+| `TR` | Tierra | Movimiento terrestre; admite construcción de ciudad o fábrica si está vacía. |
+| `MPT` | Materia prima terrestre | Descuento de construcción industrial; captura neutral con recompensa de Materiales. |
+| `FT` | Fábrica terrestre | Producción de Materiales, fabricación de carros y de barcos si tiene acceso al agua. |
+| `AG` | Agua | Navegación y transporte naval. |
+| `MPA` | Materia prima acuática | Descuento de fábrica acuática; captura neutral con recompensa de Materiales. |
+| `FA` | Fábrica acuática | Producción de Materiales y construcción de barcos. |
 
-### Operaciones navales
+Los colores distinguen tierra, agua y asentamientos. Los bordes usan el color del país; las fronteras compartidas se marcan en blanco. Los territorios neutrales no llevan borde nacional.
 
-- Una fábrica propia costera permite construir barcos durante la planificación. Cada barco
-  cuesta 15 de Plata y 15 de Materiales, y transporta hasta 5 tropas.
-- Los barcos se mueven una casilla de agua adyacente por acción y cada barco que se mueve
-  debe llevar al menos una tropa embarcada. Una flota puede embarcar tropas desde tierra
-  o desde una casilla de agua que comparta con tropas, y desembarcarlas en una casilla
-  terrestre adyacente. El desembarco en territorio enemigo inicia un combate terrestre.
-- La acción de mover tropas cubre el movimiento terrestre, el embarque y el desembarque:
-  tierra → tierra mueve, tierra → agua embarca y agua → tierra desembarca. Todas estas
-  transiciones admiten las ocho casillas vecinas, incluidas las diagonales.
-- Si dos flotas hostiles ocupan la misma casilla, se resuelve un combate naval durante la
-  resolución de acciones. La flota atacante toma el control si sobrevive y las pérdidas
-  reducen también la capacidad disponible para las tropas embarcadas.
+### Capturas y cambio de capital
 
----
+Ocupar una casilla neutral la reclama. Entrar en territorio extranjero puede conquistarlo sin combate si no queda fuerza defensora, o iniciar un combate si hay oposición. Ocupar una materia prima neutral concede **20 Materiales** una vez en esa captura; el yacimiento no produce recursos por sí mismo.
 
-## 5. Diplomacia, Organización Internacional (OI) y Casus Belli
+Al conquistar una capital:
 
-La Organización Internacional (OI) es la mesa multilateral donde los 4 estados votan resoluciones vinculantes. Las reuniones ocurren **al terminar las rondas 5, 10, 15, 20, 25 y 30, antes de avanzar a la siguiente ronda**. Cada reunión es una ronda extraordinaria de hasta 60 segundos dedicada a votar: no se planifican ni ejecutan acciones normales durante ella, y termina antes si todos los jugadores humanos ya votaron. Los bots registran también sus votos de abstención, por lo que no alargan la reunión innecesariamente.
+- La casilla se convierte en ciudad.
+- El país derrotado queda eliminado y deja de emitir órdenes.
+- Todo su territorio pasa al vencedor; las tropas del derrotado se retiran y los vehículos se transfieren según las reglas de captura.
 
-### Propuestas y selección
-Durante la fase de planificación entre reuniones, cada jugador puede proponer resoluciones pagando **2 puntos de Influencia Política** por propuesta. La propuesta se rechaza si no puede pagar el costo. En el primer ciclo se reciben propuestas durante las rondas 1 a 4; después de cada reunión se abre el periodo de propuestas para la siguiente.
+**Trasladar capital** permite elegir una ciudad propia como nueva capital. Cuesta **10 de Plata y 20 Materiales** y consume una orden. La nueva capital recibe 4 de defensa; la anterior se convierte en ciudad con 2 de defensa. No cambia la población por sí solo.
 
-Cada tipo de resolución sólo puede proponerse una vez por reunión de la OI. Si un país ya propuso, por ejemplo, el límite de armamento, ningún otro país puede volver a proponer ese mismo tipo para esa reunión; la restricción se reinicia al abrir el siguiente periodo de propuestas.
+## 5. Recursos, población e impuestos
 
-En cada reunión se seleccionan como máximo **3 propuestas**, priorizando las multas si se incorporan en el futuro y, dentro de cada prioridad, el orden de llegada. Las propuestas no seleccionadas se descartan al cerrar la selección. Por el momento, las **Multas del Banco Mundial no están implementadas ni se pueden proponer**.
-
-### Voto Ponderado por Influencia
-A diferencia de los sistemas tradicionales de un voto por país, en PAX el peso del voto depende de la Influencia Política que cada jugador apuesta en cada resolución. Cada jugador activo debe emitir una papeleta para todas las resoluciones seleccionadas, eligiendo **A favor**, **En contra** o **Abstención**, y puede apostar una cantidad entera de Influencia que no supere su reserva disponible total. Las papeletas se registran una sola vez y se revelan al cerrar la votación.
-
-La sesión de votación dura **hasta 60 segundos**. Los jugadores pueden registrar su papeleta una sola vez durante ese plazo; quien no vote al terminar no aporta votos ni apuestas. La votación se cierra antes si todos los jugadores humanos conectados ya votaron; los bots registran su papeleta automáticamente. Las papeletas se mantienen ocultas hasta el cierre; entonces se publican los totales por resolución. Al cerrar la sesión se consume toda la Influencia apostada, independientemente del resultado. Una resolución solo se aprueba si la suma apostada **A favor es estrictamente mayor** que la suma apostada **En contra**; la abstención no cuenta para comparar.
-
-Los países controlados por bots votan automáticamente: si una resolución los perjudica, apuestan el 50% de su Influencia disponible **En contra**; si los beneficia, apuestan el 50% **A favor**; si es neutra, se abstienen sin apostar. Si deben apostar en varias resoluciones, la apuesta de cada una se calcula sobre la Influencia restante para no exceder su reserva.
-
-### Resoluciones Oficiales de la OI
-- **Multas del Banco Mundial:** Resolución oficial reservada para una versión futura; no se puede proponer ni aprobar actualmente.
-- **Reclutamiento:** solo se pueden reclutar tropas en pueblos, ciudades o capitales propias.
-  Se pagan los recursos de cada unidad y se respetan los límites de armamento y las ZDM.
-- **Límites de Armamento:** Fija un máximo de **20 tropas por país**, incluidas las embarcadas y las que están en territorio ajeno. Permanece activo durante **5 turnos completos después de la votación**.
-- **Límites de Industria:** Fija un máximo de **20 fábricas por país**. Una vez aprobada, permanece activa durante **5 turnos completos después de la votación**.
-- **Zonas Desmilitarizadas (ZDM):** El proponente elige una casilla central al redactar su propuesta. La ZDM cubre esa casilla y las casillas situadas hasta dos posiciones en cada dirección (un área de 5×5, 25 casillas en el interior del mapa; se recorta en los bordes). No se pueden reclutar, estacionar ni mover tropas hacia, desde o a través de una ZDM. Al aprobarse, las tropas que ya están dentro se desplazan a la casilla propia válida más cercana. La zona permanece activa durante **5 turnos completos después de la votación**, independientemente de cuándo se reúna la OI.
-- **Subsidios Condicionados:** Entrega **25 de Plata** al país con menor GDI en el momento de aplicar la resolución. Crea un **Pacto de No Agresión (PNA) de 5 rondas** entre el beneficiario y cada país que votó a favor. Una ruptura por ataque cancela el pacto y sanciona al atacante.
-
-Todas las resoluciones de la OI usan la duración configurable `OI_RESOLUTION_DURATION_ROUNDS` de `shared/Constants.js` (por defecto, **5 turnos**). Una aprobación al cierre del turno 5 cubre los turnos 6 al 10. Al vencer un límite cesan sus restricciones y multas. Una nueva aprobación renueva su duración sin reiniciar la gracia si seguía activo. El subsidio sigue siendo un pago único; la duración se aplica a sus pactos asociados.
-
-Los límites de tropas y fábricas conceden **una ronda completa de gracia** tras su aprobación. Al cierre de esa ronda y de cada ronda posterior mientras el límite esté vigente, cada país paga **2 de Plata por tropa excedente** y **5 de Plata por fábrica excedente**; las multas se suman y pueden dejar un saldo negativo como deuda. Aprobar otra vez un límite activo no renueva la gracia.
-
-Durante la planificación se pueden **desmovilizar tropas** (incluidas las embarcadas) y **desmantelar fábricas** desde el inspector, de forma inmediata, sin consumir espacios de órdenes ni devolver recursos. Desmantelar restaura el terreno previo y conserva el propietario, las tropas y los vehículos. Los límites bloquean nuevos reclutamientos y construcciones que los superen. Los valores se configuran en `ECONOMY.OI_LIMITS` de `shared/Constants.js`.
-
-### Sistema de Casus Belli (CB)
-El diseño contempla que un ataque o bloqueo militar ejecutado sin un Casus Belli (CB) válido genere una sanción diplomática automática y otorgue a la víctima un CB de represalia legal. Las causas previstas para obtener un CB incluyen:
-- Ruptura de tratados.
-- Incumplimiento de resoluciones de la OI.
-- Impago de deuda externa.
-
-*Todo CB caduca estrictamente en la siguiente sesión de la OI. El historial de agresiones y los CB activos se limpian al finalizar cada reunión.*
-
----
-
-## 6. Sistema de Victoria y Marcador Global
-
-La victoria se determina al finalizar el límite de rondas. Gana el país con el **Índice de Dominio Global (GDI)** más alto.
-
-$$\text{GDI} = \left\lfloor \text{Plata} + \text{Materiales} + \text{Influencia} + \text{Población} \right\rfloor$$
-
-Cada unidad de **Plata**, **Materiales** e **Influencia** aporta un punto. La población aporta un punto por cada habitante de las casillas que controla el país. El total se redondea hacia abajo.
-
-El marcador también presenta territorio, tropas, ciudades y fábricas como estadísticas, pero esos valores no se suman al GDI. La tabla ordena los países de mayor a menor puntuación.
-
----
-
-## 7. Especificación del Mapa e Interfaz Visual
-
-La interfaz del mapa de PAX se rige por un lenguaje de diseño estrictamente bidimensional (**2D ortogonal, vista cenital top-down**).
-
-### Arquitectura de Vista y Sistema de Soberanía
-- **Vista Cenital Plana (Top-Down):** El tablero se observa perpendicularmente desde arriba. La grilla está compuesta por casillas cuadradas dispuestas en una matriz uniforme.
-- **Bordes de Soberanía de Jugador:** Todos los bordes de las casillas de un país usan el color de ese país (ej. Amarillo, Rojo, Verde, Morado).
-- **Fronteras Compartidas:** El borde entre casillas de dos países distintos se marca en blanco.
-- **Casillas Neutrales:** Todas las casillas marítimas o terrestres no reclamadas no poseen ningún borde de color exterior.
-
-### Composición Inicial y Cambio de Capital
-- **Composición Inicial:** Cada país comienza la partida con una Capital principal. Además, su territorio asignado o adyacente puede contener otra(s) ciudad(es) o zonas de recursos desde el inicio.
-- **Pueblos neutrales:** El mapa puede generar pueblos (`PUE`) en tierra neutral. Cada pueblo comienza con 20 habitantes y 1 de defensa; al ocuparlo, el conquistador conserva esos valores. La generación garantiza opciones iniciales comparables: cada país dispone de un pueblo y una materia prima dentro de un radio similar a su capital, sin eliminar la variación central del mapa. Entre pueblos y ciudades/capitales se dejan al menos dos casillas libres.
-- **Conquista de capital:** Al conquistar una capital, esta se convierte en ciudad, el país derrotado queda eliminado y todas sus casillas pasan al vencedor.
-- **Cambio de Capital:** Un participante puede reubicar su Capital hacia otra ciudad bajo su control ejecutando la acción estratégica *Trasladar Capital* (**Costo:** 10$ + 20 Materiales y 1 slot de acción). Al trasladarse, la nueva ciudad pasa a tener **4 de defensa base** y la anterior conserva **2 de defensa base**.
-
----
-
-## 8. Taxonomía de Casillas e Iconografía Posicional
-
-Cada casilla del tablero está codificada mediante un color de fondo según su categoría de terreno y posee un identificador de dos o tres letras (Sigla):
-
-| Color de Fondo | Sigla | Tipo de Casilla | Descripción y Función Táctica |
-| :--- | :---: | :--- | :--- |
-| **Gris Urbano (`#718096`)** | `CAP` | Capital | Sede política principal del jugador; puede ser conquistada mediante un ataque superior a su defensa. |
-| **Gris Urbano (`#718096`)** | `CIU` | Ciudad | Núcleo de concentración demográfica y recaudación fiscal de Plata. |
-| **Café Terrestre (`#8D5B4C`)** | `TR` | Tierra | Terreno llano estándar para despliegue y maniobra de tropas terrestres. |
-| **Café Terrestre (`#8D5B4C`)** | `MPT` | Materia Prima Terrestre | Yacimiento mineral con descuento para construcción de Fábrica Terrestre. |
-| **Café Pueblo (`#9A8065`)** | `PUE` | Pueblo | Asentamiento con 20 habitantes y 1 de defensa; una vez controlado permite reclutar tropas. |
-| **Café Terrestre (`#8D5B4C`)** | `FT` | Fábrica Terrestre | Instalación industrial de alta producción pasiva de Materiales (+5/turno). |
-| **Azul Marítimo (`#3182CE`)** | `AG` | Agua | Superficie acuática para navegación, transporte de tropas y flotas. |
-| **Azul Marítimo (`#3182CE`)** | `MPA` | Materia Prima Acuática | Yacimiento marino con descuento para plataformas o fábricas navales. |
-| **Azul Marítimo (`#3182CE`)** | `FA` | Fábrica Acuática | Plataforma industrial de extracción y rendimiento marítimo (+5/turno). |
-
-### Anatomía Posicional de la Casilla
-En el mapa, cada casilla conserva el color de terreno y su icono. Las fábricas no aparecen construidas al inicio: deben levantarse durante la partida. La información visual se limita a:
-
-- **Esquina superior izquierda:** Defensa (`D`) cuando la casilla tiene defensa.
-- **Centro:** Icono del terreno o estructura.
-- **Parte inferior izquierda:** Población (`P`) cuando corresponde.
-- **Parte inferior derecha:** Tropas representadas mediante pequeños círculos.
-
-El mapa no muestra las siglas del tipo de casilla ni el indicador circular de estado.
-El inspector de la casilla seleccionada conserva el detalle completo, incluido el tipo,
-el número exacto de tropas y el estado operativo (`NORMAL`, `CONFLICT` o `BLOCKED`).
-
-El mapa inicial mide 30×30. La mayoría de sus casillas de tierra, al igual que el agua,
-son neutrales; cada país ocupa un enclave terrestre pequeño que incluye una Capital y
-una Ciudad. Cada casilla conserva coordenadas, país (o neutral), tipo, población, tropas,
-defensa, edificio y estado (`NORMAL`, `CONFLICT` o `BLOCKED`). Al seleccionarla con un
-clic, el inspector muestra estos valores; el cursor resalta suavemente la casilla
-señalada y las casillas sin país no llevan borde de soberanía.
-El mapa genera cuerpos de agua grandes; todos se representan simplemente como agua,
-sin distinguir entre mar, río, laguna o lago. Su forma y posición varían según el mapa.
-Las posiciones iniciales de los países también cambian en cada partida, manteniéndose
-separadas y distribuidas por distintas zonas del tablero.
-El tablero se ajusta al panel al iniciar; la rueda del ratón permite acercar y alejar,
-los controles ofrecen zoom y ajuste al panel, y se puede desplazar arrastrando el mapa
-o usando las barras de desplazamiento.
-La pantalla principal distribuye el estado de la nación, impuestos, acciones, votaciones
-y el log en un panel lateral; muestra las fases, ronda, recursos y GDI en la
-barra superior; y mantiene el mapa y el inspector de casillas visibles en el área central
-y el panel derecho. En desarrollo, los países sin cliente conectado los controla la IA;
-un cliente que se conecta reclama un país bot libre. La fase de planificación dura 60
-segundos y las rondas avanzan automáticamente. El inspector ofrece acciones de ciudad,
-fábrica, reclutamiento y traslado de capital; cada acción se habilita solo si coinciden
-la fase, la soberanía, el tipo de casilla y los recursos, y el servidor vuelve a validar
-esas condiciones antes de aplicarla. Cada jugador dispone de tres espacios de acción que
-puede reemplazar o vaciar libremente durante la etapa de planificación; las órdenes guardadas (incluidas
-las decisiones de la IA) se ejecutan únicamente cuando expira el temporizador de esa fase,
-al comenzar la resolución automática.
-Los jugadores humanos conectados también pueden usar «Listo» para marcarse listos;
-la etapa de planificación termina inmediatamente cuando todos lo han hecho, o automáticamente al
-expirar los 60 segundos. Los cambios entre las demás fases son inmediatos. El menú superior permite reanudar o terminar la partida y
-volver al menú principal.
-El log conserva y muestra el historial completo de la partida, incluidas
-las acciones resueltas de todos los países. Para mover tropas, se selecciona primero su
-casilla de origen y después cualquier destino terrestre adyacente (tierra, materia
-prima terrestre, fábrica terrestre, ciudad o capital); ambos quedan
-resaltados y el movimiento se guarda en un espacio. Entrar en territorio neutral lo
-reclama; entrar en territorio extranjero inicia un combate al resolverse las órdenes.
-El reclutamiento y el movimiento permiten elegir la cantidad de tropas,
-limitada por los recursos disponibles y las órdenes ya reservadas en el otro espacio.
-«Listo» se puede alternar para retirar la confirmación antes de que todos estén listos.
-Todos los bordes de cada país usan el color nacional, mientras que las fronteras
-compartidas entre países son blancas.
+### Recursos e ingresos
+
+| Recurso | Usos | Fuentes principales |
+| --- | --- | --- |
+| Plata | Construcción, reclutamiento, mercado, transferencias, deuda y multas | Impuestos, ventas, comercio, bonos y subsidios |
+| Materiales | Construcción, reclutamiento y vehículos | Fábricas, materias primas neutrales y compras |
+| Influencia Política | Propuestas y votos OI; penalizaciones diplomáticas | Ciudades/capitales y donaciones al Banco Mundial |
+
+Cada fábrica produce **5 Materiales al inicio de la ronda**, desde la segunda. Al **cierre de cada ronda, incluida la primera**, cada ciudad o capital controlada concede **1 de Influencia**. Los pueblos no conceden ese ingreso de Influencia.
+
+### Impuestos y demografía
+
+La tasa impositiva se puede ajustar durante la planificación entre **5% y 50%**; el valor inicial es **20%**. Sus efectos demográficos y fiscales se procesan en el siguiente inicio de ronda.
+
+Para cada capital, ciudad o pueblo:
+
+```text
+Tasa de crecimiento = 1 / (250 × tasa de impuestos)
+Habitantes añadidos = redondear(población × tasa de crecimiento)
+Nueva población = población + habitantes añadidos
+```
+
+Después del crecimiento se suma la población urbana controlada y se recauda:
+
+```text
+Plata recaudada = redondear(población urbana actualizada × tasa de impuestos × 0,2)
+```
+
+No se acumulan fracciones entre rondas. Con 100 habitantes y una tasa del 20%, el crecimiento añade 2 habitantes; sobre los 102 actualizados se recaudan 4 de Plata. Con un 5%, la tasa de crecimiento es del 8%; con un 20%, es del 2%.
+
+Bajar impuestos favorece el crecimiento; subirlos eleva la recaudación por habitante. Los parámetros de estas fórmulas están en `ECONOMY.POPULATION`.
+
+## 6. Construcción y acciones territoriales
+
+### Costos por unidad
+
+| Acción | Plata | Materiales | Dónde |
+| --- | --- | --- | --- |
+| Construir ciudad | 50 | 50 | Tierra propia vacía (`TR`) |
+| Construir fábrica | 30 | 30 | Tierra o agua propias sin edificio |
+| Construir fábrica sobre materia prima | 20 | 20 | `MPT` o `MPA` propias sin edificio |
+| Reclutar tropa | 10 | 10 | Capital, ciudad o pueblo propios |
+| Construir barco | 15 | 15 | Fábrica acuática propia o fábrica terrestre con puerto válido adyacente |
+| Fabricar carro | 15 | 15 | Fábrica terrestre propia |
+| Trasladar capital | 10 | 20 | Ciudad propia |
+
+Una ciudad nueva comienza con **50 habitantes y 2 de defensa**. Las fábricas solo empiezan a producir en el siguiente procesamiento económico.
+
+Cada construcción, reclutamiento o movimiento ocupa un espacio de órdenes. Se pueden elegir varias tropas o vehículos en una orden cuando la acción admite cantidad; se paga el costo de cada unidad. Los recursos y unidades comprometidos en otras órdenes reducen lo disponible para planificar nuevas acciones.
+
+Los límites OI, las ZDM, la soberanía, el terreno y los recursos condicionan la disponibilidad. El servidor los valida al planificar y al resolver. Las tropas que llegarán más tarde no se pueden usar para financiar una salida anterior de la misma resolución.
+
+### Retirar tropas o fábricas
+
+Durante la planificación, el inspector permite:
+
+- **Desmovilizar tropas:** elegir una casilla y una cantidad de tropas propias, incluidas las embarcadas o las propias estacionadas en territorio ajeno. Se retiran sin afectar las tropas de otro país.
+- **Desmantelar fábrica:** retirar una fábrica propia. Las fábricas construidas guardan el terreno previo para restaurarlo; las iniciales o antiguas sin ese dato vuelven a tierra o agua según corresponda. Se conservan propietario, tropas y vehículos.
+
+Ambas acciones son **inmediatas, no consumen órdenes y no devuelven recursos**. Se pueden usar aunque no haya un límite OI vigente. Las órdenes ya guardadas no se borran automáticamente: revisa las que dependían de las unidades o la fábrica retiradas.
+
+## 7. Movimiento y combate
+
+### Movimiento terrestre y transporte
+
+Las tropas a pie avanzan a una casilla adyacente, incluidas las diagonales. Los carros transportan **hasta 5 tropas cada uno** y permiten recorrer hasta **2 casillas** por una ruta terrestre válida. Los barcos también transportan **hasta 5 tropas cada uno** y navegan hasta **2 casillas** por una ruta de agua válida.
+
+Los transportes cuestan **15 de Plata y 15 Materiales por unidad**. Los carros se fabrican en fábricas terrestres; los barcos en fábricas con acceso al agua. Los movimientos de carros y barcos pueden reclamar las casillas neutrales intermedias de su ruta.
+
+### Resolución terrestre simultánea
+
+Primero se validan y descuentan todas las salidas legales. Después se agrupan las llegadas por destino, sumando refuerzos de un mismo país. Este grupo incluye movimientos a pie, en carros y desembarcos. El orden de los países o de sus espacios no permite atacar a tropas que ya salieron legalmente.
+
+| Situación | Resultado |
+| --- | --- |
+| 2 tropas contra 1, sin defensa fija | El vencedor controla la casilla con 1 tropa. |
+| Fuerzas iguales | Todas las tropas participantes se eliminan; se conserva el propietario anterior. Si era neutral, sigue neutral. |
+| El defensor salió y no queda fuerza ni defensa fija que lo sostenga | La llegada puede conquistar sin bajas. |
+| Más de dos países | Gana quien supera la suma de todas las fuerzas contrarias; conserva la diferencia. Si ninguno la supera, se eliminan todas las tropas participantes. |
+| Dos ejércitos cruzan sus rutas y abandonan sus orígenes | No hay combate en el borde: se resuelven sus destinos. |
+
+La **defensa fija** se suma a la fuerza del propietario ante una llegada hostil y no se consume. Una capital con 4 de defensa y sin tropas detiene un ataque de 4; un ataque de 5 la supera y deja 1 tropa atacante. Si vence el propietario, la defensa no se convierte en tropas supervivientes.
+
+Las tropas derrotadas no se retiran automáticamente ni quedan como visitantes supervivientes. Los carros y barcos de una casilla pueden pasar al vencedor como botín; los carros transportados por una fuerza atacante derrotada tampoco se destruyen automáticamente. Si el combate terrestre termina empatado, los carros que llegaron regresan a sus orígenes.
+
+### Embarque, desembarque y combate naval
+
+La acción de mover tropas distingue las transiciones:
+
+- Tierra → tierra: movimiento terrestre.
+- Tierra → agua con flota propia: embarque, respetando capacidad disponible.
+- Agua → tierra adyacente: desembarco; si hay enemigos, participa en la resolución terrestre.
+
+Se admiten destinos adyacentes diagonales para embarcar y desembarcar. Cada barco que se mueve debe llevar al menos una tropa embarcada; la carga trasladada queda limitada por la capacidad de los barcos enviados.
+
+El combate naval se resuelve en las operaciones navales, después de los movimientos terrestres. Si los barcos enviados superan los barcos enemigos del destino, el atacante ocupa la casilla y captura los barcos y su carga; si no los supera, entrega los barcos enviados y su carga al vencedor. Los barcos funcionan como botín y no siguen la regla de desgaste de tropas terrestres.
+
+## 8. Finanzas y comercio
+
+Las operaciones financieras se ejecutan inmediatamente durante la planificación y no consumen espacios de órdenes. No se permiten durante la votación de la OI ni las fases automáticas.
+
+### Mercado Global
+
+| Operación | Precio por Material |
+| --- | --- |
+| Comprar | 3 de Plata |
+| Vender | 1 de Plata |
+
+La cantidad elegida se expresa en Materiales. El mercado tiene precios fijos y no limita las operaciones por stock del Banco Mundial. Una compra requiere la Plata necesaria y una venta requiere los Materiales que se entregan.
+
+### Comercio y transferencias entre países
+
+En un **intercambio**, un país propone entregar Plata por Materiales, o viceversa. El destinatario acepta o rechaza; el proponente puede cancelar. El servidor comprueba saldos y relación diplomática al proponer y al aceptar.
+
+| Relación | Pago del comprador por Material | Recibe el vendedor | Recibe el Banco Mundial |
+| --- | --- | --- | --- |
+| Sin TLC y sin conflicto | 2 de Plata | 1 de Plata | 1 de Plata |
+| TLC vigente y sin conflicto | 1 de Plata | 1 de Plata | 0 |
+| Países en conflicto | Intercambio bloqueado | — | — |
+
+Los Materiales llegan íntegros al comprador. Un cambio de relación puede invalidar una propuesta pendiente; debe cancelarse y rehacerse con las condiciones vigentes. Los bots aceptan automáticamente los intercambios legales de precio fijo si pueden completarlos.
+
+Una **transferencia** entrega Plata o Materiales sin contraprestación. Sin TLC, el Banco Mundial retiene el **20%**, redondeado hacia arriba, del recurso transferido; el destinatario recibe el resto. Con TLC no hay arancel. Las transferencias entre países en conflicto están bloqueadas.
+
+### Donaciones y bonos
+
+Donar **15 de Plata** al Banco Mundial otorga **1 de Influencia**.
+
+Un bono entrega **20 de Plata** y crea una deuda de **25 de Plata**, con vencimiento cinco rondas después de emitirlo. Solo puede haber **un bono pendiente por país**, y el Banco Mundial necesita 20 de Plata disponibles para comprarlo.
+
+Al comienzo de la ronda de vencimiento, el servidor cobra el saldo completo si hay Plata suficiente. Si no alcanza, declara impago y descuenta hasta **5 de Influencia**, sin hacerla negativa. Cada ronda posterior añade **1 de Plata** de interés. Durante la planificación se pueden efectuar pagos manuales parciales o totales; un bono impagado no se liquida automáticamente solo porque después haya fondos.
+
+La deuda de bonos y un saldo negativo por multas OI son conceptos distintos: los bonos tienen saldo y vencimiento propios; las multas se descuentan directamente de la Plata disponible.
+
+## 9. Tratados y conflicto
+
+Los países pueden proponer tratados durante la planificación. El destinatario acepta o rechaza; el proponente puede cancelar una oferta pendiente. No se pueden duplicar tratados vigentes del mismo tipo entre los mismos países.
+
+| Tratado | Efecto |
+| --- | --- |
+| Pacto de No Agresión (PNA) | Su ruptura por invasión penaliza al invasor con hasta 10 de Influencia, sin saldo negativo de Influencia. |
+| Tratado de Libre Comercio (TLC) | Habilita intercambios 1:1 y transferencias sin arancel, mientras no haya conflicto. |
+
+Los tratados diplomáticos ordinarios duran **cinco rondas contando la de aceptación**: si se firman en la ronda 3, están vigentes de la 3 a la 7 y vencen al cierre de la 7. Los pactos creados por un subsidio OI usan el plazo de esa resolución, explicado en la sección siguiente.
+
+### Ruptura por acción militar
+
+- Invadir una casilla del otro firmante rompe los tratados correspondientes, aunque el defensor haya retirado sus tropas.
+- Si hay combate en territorio de uno de los países, la responsabilidad del PNA recae en el invasor. Los refuerzos que defienden territorio propio no pagan la penalización.
+- Si los dos países combaten en una casilla neutral, terminan el PNA y el TLC, pero **ninguno pierde Influencia** por ese enfrentamiento.
+- Si ambos invaden territorio del otro en la misma resolución terrestre, cada invasor puede recibir su penalización. Repetir ataques de un país contra el mismo firmante no multiplica la penalización dentro de esa resolución.
+- La ruptura del TLC restablece los aranceles; no tiene una penalización propia de Influencia.
+
+Los países afectados reciben avisos y el registro conserva el tratado, los participantes y la responsabilidad cuando corresponde. También se notifican los vencimientos.
+
+Se considera conflicto reciente el registrado en la ronda actual o en las dos anteriores, o la presencia de tropas de un país en territorio del otro. El conflicto bloquea comercio y transferencias, y no permite firmar un nuevo TLC mientras siga vigente esa condición.
+
+## 10. Organización Internacional
+
+### Cuándo se reúne y qué se propone
+
+Por defecto, la OI se reúne cada **5 rondas**, con votación de hasta **60 segundos**. Ambos parámetros pertenecen a la configuración de partida. No se reúne después de la última ronda.
+
+Durante la planificación previa a la reunión se proponen resoluciones pagando **2 de Influencia** cada una. Se puede proponer también en la ronda que terminará con una reunión. Cada tipo de resolución solo puede estar propuesto una vez para esa reunión, sin importar quién lo proponga.
+
+Se seleccionan hasta **3 propuestas por orden de llegada**. Las restantes se descartan y se abre un nuevo periodo de propuestas. Si no hay mociones, la sesión termina sin votación.
+
+### Voto por Influencia
+
+Cada papeleta contiene una decisión por propuesta: **A favor**, **En contra** o **Abstención**, junto con una apuesta entera no negativa de Influencia. La suma no puede superar la reserva del país. La interfaz usa al menos 1 para un voto activo; el servidor admite valores no negativos. La papeleta solo se registra una vez.
+
+Las papeletas permanecen ocultas hasta el cierre. Se consume **toda la Influencia apostada**, independientemente del resultado. Una resolución se aprueba únicamente si la apuesta total a favor supera estrictamente la apuesta en contra; un empate la rechaza y la abstención no cuenta en esa comparación.
+
+La votación termina al agotarse el tiempo o cuando todos los humanos conectados han votado. Quien no vote no aporta apuestas. Los bots registran su papeleta automáticamente: apuestan la mitad de su Influencia restante contra una medida que les perjudica, a favor si les beneficia y se abstienen si es neutra.
+
+### Resoluciones implementadas
+
+| Resolución | Efecto |
+| --- | --- |
+| Límite de Armamento | Máximo de **20 tropas propias en total**, incluyendo las embarcadas y las que estén en territorio ajeno. |
+| Límite de Industria | Máximo de **20 fábricas controladas** por país. |
+| Zona Desmilitarizada (ZDM) | Área de hasta **5×5 casillas**, centrada en la casilla propuesta y recortada en los bordes. Restringe reclutamiento y movimientos cuyo origen o destino esté en ella. |
+| Subsidio Condicionado | Pago único de **25 de Plata** al país seleccionado por menor GDI al abrir la votación. Crea PNA entre ese beneficiario y los países que votaron a favor. |
+
+Al aprobar una ZDM, las tropas terrestres dentro del área se desplazan a una casilla terrestre propia válida fuera de las zonas activas, eligiendo la más cercana. Si no hay una casilla válida, esas tropas se retiran del tablero.
+
+### Duración y renovación
+
+Todas las resoluciones usan `OI_RESOLUTION_DURATION_ROUNDS` de `shared/Constants.js`, cuyo valor predeterminado es **5 turnos completos después de la aprobación**. Su plazo no depende de la siguiente reunión.
+
+**Ejemplo:** una resolución aprobada al cierre del turno 5 está vigente durante los turnos 6, 7, 8, 9 y 10. El límite puede cobrar su última multa al cierre del 10; antes de empezar el 11 se retira y dejan de aplicarse sus restricciones y multas. La deuda de multas ya cobradas no se perdona por el vencimiento.
+
+Aprobar otra vez un límite aún vigente renueva su fecha de vencimiento, **sin reiniciar la gracia**. Si ya había vencido, una nueva aprobación inicia otra vigencia con su propio plazo de regularización.
+
+El subsidio sigue siendo **un pago único**, no un ingreso por ronda. La duración corresponde a sus pactos asociados; al vencerlos no se devuelve el dinero recibido.
+
+## 11. Límites, gracia y multas
+
+Los máximos de tropas y fábricas **solo se activan si se aprueba su resolución**. Cada límite es independiente; sin esa resolución vigente no hay máximo ni multa de ese tipo.
+
+### Regularización
+
+Cada aprobación nueva concede **1 ronda completa de gracia**. Durante esa ronda el país puede desmovilizar tropas o desmantelar fábricas desde el inspector. Se bloquean reclutamientos y nuevas construcciones que superen los máximos; la gracia no habilita a seguir aumentándolos.
+
+Al cierre de la ronda de gracia se revisan los totales efectivos, después de las capturas y pérdidas. No se eliminan tropas ni fábricas automáticamente por superar el máximo: se cobran multas. Las fábricas excedentes continúan produciendo mientras permanezcan construidas.
+
+### Cobro
+
+| Exceso | Multa por unidad y por ronda |
+| --- | --- |
+| Cada tropa por encima de 20 | 2 de Plata |
+| Cada fábrica por encima de 20 | 5 de Plata |
+
+Las multas se suman y se repiten en cada cierre mientras persista el exceso y siga vigente la resolución. Si no alcanza la Plata, el saldo queda **negativo como deuda**; ingresos posteriores lo compensan.
+
+Ejemplo: si ambos límites se aprobaron al cierre del turno 5, hay que regularizar durante el 6. Si al cierre del 6 quedan **23 tropas y 21 fábricas**, se cobran `(3 × 2) + (1 × 5) = 11 de Plata`. Con un saldo previo de 4, el país termina con **−7 de Plata**. Si vuelve al máximo antes del cierre siguiente, ese cierre no genera una nueva multa.
+
+El panel OI muestra los totales, máximos, plazo y multa potencial. Las aprobaciones, multas y vencimientos generan avisos y entradas en el registro.
+
+Estos valores se cambian en `ECONOMY.OI_LIMITS`: `TROOPS`, `FACTORIES`, `GRACE_ROUNDS`, `TROOP_FINE_SILVER` y `FACTORY_FINE_SILVER`.
+
+## 12. Victoria y puntuación
+
+La partida termina al cerrar la última ronda configurada. Se calcula:
+
+```text
+GDI = redondear hacia abajo(Plata + Materiales + Influencia + población controlada)
+```
+
+Cada unidad de recurso y cada habitante aportan un punto. El saldo negativo de Plata por multas reduce la puntuación. Los saldos pendientes de bonos no se restan adicionalmente en esta fórmula; sus pagos sí reducen la Plata cuando se ejecutan.
+
+El marcador ordena por GDI y también informa territorio, tropas, ciudades y fábricas. Esas estadísticas no suman puntos de forma directa. La pérdida de capital elimina al país, pero el reloj global y la condición de cierre siguen basados en el número de rondas configurado.
+
+## 13. Interfaz, avisos y sesiones
+
+### Controles y paneles
+
+- **Mapa:** selección de casillas, zoom con rueda y controles, ajuste al panel y desplazamiento por arrastre o barras. Se puede consultar el historial de mapas de rondas anteriores; esa vista es de consulta.
+- **Inspector:** dueño, terreno, población, tropas, defensa, barcos, carros, carga y acciones disponibles. Las cantidades se ajustan con los recursos o unidades que siguen libres.
+- **Órdenes:** espacios reemplazables y vaciables durante la planificación. Para mover unidades se elige primero origen y cantidad y después el destino permitido.
+- **Economía y diplomacia:** impuestos, mercado, transferencias, intercambios, bonos, tratados y propuestas OI.
+- **OI y marcador:** votaciones, resultados, límites vigentes y puntuaciones por país.
+- **Registro:** órdenes ejecutadas o fallidas, combates, capturas, tratados, economía y multas. Los avisos emergentes destacan propuestas recibidas, rupturas y vencimientos relevantes.
+- **Audio:** música y efectos con volúmenes separados. Incluye sonido al comenzar una partida; las preferencias se conservan en el navegador.
+
+Las casillas muestran icono de terreno/estructura, defensa, población y tropas según corresponda. El inspector conserva el detalle numérico y los estados internos `NORMAL`, `CONFLICT` y `BLOCKED`.
+
+### Pausa y reconexión
+
+La partida individual se pausa al desconectarse o perder visibilidad/foco y permite recuperar su país, órdenes y reloj. Una pausa manual requiere reanudación manual. El servidor guarda las sesiones individuales al iniciar, pausar y finalizar; volver al menú principal abandona y elimina el guardado.
+
+Una desconexión multijugador reserva el país, pero no pausa la partida de los demás. Redis almacena los datos del lobby; el tablero activo reside en Node. La instalación y los límites de persistencia se explican en el [README](../README.md#salas-guardado-y-reconexión).
+
+## 14. Configuración y alcance implementado
+
+### Fuentes de las reglas
+
+| Archivo | Responsabilidad |
+| --- | --- |
+| `shared/Constants.js` | Presets, rangos, precios, recursos, transporte, duración OI y multas. |
+| `shared/EconomyFormulas.js` | Crecimiento, impuestos y condiciones de intercambio. |
+| `shared/OILimits.js` | Conteo de tropas/fábricas y cálculo del exceso y multa potencial. |
+| `server/src/game/PhaseManager.js` | Orden de fases, reloj y cierre de ronda. |
+| `server/src/game/ActionEngine.js`, `LandMovementResolver.js` | Planificación, ejecución, reducción de activos y combate. |
+| `server/src/game/DiplomacyEngine.js` | Ofertas, tratados, vencimientos y rupturas. |
+| `server/src/game/FinanceEngine.js` | Mercado, transferencias, comercio y bonos. |
+| `server/src/game/InternationalOrganizationEngine.js` | Propuestas, votos, efectos, duración y multas OI. |
+
+Los tratados ordinarios y los vencimientos de bonos mantienen su plazo en `TREATY_DURATION_ROUNDS`, dentro de `server/src/game/GameStateUtils.js`. Es independiente del plazo OI.
+
+### Ideas que aún no son reglas activas
+
+La escolta comercial, el bloqueo costero y una acción específica para construir fortificaciones no están implementados. La defensa fija de pueblos, ciudades y capitales sí existe.
+
+El **Casus Belli** es una idea de diseño y tiene estructuras de estado, pero no existe un sistema completo que sancione automáticamente cualquier ataque por carecer de uno. Las penalizaciones activas son las de ruptura de PNA, impago de bonos y las multas por límites OI descritas en este documento.
+
+Una resolución adicional de **Multas del Banco Mundial** no está disponible para proponer ni votar. Esto es distinto de las multas automáticas por exceder límites OI aprobados, que sí están implementadas.
